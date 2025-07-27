@@ -2,11 +2,9 @@
 // Created: 2/18/2025.
 //
 
-#include "Window.hpp"
-
-#include "RasterizerState.hpp"
-
 #include <windowsx.h>
+#include "Window.hpp"
+#include "RasterizerState.hpp"
 
 namespace x {
     IWindow::IWindow(const str& title, const int width, const int height, WORD windowIcon) : mContext() {

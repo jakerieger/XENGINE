@@ -3,8 +3,11 @@
 //
 
 #pragma once
+#pragma warning(disable : 4244)
 
 #include <imgui.h>
+#include <iomanip>
+#include <sstream>
 #include "D3D.hpp"
 #include "Common/Typedefs.hpp"
 #include "Common/Macros.hpp"
@@ -55,6 +58,11 @@ namespace x {
         void ToFloatArray(f32* color) const;
         void ToHSV(f32& h, f32& s, f32& v) const;
 
+        template<typename T>
+        X_NODISCARD T To() const {
+            return T {};
+        }
+
         // Components
         X_NODISCARD f32 R() const;
         X_NODISCARD f32 G() const;
@@ -86,6 +94,36 @@ namespace x {
         static u32 FloatToU32(f32 v);
         static f32 U32ToFloat(u32 v);
     };
+
+    template<>
+    X_NODISCARD inline ImVec4 Color::To() const {
+        return {mRed, mGreen, mBlue, mAlpha};
+    }
+
+    template<>
+    X_NODISCARD inline XMFLOAT4 Color::To() const {
+        return {mRed, mGreen, mBlue, mAlpha};
+    }
+
+    template<>
+    X_NODISCARD inline u32 Color::To() const {
+        const auto redByte   = CAST<u8>(FloatToU32(mRed));
+        const auto greenByte = CAST<u8>(FloatToU32(mGreen));
+        const auto blueByte  = CAST<u8>(FloatToU32(mBlue));
+        const auto alphaByte = CAST<u8>(FloatToU32(mAlpha));
+        return (alphaByte << 24) | (redByte << 16) | (greenByte << 8) | blueByte;
+    }
+
+    template<>
+    X_NODISCARD inline str Color::To() const {
+        const u32 r = U32ToFloat(mRed + 0.5f);
+        const u32 g = U32ToFloat(mGreen + 0.5f);
+        const u32 b = U32ToFloat(mBlue + 0.5f);
+        std::stringstream ss;
+        ss << "#" << std::hex << std::setfill('0') << std::setw(2) << (r & 0xFF) << std::setw(2) << (g & 0xFF)
+           << std::setw(2) << (b & 0xFF);
+        return ss.str();
+    }
 
     namespace Colors {
         static Color White {1.0f, 1.0f, 1.0f};

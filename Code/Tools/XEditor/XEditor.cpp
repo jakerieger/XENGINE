@@ -67,15 +67,15 @@ namespace x {
         switch (severity) {
             default:
             case X_LOG_SEVERITY_INFO:
-                return Colors::White.WithAlpha(0.45f).ToImVec4();
+                return Colors::White.WithAlpha(0.45f).To<ImVec4>();
             case X_LOG_SEVERITY_WARN:
-                return Color("#ffe100").ToImVec4();
+                return Color("#ffe100").To<ImVec4>();
             case X_LOG_SEVERITY_ERROR:
-                return Color("#eb529e").ToImVec4();
+                return Color("#eb529e").To<ImVec4>();
             case X_LOG_SEVERITY_FATAL:
                 return {1.0f, 0.0f, 0.0f, 1.0f};
             case X_LOG_SEVERITY_DEBUG:
-                return Color("#ebc388").ToImVec4();
+                return Color("#ebc388").To<ImVec4>();
         }
     }
 #pragma endregion
@@ -145,21 +145,21 @@ namespace x {
         style.TabRounding      = mBorderRadius;
 
         colors[ImGuiCol_BorderShadow]          = ImVec4(0.f, 0.f, 0.f, 0.f);
-        colors[ImGuiCol_Border]                = mBorder.ToImVec4();
-        colors[ImGuiCol_ButtonActive]          = mButtonBackground.WithAlpha(0.67f).ToImVec4();
-        colors[ImGuiCol_ButtonHovered]         = mButtonBackground.WithAlpha(0.8f).ToImVec4();
-        colors[ImGuiCol_Button]                = mButtonBackground.ToImVec4();
-        colors[ImGuiCol_CheckMark]             = mIcon.ToImVec4();
-        colors[ImGuiCol_ChildBg]               = mPanelBackground.ToImVec4();
-        colors[ImGuiCol_DockingPreview]        = mSelected.ToImVec4();
-        colors[ImGuiCol_DragDropTarget]        = mSelected.ToImVec4();
-        colors[ImGuiCol_FrameBgActive]         = mInputBackground.Brightness(0.4f).ToImVec4();
-        colors[ImGuiCol_FrameBgHovered]        = mInputBackground.Brightness(0.7f).ToImVec4();
-        colors[ImGuiCol_FrameBg]               = mInputBackground.ToImVec4();
-        colors[ImGuiCol_HeaderActive]          = mHeaderBackground.WithAlpha(0.67f).ToImVec4();
-        colors[ImGuiCol_HeaderHovered]         = mHeaderBackground.WithAlpha(0.8f).ToImVec4();
-        colors[ImGuiCol_Header]                = mHeaderBackground.ToImVec4();
-        colors[ImGuiCol_MenuBarBg]             = mMenuBackground.ToImVec4();
+        colors[ImGuiCol_Border]                = mBorder.To<ImVec4>();
+        colors[ImGuiCol_ButtonActive]          = mButtonBackground.WithAlpha(0.67f).To<ImVec4>();
+        colors[ImGuiCol_ButtonHovered]         = mButtonBackground.WithAlpha(0.8f).To<ImVec4>();
+        colors[ImGuiCol_Button]                = mButtonBackground.To<ImVec4>();
+        colors[ImGuiCol_CheckMark]             = mIcon.To<ImVec4>();
+        colors[ImGuiCol_ChildBg]               = mPanelBackground.To<ImVec4>();
+        colors[ImGuiCol_DockingPreview]        = mSelected.To<ImVec4>();
+        colors[ImGuiCol_DragDropTarget]        = mSelected.To<ImVec4>();
+        colors[ImGuiCol_FrameBgActive]         = mInputBackground.Brightness(0.4f).To<ImVec4>();
+        colors[ImGuiCol_FrameBgHovered]        = mInputBackground.Brightness(0.7f).To<ImVec4>();
+        colors[ImGuiCol_FrameBg]               = mInputBackground.To<ImVec4>();
+        colors[ImGuiCol_HeaderActive]          = mHeaderBackground.WithAlpha(0.67f).To<ImVec4>();
+        colors[ImGuiCol_HeaderHovered]         = mHeaderBackground.WithAlpha(0.8f).To<ImVec4>();
+        colors[ImGuiCol_Header]                = mHeaderBackground.To<ImVec4>();
+        colors[ImGuiCol_MenuBarBg]             = mMenuBackground.To<ImVec4>();
         colors[ImGuiCol_ModalWindowDimBg]      = ImVec4(0.00f, 0.00f, 0.00f, 0.5f);
         colors[ImGuiCol_NavHighlight]          = ImVec4(30.f / 255.f, 30.f / 255.f, 30.f / 255.f, 1.00f);
         colors[ImGuiCol_NavWindowingDimBg]     = ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
@@ -168,24 +168,24 @@ namespace x {
         colors[ImGuiCol_PlotHistogram]         = ImVec4(0.90f, 0.70f, 0.00f, 1.00f);
         colors[ImGuiCol_PlotLinesHovered]      = ImVec4(1.00f, 0.43f, 0.35f, 1.00f);
         colors[ImGuiCol_PlotLines]             = ImVec4(0.61f, 0.61f, 0.61f, 1.00f);
-        colors[ImGuiCol_PopupBg]               = mWindowBackground.ToImVec4();
+        colors[ImGuiCol_PopupBg]               = mWindowBackground.To<ImVec4>();
         colors[ImGuiCol_ResizeGripActive]      = ImVec4(0.26f, 0.59f, 0.98f, 0.95f);
         colors[ImGuiCol_ResizeGripHovered]     = ImVec4(0.26f, 0.59f, 0.98f, 0.67f);
         colors[ImGuiCol_ResizeGrip]            = ImVec4(0.26f, 0.59f, 0.98f, 0.20f);
-        colors[ImGuiCol_ScrollbarBg]           = mMenuBackground.ToImVec4();
-        colors[ImGuiCol_ScrollbarGrabActive]   = mIcon.ToImVec4();
-        colors[ImGuiCol_ScrollbarGrabHovered]  = mIcon.ToImVec4();
-        colors[ImGuiCol_ScrollbarGrab]         = mIcon.ToImVec4();
-        colors[ImGuiCol_SeparatorActive]       = mSelected.ToImVec4();
-        colors[ImGuiCol_SeparatorHovered]      = mSelected.ToImVec4();
-        colors[ImGuiCol_Separator]             = Color("#4e4e4e").ToImVec4();
-        colors[ImGuiCol_SliderGrabActive]      = mIcon.ToImVec4();
-        colors[ImGuiCol_SliderGrab]            = mIcon.ToImVec4();
-        colors[ImGuiCol_TabActive]             = mHeaderBackground.ToImVec4();
-        colors[ImGuiCol_TabHovered]            = mHeaderBackground.ToImVec4();
+        colors[ImGuiCol_ScrollbarBg]           = mMenuBackground.To<ImVec4>();
+        colors[ImGuiCol_ScrollbarGrabActive]   = mIcon.To<ImVec4>();
+        colors[ImGuiCol_ScrollbarGrabHovered]  = mIcon.To<ImVec4>();
+        colors[ImGuiCol_ScrollbarGrab]         = mIcon.To<ImVec4>();
+        colors[ImGuiCol_SeparatorActive]       = mSelected.To<ImVec4>();
+        colors[ImGuiCol_SeparatorHovered]      = mSelected.To<ImVec4>();
+        colors[ImGuiCol_Separator]             = Color("#4e4e4e").To<ImVec4>();
+        colors[ImGuiCol_SliderGrabActive]      = mIcon.To<ImVec4>();
+        colors[ImGuiCol_SliderGrab]            = mIcon.To<ImVec4>();
+        colors[ImGuiCol_TabActive]             = mHeaderBackground.To<ImVec4>();
+        colors[ImGuiCol_TabHovered]            = mHeaderBackground.To<ImVec4>();
         colors[ImGuiCol_TabUnfocusedActive]    = colors[ImGuiCol_TabActive];
         colors[ImGuiCol_TabUnfocused]          = colors[ImGuiCol_Tab];
-        colors[ImGuiCol_Tab]                   = mTabHeader.ToImVec4();
+        colors[ImGuiCol_Tab]                   = mTabHeader.To<ImVec4>();
         colors[ImGuiCol_TableBorderLight]      = ImVec4(0.23f, 0.23f, 0.25f, 1.00f);  // Prefer using Alpha=1.0 here
         colors[ImGuiCol_TableBorderLight]      = ImVec4(0.f, 0.f, 0.f, 0.f);
         colors[ImGuiCol_TableBorderStrong]     = ImVec4(0.31f, 0.31f, 0.35f, 1.00f);  // Prefer using Alpha=1.0 here
@@ -193,13 +193,13 @@ namespace x {
         colors[ImGuiCol_TableHeaderBg]         = ImVec4(0.19f, 0.19f, 0.20f, 1.00f);
         colors[ImGuiCol_TableRowBgAlt]         = ImVec4(1.00f, 1.00f, 1.00f, 0.06f);
         colors[ImGuiCol_TableRowBg]            = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-        colors[ImGuiCol_TextDisabled]          = mTextSecondary.ToImVec4();
-        colors[ImGuiCol_TextSelectedBg]        = mSelected.WithAlpha(0.5f).ToImVec4();
-        colors[ImGuiCol_Text]                  = mTextHighlight.ToImVec4();
-        colors[ImGuiCol_TitleBgActive]         = mTabHeader.ToImVec4();
-        colors[ImGuiCol_TitleBgCollapsed]      = mTabHeader.ToImVec4();
-        colors[ImGuiCol_TitleBg]               = mTabHeader.ToImVec4();
-        colors[ImGuiCol_WindowBg]              = mWindowBackground.ToImVec4();
+        colors[ImGuiCol_TextDisabled]          = mTextSecondary.To<ImVec4>();
+        colors[ImGuiCol_TextSelectedBg]        = mSelected.WithAlpha(0.5f).To<ImVec4>();
+        colors[ImGuiCol_Text]                  = mTextHighlight.To<ImVec4>();
+        colors[ImGuiCol_TitleBgActive]         = mTabHeader.To<ImVec4>();
+        colors[ImGuiCol_TitleBgCollapsed]      = mTabHeader.To<ImVec4>();
+        colors[ImGuiCol_TitleBg]               = mTabHeader.To<ImVec4>();
+        colors[ImGuiCol_WindowBg]              = mWindowBackground.To<ImVec4>();
     }
 #pragma endregion
 
@@ -384,7 +384,7 @@ namespace x {
                 ImGui::Text("Save scene as");
             }
             {
-                Gui::ScopedColorVars colors({{ImGuiCol_Separator, Color("#4e4e4e").ToImVec4()}});
+                Gui::ScopedColorVars colors({{ImGuiCol_Separator, Color("#4e4e4e").To<ImVec4>()}});
                 ImGui::Separator();
             }
 
@@ -440,7 +440,7 @@ namespace x {
                 ImGui::Text("Add a component");
             }
             {
-                Gui::ScopedColorVars colors({{ImGuiCol_Separator, Color("#4e4e4e").ToImVec4()}});
+                Gui::ScopedColorVars colors({{ImGuiCol_Separator, Color("#4e4e4e").To<ImVec4>()}});
                 ImGui::Separator();
             }
 
@@ -518,7 +518,7 @@ namespace x {
                 ImGui::Text("Select asset");
             }
             {
-                Gui::ScopedColorVars colors({{ImGuiCol_Separator, Color("#4e4e4e").ToImVec4()}});
+                Gui::ScopedColorVars colors({{ImGuiCol_Separator, Color("#4e4e4e").To<ImVec4>()}});
                 ImGui::Separator();
             }
 
@@ -607,7 +607,7 @@ namespace x {
                 ImGui::Text("Create a new project");
             }
             {
-                Gui::ScopedColorVars colors({{ImGuiCol_Separator, Color("#4e4e4e").ToImVec4()}});
+                Gui::ScopedColorVars colors({{ImGuiCol_Separator, Color("#4e4e4e").To<ImVec4>()}});
                 ImGui::Separator();
             }
 
@@ -656,7 +656,7 @@ namespace x {
                                    {16, 16},
                                    Gui::kUV_0,
                                    Gui::kUV_1,
-                                   Colors::Transparent.ToImVec4(),
+                                   Colors::Transparent.To<ImVec4>(),
                                    Colors::White75.ToImVec4())) {
                 char path[locationSize] {0};
                 if (Platform::SelectFolderDialog(mHwnd, "Select Project Directory", path, locationSize)) {
@@ -769,7 +769,7 @@ namespace x {
                 ImGui::Text("Create a new material");
             }
             {
-                Gui::ScopedColorVars colors({{ImGuiCol_Separator, Color("#4e4e4e").ToImVec4()}});
+                Gui::ScopedColorVars colors({{ImGuiCol_Separator, Color("#4e4e4e").To<ImVec4>()}});
                 ImGui::Separator();
             }
 
@@ -808,7 +808,7 @@ namespace x {
                 ImGui::Text("Select scene");
             }
             {
-                Gui::ScopedColorVars colors({{ImGuiCol_Separator, Color("#4e4e4e").ToImVec4()}});
+                Gui::ScopedColorVars colors({{ImGuiCol_Separator, Color("#4e4e4e").To<ImVec4>()}});
                 ImGui::Separator();
             }
 
@@ -868,7 +868,7 @@ namespace x {
                 ImGui::Text("Add a new entity");
             }
             {
-                Gui::ScopedColorVars colors({{ImGuiCol_Separator, Color("#4e4e4e").ToImVec4()}});
+                Gui::ScopedColorVars colors({{ImGuiCol_Separator, Color("#4e4e4e").To<ImVec4>()}});
                 ImGui::Separator();
             }
 
@@ -904,9 +904,9 @@ namespace x {
     void XEditor::View_MainMenu() {
         {
             Gui::ScopedStyleVars styles({{ImGuiStyleVar_WindowBorderSize, 0.0f}});
-            Gui::ScopedColorVars colors({{ImGuiCol_Text, mTheme.mTextPrimary.ToImVec4()},
-                                         {ImGuiCol_PopupBg, mTheme.mInputBackground.ToImVec4()},
-                                         {ImGuiCol_Separator, Colors::White.WithAlpha(0.1f).ToImVec4()}});
+            Gui::ScopedColorVars colors({{ImGuiCol_Text, mTheme.mTextPrimary.To<ImVec4>()},
+                                         {ImGuiCol_PopupBg, mTheme.mInputBackground.To<ImVec4>()},
+                                         {ImGuiCol_Separator, Colors::White.WithAlpha(0.1f).To<ImVec4>()}});
             if (ImGui::BeginMainMenuBar()) {
                 if (ImGui::BeginMenu("File")) {
                     if (ImGui::MenuItem("New Project", "Ctrl+N")) { mNewProjectOpen = true; }
@@ -1026,7 +1026,7 @@ namespace x {
                                    btnSize,
                                    Gui::kUV_0,
                                    Gui::kUV_1,
-                                   Colors::Transparent.ToImVec4(),
+                                   Colors::Transparent.To<ImVec4>(),
                                    ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
                 ImGui::SameLine();
 
@@ -1035,7 +1035,7 @@ namespace x {
                                    btnSize,
                                    Gui::kUV_0,
                                    Gui::kUV_1,
-                                   Colors::Transparent.ToImVec4(),
+                                   Colors::Transparent.To<ImVec4>(),
                                    ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
                 ImGui::SameLine();
 
@@ -1044,7 +1044,7 @@ namespace x {
                                    btnSize,
                                    Gui::kUV_0,
                                    Gui::kUV_1,
-                                   Colors::Transparent.ToImVec4(),
+                                   Colors::Transparent.To<ImVec4>(),
                                    ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
                 ImGui::SameLine();
 
@@ -1053,7 +1053,7 @@ namespace x {
                                    btnSize,
                                    Gui::kUV_0,
                                    Gui::kUV_1,
-                                   Colors::Transparent.ToImVec4(),
+                                   Colors::Transparent.To<ImVec4>(),
                                    ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
             }
 
@@ -1075,7 +1075,7 @@ namespace x {
                                    btnSize,
                                    Gui::kUV_0,
                                    Gui::kUV_1,
-                                   Colors::Transparent.ToImVec4(),
+                                   Colors::Transparent.To<ImVec4>(),
                                    ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
                 ImGui::SameLine();
 
@@ -1084,7 +1084,7 @@ namespace x {
                                    btnSize,
                                    Gui::kUV_0,
                                    Gui::kUV_1,
-                                   Colors::Transparent.ToImVec4(),
+                                   Colors::Transparent.To<ImVec4>(),
                                    ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
                 ImGui::SameLine();
 
@@ -1093,7 +1093,7 @@ namespace x {
                                    btnSize,
                                    Gui::kUV_0,
                                    Gui::kUV_1,
-                                   Colors::Transparent.ToImVec4(),
+                                   Colors::Transparent.To<ImVec4>(),
                                    ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
                 ImGui::SameLine();
 
@@ -1102,7 +1102,7 @@ namespace x {
                                    btnSize,
                                    Gui::kUV_0,
                                    Gui::kUV_1,
-                                   Colors::Transparent.ToImVec4(),
+                                   Colors::Transparent.To<ImVec4>(),
                                    ImGui::GetStyleColorVec4(ImGuiCol_CheckMark));
             }
 
@@ -1249,10 +1249,10 @@ namespace x {
 
                 Gui::ScopedStyleVars buttonVars(
                   {{ImGuiStyleVar_FrameRounding, 16.0f}, {ImGuiStyleVar_FrameBorderSize, 4.0f}});
-                Gui::ScopedColorVars buttonColors({{ImGuiCol_Border, Color("#353535").ToImVec4()},
-                                                   {ImGuiCol_Button, Color("#161616").ToImVec4()},
-                                                   {ImGuiCol_ButtonActive, Color("#222222").ToImVec4()},
-                                                   {ImGuiCol_ButtonHovered, Color("#1F1F1F").ToImVec4()}});
+                Gui::ScopedColorVars buttonColors({{ImGuiCol_Border, Color("#353535").To<ImVec4>()},
+                                                   {ImGuiCol_Button, Color("#161616").To<ImVec4>()},
+                                                   {ImGuiCol_ButtonActive, Color("#222222").To<ImVec4>()},
+                                                   {ImGuiCol_ButtonHovered, Color("#1F1F1F").To<ImVec4>()}});
 
                 ImGui::PushFont(mFonts["display_20"]);
 
@@ -1723,7 +1723,7 @@ namespace x {
                 const f32 padding       = (cellWidth - thumbnailSize) / 2.0f;  // Equal padding on both sides
 
                 ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {4.0f, 4.0f});
-                Gui::ScopedColorVars colors({{ImGuiCol_ChildBg, mTheme.mWindowBackground.ToImVec4()}});
+                Gui::ScopedColorVars colors({{ImGuiCol_ChildBg, mTheme.mWindowBackground.To<ImVec4>()}});
                 if (ImGui::BeginChild("##GridScrollRegion", {0, 0}, false)) {
                     // Calculate number of rows needed
                     i32 itemCount = CAST<i32>(assets.size());

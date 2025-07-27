@@ -4,10 +4,8 @@
 
 #pragma warning(disable : 4244)
 
-#include <iomanip>
-#include <sstream>
 #include "Color.hpp"
-#include "../Common/Templates.hpp"
+#include "Common/Templates.hpp"
 
 namespace x {
     Color::Color(f32 v, f32 a) {
