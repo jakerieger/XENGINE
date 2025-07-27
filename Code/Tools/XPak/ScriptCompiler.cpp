@@ -12,6 +12,9 @@ extern "C" {
 }
 
 namespace x {
+    static constexpr int kLuaKeepDebugInfo {0};
+    static constexpr int kLuaStripDebugInfo {1};
+
     vector<u8> ScriptCompiler::Compile(const str& source, const str& chunkName) {
         vector<u8> bytecode;
 
@@ -31,7 +34,13 @@ namespace x {
         BytecodeWriterState writerState;
         writerState.bytecode = &bytecode;
 
+        // Visual Studio 2022 uses Lua 5.2 for some reason, this fixes the discrepancy
+        // TODO: Enforce the same Lua version between IDE project files
+#if LUA_VERSION_NUM >= 502
+        int dumpResult = lua_dump(L, BytecodeWriter, &writerState, kLuaKeepDebugInfo);
+#else
         int dumpResult = lua_dump(L, BytecodeWriter, &writerState);
+#endif
 
         if (dumpResult != 0) {
             std::cerr << "Failed to dump Lua bytecode: " << dumpResult << std::endl;
