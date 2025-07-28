@@ -68,8 +68,3 @@ namespace x {
 #define CCAST const_cast
 #define DCAST dynamic_cast
 #define RCAST reinterpret_cast
-
-#define CHECK_FLAG(bits, flag) (bits & flag) != 0
-
-constexpr auto HLSL_TRUE  = 1U;
-constexpr auto HLSL_FALSE = 0U;

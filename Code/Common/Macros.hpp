@@ -48,6 +48,7 @@ inline constexpr size_t operator"" _GIGABYTES(unsigned long long n) {
 #define X_CLEARBIT(x, bit) ((x) &= ~X_BIT(bit))
 #define X_TOGGLEBIT(x, bit) ((x) ^= X_BIT(bit))
 #define X_CHECKBIT(x, bit) (!!((x) & X_BIT(bit)))
+#define X_CHECK_FLAG(bits, flag) (bits & flag) != 0
 
 #define X_MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define X_MAX(a, b) (((a) > (b)) ? (a) : (b))

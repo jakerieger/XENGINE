@@ -334,7 +334,7 @@ namespace x {
             return {};
         }
 
-        bool compressed = CHECK_FLAG(entry.mAssetFlags, kAssetFlag_Compressed);
+        bool compressed = X_CHECK_FLAG(entry.mAssetFlags, kAssetFlag_Compressed);
         auto bytes      = FileReader::ReadBlock(pakFile, entry.mCompressedSize, entry.mOffset + kAssetHeaderSize);
         if (bytes.size() != entry.mCompressedSize) {
             std::cerr << "File size mismatch: " << pakFile.Str() << std::endl;

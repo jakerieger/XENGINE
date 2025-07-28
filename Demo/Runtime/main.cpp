@@ -7,24 +7,24 @@ using namespace x;
 
 class GameWindow final : public IWindow {
 public:
-    GameWindow() : IWindow("Demo", 1280, 720, 0), mGame(mContext) {
-        AddListener(&mGame);
+    GameWindow() : IWindow("BallRoller", 1280, 720, 0), mGame(mContext) {
+        // AddListener(&mGame);
         SetOpenMaximized(true);
     }
 
     void OnInitialize() override {
-        mGame.Initialize(this, mWindowViewport.get());
+        // mGame.Initialize(this, mWindowViewport.get());
         // mGame.TransitionScene("");
     }
 
     void OnUpdate() override {
-        mGame.Update();
+        // mGame.Update();
     }
 
     void OnRender() override {
-        mWindowViewport->AttachViewport();
-        mWindowViewport->ClearAll();
-        mGame.RenderFrame();
+        // mWindowViewport->AttachViewport();
+        // mWindowViewport->ClearAll();
+        // mGame.RenderFrame();
     }
 
 private:

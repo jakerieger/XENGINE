@@ -1,0 +1,1 @@
+Get-ChildItem -Path "C:\Users\conta\Documents\XENGINE Projects\BallRoller\Content" -File -Recurse | ForEach-Object { & .\xpakc.exe generate $_.FullName -o "C:\Users\conta\Documents\XENGINE Projects\BallRoller\Content" }

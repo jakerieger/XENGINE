@@ -18,8 +18,8 @@ namespace x {
         Float4 mColor         = {1.0f, 1.0f, 1.0f, 1.0f};  // 16 bytes
         f32 mIntensity        = 1.0f;                      // 4 bytes
         f32 mPad1[3]          = {0.0f, 0.0f, 0.0f};
-        u32 mCastsShadows     = HLSL_TRUE;  // 4 bytes
-        u32 mEnabled          = HLSL_TRUE;  // 4 bytes
+        u32 mCastsShadows     = 1U;  // 4 bytes
+        u32 mEnabled          = 1U;  // 4 bytes
         f32 mPad2[2]          = {0.0f, 0.0f};
         Matrix mLightViewProj = XMMatrixIdentity();
     };
@@ -34,8 +34,8 @@ namespace x {
         f32 mQuadratic   = 0.032f;
         f32 mRadius      = 45.f;
         f32 mPad2        = 0.f;
-        u32 mCastsShadow = HLSL_TRUE;
-        u32 mEnabled     = HLSL_FALSE;
+        u32 mCastsShadow = 1U;
+        u32 mEnabled     = 0U;
     };
 
     struct alignas(16) SpotLight {
@@ -48,8 +48,8 @@ namespace x {
         f32 mInnerAngle   = 0.8f;                // Inner cone angle (cosine)
         f32 mOuterAngle   = 0.6f;                // Outer cone angle (cosine)
         f32 mRange        = 50.0f;               // Maximum distance light travels
-        u32 mCastsShadow  = HLSL_TRUE;
-        u32 mEnabled      = HLSL_FALSE;
+        u32 mCastsShadow  = 1U;
+        u32 mEnabled      = 0U;
         f32 mPad3[3]      = {0.0f, 0.0f, 0.0f};
     };
 
@@ -62,8 +62,8 @@ namespace x {
         f32 mPad3;
         Float2 mDimensions = {1.0f, 1.0f};  // Width and height of the area
         f32 mIntensity     = 1.0f;          // Overall brightness
-        u32 mCastsShadow   = HLSL_TRUE;
-        u32 mEnabled       = HLSL_FALSE;
+        u32 mCastsShadow   = 1U;
+        u32 mEnabled       = 0U;
         f32 mPad4[3];
     };
 

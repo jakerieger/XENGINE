@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Material name="DefaultMaterial" base="Lit" transparent="false">
+	<Properties/>
+	<Textures>
+		<Texture name="albedo" asset="81266787314105429"/>
+		<Texture name="metallic" asset="125988655927923706"/>
+		<Texture name="roughness" asset="104251505131210927"/>
+		<Texture name="normal" asset="82731342766530671"/>
+	</Textures>
+</Material>
