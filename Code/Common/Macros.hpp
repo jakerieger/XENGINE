@@ -35,7 +35,6 @@ inline constexpr size_t operator"" _GIGABYTES(unsigned long long n) {
         if (!(cond)) __debugbreak();
 #else
     #define DEBUG_ONLY(expr)
-
     #define X_ASSERT(cond)
 #endif
 
