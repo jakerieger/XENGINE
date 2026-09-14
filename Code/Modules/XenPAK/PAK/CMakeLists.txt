@@ -1,4 +1,4 @@
-project(XenPAK)
+project(Xen2D)
 
 add_library(XenPAK STATIC
         Aes.cpp
@@ -28,6 +28,7 @@ add_library(XenPAK STATIC
         PakFormat.cpp
         PakFormat.hpp
 )
+add_library(Xen::PAK ALIAS XenPAK)
 
 target_link_libraries(XenPAK PRIVATE lz4_static)
 target_include_directories(XenPAK PRIVATE ${MODULES_ROOT} ${VENDOR_ROOT})

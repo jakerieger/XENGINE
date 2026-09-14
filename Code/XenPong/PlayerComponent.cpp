@@ -4,8 +4,8 @@
 
 #include "PlayerComponent.hpp"
 
-#include <Engine/Scene.hpp>
-#include <Engine/Actor.hpp>
+#include <Xen/Scene.hpp>
+#include <Xen/Actor.hpp>
 
 using namespace Xen;
 

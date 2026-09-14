@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include <Engine/ComponentRegistry.hpp>
+#include <Xen/ComponentRegistry.hpp>
 
 _DefineComponent(PlayerComponent)
 
