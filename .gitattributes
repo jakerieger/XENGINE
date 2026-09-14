@@ -1,0 +1,5 @@
+*.rc linguist-vendored
+Code/Vendor/* linguist-vendored
+*.h linguist-vendored
+*.txt linguist-vendored
+CMakeLists.txt linguist-vendored
