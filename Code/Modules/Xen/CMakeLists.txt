@@ -2,7 +2,7 @@ project(Xen2D)
 
 file(GLOB SHADER_INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/Shaders/Include/*.h)
 
-add_library(XenEngine STATIC
+add_library(Xen STATIC
         # Vendor
         ${VENDOR_ROOT}/nlohmann/json.hpp
         ${VENDOR_ROOT}/stb_image.cpp
@@ -64,15 +64,15 @@ add_library(XenEngine STATIC
         Backends/GLRenderDevice.cpp
         Backends/GLRenderDevice.hpp
 )
-add_library(Xen::Engine ALIAS XenEngine)
+add_library(Xen::Xen ALIAS Xen)
 
-target_include_directories(XenEngine PUBLIC
+target_include_directories(Xen PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 
-target_link_libraries(XenEngine PUBLIC
-        XenPAK
+target_link_libraries(Xen PUBLIC
+        Xen::PAK
         glm::glm-header-only
         glfw
 )
-target_include_directories(XenEngine PRIVATE ${MODULES_ROOT}/XenPAK ${VENDOR_ROOT})
+target_include_directories(Xen PRIVATE ${MODULES_ROOT}/XenPAK ${VENDOR_ROOT})

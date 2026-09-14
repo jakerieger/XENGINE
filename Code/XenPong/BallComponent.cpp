@@ -3,7 +3,7 @@
 //
 
 #include "BallComponent.hpp"
-#include "Engine/Scene.hpp"
+#include "Xen/Scene.hpp"
 
 using namespace Xen;
 

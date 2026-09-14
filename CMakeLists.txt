@@ -25,7 +25,14 @@ set(VENDOR_ROOT ${CODE_ROOT}/Vendor)
 # CMake helpers for engine
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Code/Modules/Engine/CMake")
 
-add_subdirectory(${MODULES_ROOT}/Engine)
-add_subdirectory(${MODULES_ROOT}/CrashHandler)
+add_subdirectory(${MODULES_ROOT}/Xen)
 add_subdirectory(${MODULES_ROOT}/XenPAK)
-add_subdirectory(${CODE_ROOT}/XenPong)
+add_subdirectory(${MODULES_ROOT}/CrashHandler)
+
+# Demo project
+option(BUILD_DEMO "Build the XenPong demo project")
+
+if (BUILD_DEMO)
+    message(STATUS "Building XenPong demo")
+    add_subdirectory(${CODE_ROOT}/XenPong)
+endif ()
