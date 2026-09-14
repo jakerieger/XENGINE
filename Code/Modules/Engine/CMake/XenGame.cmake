@@ -1,0 +1,51 @@
+include_guard(GLOBAL)
+
+set(_XEN_GAME_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}")
+
+function(xen_configure_game TARGET)
+    cmake_parse_arguments(ARG
+            "ALLOW_NO_PAK;LOOSE_ASSETS_IN_RELEASE;NO_COMMANDLINE_CONTENT_DIRS"
+            "PAK_FILENAME"
+            "CONTENT_DIRS"
+            ${ARGN})
+
+    if (NOT ARG_PAK_FILENAME AND NOT ARG_ALLOW_NO_PAK)
+        message(FATAL_ERROR
+                "xen_configure_game(${TARGET}): PAK_FILENAME is required for shippable "
+                "builds. Pass ALLOW_NO_PAK if this target is intentionally loose-only.")
+    endif ()
+    if (NOT ARG_CONTENT_DIRS)
+        message(FATAL_ERROR "xen_configure_game(${TARGET}): CONTENT_DIRS is required for development builds.")
+    endif ()
+
+    # Quote as raw string literals so Windows paths survive intact.
+    set(XEN_GEN_PAK_FILES "")
+    if (ARG_PAK_FILENAME)
+        set(XEN_GEN_PAK_FILES "R\"(${ARG_PAK_FILENAME})\"")
+    endif ()
+
+    set(XEN_GEN_CONTENT_DIRS "")
+    foreach (dir IN LISTS ARG_CONTENT_DIRS)
+        get_filename_component(dir "${dir}" ABSOLUTE)
+        string(APPEND XEN_GEN_CONTENT_DIRS "R\"(${dir})\",")
+    endforeach ()
+
+    set(XEN_GEN_ALLOW_CLI_DIRS "true")
+    if (ARG_NO_COMMANDLINE_CONTENT_DIRS)
+        set(XEN_GEN_ALLOW_CLI_DIRS "false")
+    endif ()
+
+    set(XEN_GEN_LOOSE_IN_RELEASE "false")
+    if (ARG_LOOSE_ASSETS_IN_RELEASE)
+        set(XEN_GEN_LOOSE_IN_RELEASE "true")
+    endif ()
+
+    set(gen_dir "${CMAKE_CURRENT_BINARY_DIR}/XenGenerated/${TARGET}")
+    configure_file(
+            "${_XEN_GAME_CMAKE_DIR}/XenGameSettings.h.in"
+            "${gen_dir}/Xen/XenGameSettings.h"
+            @ONLY)
+
+    target_include_directories(${TARGET} PRIVATE "${gen_dir}")
+    target_link_libraries(${TARGET} PRIVATE Xen::Engine)
+endfunction()

@@ -1,0 +1,24 @@
+//
+// Created by Jake Rieger on 9/14/2026.
+//
+
+#pragma once
+
+#include "../AssetSettings.hpp"
+
+namespace Xen::Generated {
+    inline AssetSettings GameSettings() {
+        AssetSettings Settings;
+        Settings.PakFiles                    = { @XEN_GEN_PAK_FILES@ };
+        Settings.ContentDirs                 = { @XEN_GEN_CONTENT_DIRS@ };
+        Settings.AllowCommandLineContentDirs = @XEN_GEN_ALLOW_CLI_DIRS@;
+
+#ifdef NDEBUG
+        Settings.MountContentDirs = @XEN_GEN_LOOSE_IN_RELEASE@;
+#else
+        Settings.MountContentDirs = !Settings.ContentDirs.empty();
+#endif
+
+        return Settings;
+    }
+}
