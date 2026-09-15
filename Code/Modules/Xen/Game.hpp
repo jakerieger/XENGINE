@@ -18,6 +18,14 @@
 
 #include <filesystem>
 
+#ifdef PLATFORM_WINDOWS
+    #ifndef _WINDOWS_
+        #define WIN32_LEAN_AND_MEAN
+        #define NOMINMAX
+        #include <Windows.h>
+    #endif
+#endif
+
 namespace Xen {
     /// @brief Root object. Owns engine services, the active scene, and the
     /// main loop.
@@ -160,6 +168,21 @@ namespace Xen {
         const auto MountConfig = BuildMountConfig(Settings, argc, argv);
 
         try {
+#ifndef NDEBUG
+    #ifdef PLATFORM_WINDOWS
+            ::AllocConsole();
+
+            FILE* FilePointer;
+            freopen_s(&FilePointer, "CONOUT$", "w", stdout);
+            freopen_s(&FilePointer, "CONOUT$", "w", stderr);
+            freopen_s(&FilePointer, "CONIN$", "r", stdin);
+
+            std::ios::sync_with_stdio(true);
+
+            ::SetConsoleTitleA(std::string(Name + " | Console").c_str());
+    #endif
+#endif
+
             GameClass {Name, MountConfig}.Run();
         } catch (const EngineException& Ex) {
             std::fprintf(stderr, "%s\n", Ex.what());
@@ -169,12 +192,6 @@ namespace Xen {
 }  // namespace Xen
 
 #ifdef PLATFORM_WINDOWS
-    #ifndef _WINDOWS_
-        #define WIN32_LEAN_AND_MEAN
-        #define NOMINMAX
-        #include <Windows.h>
-    #endif
-
     #define XEN_ENTRYPOINT int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 
     #define XEN_GAME(GameClass, Title)                                                                                 \
