@@ -5,7 +5,8 @@
 #include "PakFileSource.hpp"
 #include "Codec.hpp"
 
-#include <Xen/Exception.hpp>
+#include <Common/Log.hpp>
+#include <Common/Exception.hpp>
 
 namespace Xen::PAK {
     PakFileSource::PakFileSource(std::filesystem::path PakPath, int Priority)

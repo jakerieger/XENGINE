@@ -4,7 +4,7 @@
 
 #include "GLRenderDevice.hpp"
 #include "GLTranslate.hpp"
-#include "../Log.hpp"
+#include "../../Common/Log.hpp"
 
 #include <cstdarg>
 #include <cstdio>

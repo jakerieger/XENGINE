@@ -4,12 +4,13 @@
 
 #pragma once
 
-#include "EngineCommon.hpp"
-#include "Exception.hpp"
+#include <Common/XenCommon.hpp>
+#include <Common/Exception.hpp>
+#include <Common/Log.hpp>
+
 #include "Window.hpp"
 
 #include <INIReader.h>
-#include <filesystem>
 
 namespace Xen {
     struct EngineConfig {

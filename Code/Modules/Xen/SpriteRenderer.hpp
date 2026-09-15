@@ -5,7 +5,8 @@
 
 #pragma once
 
-#include "EngineCommon.hpp"
+#include <Common/XenCommon.hpp>
+
 #include "RenderDevice.hpp"
 #include "SpriteBatcher.hpp"
 #include "TextureCache.hpp"

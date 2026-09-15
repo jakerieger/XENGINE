@@ -4,6 +4,7 @@
 
 #include "Codec.hpp"
 
+#include <Common/Log.hpp>
 #include <lz4.h>
 #include <stdexcept>
 #include <limits>

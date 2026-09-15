@@ -5,9 +5,9 @@
 #include "LooseFileSource.hpp"
 #include "Canonicalize.hpp"
 
-#include <Xen/Exception.hpp>
+#include <Common/Log.hpp>
+#include <Common/Exception.hpp>
 #include <fstream>
-#include <stdexcept>
 #include <cstdio>
 
 namespace Xen::PAK {

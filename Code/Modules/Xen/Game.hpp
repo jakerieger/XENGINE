@@ -4,8 +4,9 @@
 
 #pragma once
 
+#include <Common/XenCommon.hpp>
+
 #include "AssetSettings.hpp"
-#include "EngineCommon.hpp"
 #include "EngineConfig.hpp"
 #include "Scene.hpp"
 #include "SpriteBatcher.hpp"

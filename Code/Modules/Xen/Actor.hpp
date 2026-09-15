@@ -4,10 +4,11 @@
 
 #pragma once
 
-#include "EngineCommon.hpp"
+#include <Common/XenCommon.hpp>
+#include <Common/Exception.hpp>
+
 #include "ActorHandle.hpp"
 #include "Component.hpp"
-#include "Exception.hpp"
 #include "Transform.hpp"
 
 #include <memory>

@@ -7,7 +7,7 @@
 #include "AssetID.hpp"
 #include "Aes.hpp"
 
-#include <Xen/Exception.hpp>
+#include <Common/Exception.hpp>
 #include <array>
 #include <vector>
 

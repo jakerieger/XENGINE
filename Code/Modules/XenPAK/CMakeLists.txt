@@ -31,5 +31,8 @@ add_library(XenPAK STATIC
 )
 add_library(Xen::PAK ALIAS XenPAK)
 
-target_link_libraries(XenPAK PRIVATE lz4_static)
+target_link_libraries(XenPAK PRIVATE
+        Xen::Common
+        lz4_static
+)
 target_include_directories(XenPAK PRIVATE ${MODULES_ROOT} ${VENDOR_ROOT})

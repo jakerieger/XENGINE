@@ -3,6 +3,7 @@ project(Xen2D)
 add_executable(PAKTool main.cpp)
 
 target_link_libraries(PAKTool PRIVATE
+        Xen::Common
         Xen::PAK
         CLI11::CLI11
 )

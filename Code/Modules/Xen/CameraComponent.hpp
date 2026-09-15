@@ -4,7 +4,8 @@
 
 #pragma once
 
-#include "EngineCommon.hpp"
+#include <Common/XenCommon.hpp>
+
 #include "Component.hpp"
 #include "ComponentRegistry.hpp"
 #include "Transform.hpp"

@@ -2,8 +2,10 @@
 // TextureCache.cpp
 //
 
+#include <Common/Log.hpp>
+#include <Common/Exception.hpp>
+
 #include "TextureCache.hpp"
-#include "Exception.hpp"
 
 #include <XenPAK/AssetRegistry.hpp>
 #include <XenPAK/AssetBuffer.hpp>

@@ -2,8 +2,10 @@
 // Created by Jake Rieger on 9/8/2026.
 //
 
+#include <Common/Log.hpp>
+#include <Common/Exception.hpp>
+
 #include "ComponentRegistry.hpp"
-#include "Exception.hpp"
 
 #include <algorithm>
 #include <ranges>

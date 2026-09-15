@@ -7,7 +7,7 @@
 #include "AssetID.hpp"
 #include "Crypto.hpp"
 
-#include <Xen/Exception.hpp>
+#include <Common/Exception.hpp>
 #include <array>
 
 namespace Xen::PAK {

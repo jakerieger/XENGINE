@@ -4,7 +4,7 @@
 
 #include "Canonicalize.hpp"
 
-#include <Xen/EngineCommon.hpp>
+#include <Common/XenCommon.hpp>
 #include <algorithm>
 #include <cctype>
 

@@ -7,7 +7,7 @@
 #include "AssetID.hpp"
 #include "PakFormat.hpp"
 
-#include <Xen/Exception.hpp>
+#include <Common/Exception.hpp>
 #include <filesystem>
 #include <string>
 #include <vector>

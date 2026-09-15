@@ -6,7 +6,7 @@
 
 #include "AssetRegistry.hpp"
 
-#include <Xen/Exception.hpp>
+#include <Common/Exception.hpp>
 #include <filesystem>
 
 namespace Xen::PAK {

@@ -2,6 +2,8 @@
 // Created by Jake Rieger on 9/8/2026.
 //
 
+#include <Common/Log.hpp>
+
 #include "SceneSerializer.hpp"
 #include "ComponentRegistry.hpp"
 

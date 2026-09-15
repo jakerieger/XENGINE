@@ -4,8 +4,9 @@
 
 #pragma once
 
+#include <Common/XenCommon.hpp>
+
 #include "CameraComponent.hpp"
-#include "EngineCommon.hpp"
 #include "SpriteComponent.hpp"
 #include "TextureCache.hpp"
 

@@ -30,15 +30,10 @@ add_library(Xen STATIC
         Component.hpp
         ComponentRegistry.cpp
         ComponentRegistry.hpp
-        DateTime.hpp
-        EngineCommon.hpp
         EngineConfig.hpp
         EngineContext.hpp
-        Exception.hpp
         Game.cpp
         Game.hpp
-        Log.cpp
-        Log.hpp
         Reflection.hpp
         RenderDevice.hpp
         RHI.cpp
@@ -47,7 +42,6 @@ add_library(Xen STATIC
         Scene.hpp
         SceneSerializer.cpp
         SceneSerializer.hpp
-        Signature.hpp
         SpriteComponent.cpp
         SpriteComponent.hpp
         SpriteRenderer.cpp
@@ -71,6 +65,7 @@ target_include_directories(Xen PUBLIC
 )
 
 target_link_libraries(Xen PUBLIC
+        Xen::Common
         Xen::PAK
         glm::glm-header-only
         glfw

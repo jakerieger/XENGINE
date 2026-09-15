@@ -4,6 +4,7 @@
 
 #include "PakManifest.hpp"
 
+#include <Common/Log.hpp>
 #include <nlohmann/json.hpp>
 #include <fstream>
 

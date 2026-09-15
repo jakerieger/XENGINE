@@ -2,9 +2,11 @@
 // Created by Jake Rieger on 9/8/2026.
 //
 
+#include <Common/Log.hpp>
+#include <Common/Exception.hpp>
+
 #include "SpriteComponent.hpp"
 #include "Actor.hpp"
-#include "Exception.hpp"
 #include "Scene.hpp"
 
 namespace Xen {

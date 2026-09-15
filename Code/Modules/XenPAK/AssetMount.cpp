@@ -6,6 +6,8 @@
 #include "LooseFileSource.hpp"
 #include "PakFileSource.hpp"
 
+#include <Common/Log.hpp>
+
 namespace Xen::PAK {
     namespace fs = std::filesystem;
 

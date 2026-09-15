@@ -4,7 +4,8 @@
 
 #pragma once
 
-#include "EngineCommon.hpp"
+#include <Common/XenCommon.hpp>
+
 #include "Actor.hpp"
 #include "CameraComponent.hpp"
 #include "EngineContext.hpp"

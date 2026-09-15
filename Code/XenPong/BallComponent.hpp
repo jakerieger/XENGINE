@@ -7,7 +7,7 @@
 #include <Xen/Actor.hpp>
 #include <Xen/Component.hpp>
 #include <Xen/ComponentRegistry.hpp>
-#include <Xen/EngineCommon.hpp>
+#include <../Modules/Common/XenCommon.hpp>
 #include <random>
 
 _DefineComponent(BallComponent)

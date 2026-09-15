@@ -3,7 +3,6 @@
 //
 
 #include "Log.hpp"
-
 #include "DateTime.hpp"
 #include "Exception.hpp"
 

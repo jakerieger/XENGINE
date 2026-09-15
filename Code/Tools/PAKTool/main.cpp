@@ -1,3 +1,5 @@
+#include <Common/Log.hpp>
+
 #include <XenPAK/AssetID.hpp>
 #include <XenPAK/Codec.hpp>
 #include <XenPAK/ContentScanner.hpp>
@@ -340,7 +342,7 @@ int main(int argc, char** argv) {
         if (*PackCmd) return RunPack(PackContentDir, PackOutput);
         if (*UnpackCmd) return RunUnpack(UnpackPak, UnpackOutputDir);
         if (*InfoCmd) return RunInfo(InfoPak);
-    } catch (const std::exception& Ex) {
+    } catch (const EngineException& Ex) {
         std::fprintf(stderr, "[PAKTool] error: %s\n", Ex.what());
         return EXIT_FAILURE;
     }

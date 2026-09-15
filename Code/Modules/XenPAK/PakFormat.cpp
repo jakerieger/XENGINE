@@ -5,6 +5,8 @@
 #include "PakFormat.hpp"
 #include "BinaryIO.hpp"
 
+#include <Common/Log.hpp>
+
 namespace Xen::PAK {
     using namespace BinaryIO;
 

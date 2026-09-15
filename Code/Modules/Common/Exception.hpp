@@ -10,12 +10,13 @@
 #include <exception>
 
 namespace Xen {
+    inline std::string FormatExceptionMessage(const std::string& ExceptionType, const std::string& Message) {
+        return std::format("({}) in {}: {}", ExceptionType, _SignatureHere, Message);
+    }
+
     class EngineException : public std::exception {
     public:
-        explicit EngineException(const std::string& ExceptionType, const std::string& Message) {
-            _Message = std::format("({}) in {}: {}", ExceptionType, _SignatureHere, Message);
-        }
-
+        explicit EngineException(const std::string& Message) : _Message(Message) {}
         const char* what() const noexcept override { return _Message.c_str(); }
 
     private:
@@ -29,4 +30,7 @@ namespace Xen {
         using EngineException::EngineException;                                                                        \
     };
 
-#define _ThrowEngineException(Type, Message) throw Type(#Type, Message)
+#define _ThrowEngineException(Type, Message)                                                                           \
+    const auto __MsgFmt_##Type = Xen::FormatExceptionMessage(#Type, Message);                                          \
+    _LogCritical(__MsgFmt_##Type.c_str());                                                                             \
+    throw Type(__MsgFmt_##Type)
