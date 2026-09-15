@@ -4,6 +4,8 @@
 
 #include "PlayerComponent.hpp"
 
+#include "Game.hpp"
+
 #include <Xen/Scene.hpp>
 #include <Xen/Actor.hpp>
 
@@ -17,7 +19,19 @@ void PlayerComponent::BeginPlay() {
 
 void PlayerComponent::Tick(f32 DeltaTime) {}
 
-void PlayerComponent::FixedTick(f32 FixedDelta) {}
+void PlayerComponent::FixedTick(f32 FixedDelta) {
+    const auto CurrentPos = GetOwner()->GetPosition();
+
+    if (GetGame()->GetInputManager().GetKeyDown(Input::KeyCode::Up)) {
+        const auto PosY = CurrentPos.y + 8.f * FixedDelta;
+        GetOwner()->SetPosition({CurrentPos.x, PosY});
+    }
+
+    if (GetGame()->GetInputManager().GetKeyDown(Input::KeyCode::Down)) {
+        const auto PosY = CurrentPos.y - 8.f * FixedDelta;
+        GetOwner()->SetPosition({CurrentPos.x, PosY});
+    }
+}
 
 void PlayerComponent::EndPlay() {}
 

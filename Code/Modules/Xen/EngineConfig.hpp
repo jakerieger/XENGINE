@@ -5,35 +5,75 @@
 #pragma once
 
 #include <Common/XenCommon.hpp>
-#include "Window.hpp"
 
-#include <INIReader.h>
+#include <ini.h>
 
 namespace Xen {
-    struct EngineConfig {
-        std::string StartupScene;
-        Window::Mode WindowMode;
-        u32 ResolutionX;
-        u32 ResolutionY;
+    namespace Config {
+        using IniFile = mINI::INIFile;
+        using Ini     = mINI::INIStructure;
 
-        static EngineConfig Read(const std::string& Path) {
-            const INIReader Reader(Path);
-            if (Reader.ParseError() < 0) {
+        inline Ini Read(const std::string& Path) {
+            const IniFile File(Path);
+            Ini Out;
+
+            if (!File.read(Out)) {
                 THROW_ENGINE_EXCEPTION(EngineException, "failed to load config file '" + Path + "'");
             }
 
-            auto StrToMode = [](const std::string& Str) -> Window::Mode {
-                if (Str == "windowed") { return Window::Mode::Windowed; }
-                if (Str == "borderless") { return Window::Mode::Borderless; }
-                if (Str == "fullscreen") { return Window::Mode::Fullscreen; }
-                return Window::Mode::Fullscreen;
+            return Out;
+        }
+
+        inline u32 GetU32(const std::string& Val) {
+            return CAST<u32>(std::stoi(Val));
+        }
+
+        inline f32 GetFloat(const std::string& Val) {
+            return std::stof(Val);
+        }
+
+        inline std::vector<std::string> GetList(const std::string& Val) {
+            auto Split = [](const std::string& value) -> std::vector<std::string> {
+                std::vector<std::string> result;
+                std::stringstream ss(value);
+                std::string token;
+                while (std::getline(ss, token, ',')) {
+                    result.push_back(token);
+                }
+                return result;
+            };
+
+            return Split(Val);
+        }
+    }  // namespace Config
+
+    struct EngineConfig {
+        enum class WindowMode : u8 {
+            Windowed   = 0,
+            Borderless = 1,
+            Fullscreen = 2,
+        };
+
+        std::string StartupScene;
+        WindowMode Mode {WindowMode::Borderless};
+        u32 ResolutionX {1280};
+        u32 ResolutionY {720};
+
+        static EngineConfig Read(const std::string& Path) {
+            Config::Ini Cfg = Config::Read(Path);
+
+            auto StrToMode = [](const std::string& Str) -> WindowMode {
+                if (Str == "windowed") { return WindowMode::Windowed; }
+                if (Str == "borderless") { return WindowMode::Borderless; }
+                if (Str == "fullscreen") { return WindowMode::Fullscreen; }
+                return WindowMode::Fullscreen;
             };
 
             return {
-              .StartupScene = Reader.Get("Engine", "StartupScene", ""),
-              .WindowMode   = StrToMode(Reader.Get("Engine", "WindowMode", "fullscreen")),
-              .ResolutionX  = Reader.GetUnsigned("Engine", "ResolutionX", 1280),
-              .ResolutionY  = Reader.GetUnsigned("Engine", "ResolutionY", 720),
+              .StartupScene = Cfg["Engine"]["StartupScene"],
+              .Mode         = StrToMode(Cfg["Engine"]["WindowMode"]),
+              .ResolutionX  = Config::GetU32(Cfg["Engine"]["ResolutionX"]),
+              .ResolutionY  = Config::GetU32(Cfg["Engine"]["ResolutionY"]),
             };
         }
     };
@@ -46,18 +86,16 @@ namespace Xen {
         f32 UIVolume {1.0f};
 
         static AudioConfig Read(const std::string& Path) {
-            const INIReader Reader(Path);
-            if (Reader.ParseError() < 0) {
-                THROW_ENGINE_EXCEPTION(EngineException, "failed to load config file '" + Path + "'");
-            }
+            Config::Ini Cfg = Config::Read(Path);
 
-            return {
-              .MasterVolume  = CAST<f32>(Reader.GetReal("Audio", "MasterVolume", 1.0)),
-              .MusicVolume   = CAST<f32>(Reader.GetReal("Audio", "MusicVolume", 1.0)),
-              .EffectsVolume = CAST<f32>(Reader.GetReal("Audio", "EffectsVolume", 1.0)),
-              .VoiceVolume   = CAST<f32>(Reader.GetReal("Audio", "VoiceVolume", 1.0)),
-              .UIVolume      = CAST<f32>(Reader.GetReal("Audio", "UIVolume", 1.0)),
-            };
+            AudioConfig Out;
+            Out.MasterVolume  = Config::GetFloat(Cfg["Audio"]["MasterVolume"]);
+            Out.MusicVolume   = Config::GetFloat(Cfg["Audio"]["MusicVolume"]);
+            Out.EffectsVolume = Config::GetFloat(Cfg["Audio"]["EffectsVolume"]);
+            Out.VoiceVolume   = Config::GetFloat(Cfg["Audio"]["VoiceVolume"]);
+            Out.UIVolume      = Config::GetFloat(Cfg["Audio"]["UIVolume"]);
+
+            return Out;
         }
     };
 }  // namespace Xen

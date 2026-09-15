@@ -30,14 +30,10 @@ namespace Xen {
         try {
             _EngineConfig = EngineConfig::Read("Config/EngineConfig.ini");
             _AudioConfig  = AudioConfig::Read("Config/AudioConfig.ini");
-        } catch (const std::exception& Ex) {
-            std::fprintf(stderr, "(warning) falling back to default config: %s\n", Ex.what());
-        }
+        } catch (const std::exception& Ex) { LOG_WARN("falling back to default config: %s", Ex.what()); }
 
-        _Window = std::make_unique<Window>(Title,
-                                           _EngineConfig.WindowMode,
-                                           _EngineConfig.ResolutionX,
-                                           _EngineConfig.ResolutionY);
+        _Window =
+          std::make_unique<Window>(Title, _EngineConfig.Mode, _EngineConfig.ResolutionX, _EngineConfig.ResolutionY);
 
         _RenderDevice = RHI::CreateRenderDevice(RHI::Backend::OpenGL);
         if (!_RenderDevice) { THROW_ENGINE_EXCEPTION(EngineException, "no render device for the requested backend"); }
@@ -92,7 +88,7 @@ namespace Xen {
             const AssetID SceneAsset = ASSET(_EngineConfig.StartupScene.c_str());
             if (!SceneAsset.IsValid()) {
                 THROW_ENGINE_EXCEPTION(EngineException,
-                                      "invalid scene asset set as startup scene: " + _EngineConfig.StartupScene);
+                                       "invalid scene asset set as startup scene: " + _EngineConfig.StartupScene);
             }
 
             LoadScene(SceneAsset);
@@ -218,6 +214,8 @@ namespace Xen {
 
             _RenderDevice->EndFrame();
         }
+
+        _Window->ResetInput();
 
         ApplyPendingSceneChange();
     }

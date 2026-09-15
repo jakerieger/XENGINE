@@ -12,6 +12,10 @@ namespace Xen {
         return _Owner ? _Owner->GetScene() : nullptr;
     }
 
+    Game* IComponent::GetGame() const {
+        return _Owner ? GetScene()->GetContext().Owner : nullptr;
+    }
+
     Actor::Actor(const std::string& Name) : _Name(Name) {}
 
     Actor::~Actor() = default;

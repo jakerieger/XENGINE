@@ -1,8 +1,24 @@
-*.rc linguist-vendored
+#######################################################
+#=                   [ VENDORED ]                    =#
+
+# Entire directories
+Scripts/* linguist-vendored
 Code/Vendor/* linguist-vendored
-*.h linguist-vendored
-*.txt linguist-vendored
+Code/XenPong/Config/* linguist-vendored
+Code/XenPong/Content/* linguist-vendored
+# Specific files
 CMakeLists.txt linguist-vendored
+# File extenions
+*.rc linguist-vendored
+*.txt linguist-vendored
+*.cmake linguist-vendored
+*.ps1 linguist-vendored
+*.py linguist-vendored
+#=              [ LANGUAGE DEFINITIONS ]             =#
+# File extensions
+*.h linguist-language=C++
+*.h.in linguist-language=C++
+*.inl linguist-language=C++
 *.png filter=lfs diff=lfs merge=lfs -text
 *.hdr filter=lfs diff=lfs merge=lfs -text
 *.glb filter=lfs diff=lfs merge=lfs -text
