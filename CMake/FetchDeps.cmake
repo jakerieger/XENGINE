@@ -29,8 +29,15 @@ FetchContent_Declare(
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
+FetchContent_Declare(
+        CLI11
+        GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
+        GIT_TAG v2.7.2
+)
+
 FetchContent_MakeAvailable(
         glfw
         glm
         lz4
+        CLI11
 )
