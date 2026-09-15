@@ -2,9 +2,10 @@
 // Created by Jake Rieger on 9/8/2026.
 //
 
+#include <Common/Log.hpp>
+
 #include "Game.hpp"
 #include "AssetPreloader.hpp"
-#include "Log.hpp"
 #include "SceneSerializer.hpp"
 #include "AssetSettings.hpp"
 

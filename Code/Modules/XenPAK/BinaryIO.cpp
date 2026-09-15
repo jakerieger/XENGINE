@@ -3,7 +3,9 @@
 //
 
 #include "BinaryIO.hpp"
-#include <Xen/Exception.hpp>
+
+#include <Common/Log.hpp>
+#include <Common/Exception.hpp>
 
 namespace Xen::PAK::BinaryIO {
     static void WriteBytes(u8* Bytes, const int Count, const u64 Value) {

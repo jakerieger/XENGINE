@@ -4,8 +4,9 @@
 
 #pragma once
 
-#include "EngineCommon.hpp"
-#include "Exception.hpp"
+#include <Common/XenCommon.hpp>
+#include <Common/Exception.hpp>
+
 #include "Reflection.hpp"
 #include "Scene.hpp"
 

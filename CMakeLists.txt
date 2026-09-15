@@ -32,6 +32,7 @@ message(STATUS "Tools bin directory: ${TOOLS_BIN_DIR}")
 # CMake helpers for engine
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Code/Modules/Xen/CMake")
 
+add_subdirectory(${MODULES_ROOT}/Common)
 add_subdirectory(${MODULES_ROOT}/Xen)
 add_subdirectory(${MODULES_ROOT}/XenPAK)
 add_subdirectory(${MODULES_ROOT}/CrashHandler)

@@ -2,11 +2,12 @@
 // Created by Jake Rieger on 9/8/2026.
 //
 
+#include <Common/Log.hpp>
+#include <Common/Exception.hpp>
+
 #include "Window.hpp"
 
 #define GLFW_INCLUDE_NONE
-#include "Exception.hpp"
-
 #include <glad.h>
 #include <GLFW/glfw3.h>
 

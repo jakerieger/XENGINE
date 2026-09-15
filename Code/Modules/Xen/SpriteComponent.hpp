@@ -4,7 +4,8 @@
 
 #pragma once
 
-#include "EngineCommon.hpp"
+#include <Common/XenCommon.hpp>
+
 #include "Component.hpp"
 #include "ComponentRegistry.hpp"
 #include "TextureCache.hpp"
@@ -12,10 +13,9 @@
 namespace Xen {
     _DefineComponent(SpriteComponent)
 
-    class SpriteComponent final : public IComponent {
+      class SpriteComponent final : public IComponent {
     public:
-        _ComponentType(SpriteComponent)
-        SpriteComponent();
+        _ComponentType(SpriteComponent) SpriteComponent();
         explicit SpriteComponent(AssetID Texture, Rect SourceRect = {});
 
         void Reflect(IReflector& R) override;

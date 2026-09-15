@@ -6,7 +6,6 @@
 #include "OpponentComponent.hpp"
 #include "PlayerComponent.hpp"
 
-#include <Xen/Log.hpp>
 #include <Xen/Window.hpp>
 #include <Xen/AssetPreloader.hpp>
 #include <Xen/Game.hpp>

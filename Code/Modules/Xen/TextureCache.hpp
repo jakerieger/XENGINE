@@ -4,7 +4,8 @@
 
 #pragma once
 
-#include "EngineCommon.hpp"
+#include <Common/XenCommon.hpp>
+
 #include "RenderDevice.hpp"
 
 #include <XenPAK/AssetID.hpp>

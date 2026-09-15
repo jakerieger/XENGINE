@@ -5,7 +5,8 @@
 #include "ContentScanner.hpp"
 #include "Canonicalize.hpp"
 
-#include <Xen/Exception.hpp>
+#include <Common/Log.hpp>
+#include <Common/Exception.hpp>
 #include <unordered_map>
 
 namespace Xen::PAK {
