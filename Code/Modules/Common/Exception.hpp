@@ -10,8 +10,9 @@
 #include <exception>
 
 namespace Xen {
-    inline std::string FormatExceptionMessage(const std::string& ExceptionType, const std::string& Message) {
-        return std::format("({}) in {}: {}", ExceptionType, _SignatureHere, Message);
+    inline std::string
+    FormatExceptionMessage(const std::string& Signature, const std::string& ExceptionType, const std::string& Message) {
+        return std::format("({}) in {}: {}", ExceptionType, Signature, Message);
     }
 
     class EngineException : public std::exception {
@@ -31,6 +32,6 @@ namespace Xen {
     };
 
 #define _ThrowEngineException(Type, Message)                                                                           \
-    const auto __MsgFmt_##Type = Xen::FormatExceptionMessage(#Type, Message);                                          \
+    const auto __MsgFmt_##Type = Xen::FormatExceptionMessage(_SignatureHere, #Type, Message);                          \
     _LogCritical(__MsgFmt_##Type.c_str());                                                                             \
     throw Type(__MsgFmt_##Type)
