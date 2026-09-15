@@ -44,6 +44,8 @@ namespace Xen {
         return reinterpret_cast<T>(Value);
     }
 
+#define _AssertBaseOf(Base, T) static_assert(std::is_base_of_v<Base, T>, "T must derive from " #Base ".");
+
 #define _Kb(n) ((size_t)(n) * 1024)
 #define _Mb(n) ((size_t)(n) * 1024 * 1024)
 #define _Gb(n) ((size_t)(n) * 1024 * 1024 * 1024)

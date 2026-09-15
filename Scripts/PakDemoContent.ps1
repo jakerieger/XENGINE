@@ -1,1 +1,0 @@
-.\build\Debug\bin\XenPAK-CLI.exe Code\XenPong\Content build\Debug\bin\XenPong\Data1.xpak
