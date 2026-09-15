@@ -4,16 +4,11 @@
 
 #pragma once
 
-#include "XenCommon.hpp"
-#include "Exception.hpp"
-
 #include <array>
 #include <fstream>
 #include <mutex>
 
 namespace Xen {
-    _DefineEngineException(LogException);
-
     class Logger;
     Logger& GetLogger();
 
@@ -25,9 +20,9 @@ namespace Xen {
         Logger& operator=(Logger&&)      = delete;
 
     public:
-        static constexpr size_t LOGGER_MAX_ENTRIES = _Kb(4);
+        static constexpr size_t LOGGER_MAX_ENTRIES {4096};
 
-        enum class Severity : u8 {
+        enum class Severity : uint8_t {
             Info     = 0,
             Warning  = 1,
             Error    = 2,
@@ -47,7 +42,7 @@ namespace Xen {
 
         template<typename... Args>
         void Log(const Severity Sev, const char* Fmt, Args... FmtArgs) {
-            char Buffer[_Kb(1)];
+            char Buffer[1024];
             std::snprintf(Buffer, sizeof(Buffer), Fmt, FmtArgs...);
             Log(Sev, Buffer);
         }
@@ -73,13 +68,13 @@ namespace Xen {
     };
 }  // namespace Xen
 
-#define _LogInfo(Msg, ...) Xen::GetLogger().Log(Xen::Logger::Severity::Info, Msg, ##__VA_ARGS__)
-#define _LogWarning(Msg, ...) Xen::GetLogger().Log(Xen::Logger::Severity::Warning, Msg, ##__VA_ARGS__)
-#define _LogError(Msg, ...) Xen::GetLogger().Log(Xen::Logger::Severity::Error, Msg, ##__VA_ARGS__)
-#define _LogCritical(Msg, ...) Xen::GetLogger().Log(Xen::Logger::Severity::Critical, Msg, ##__VA_ARGS__)
+#define LOG_INFO(Msg, ...) Xen::GetLogger().Log(Xen::Logger::Severity::Info, Msg, ##__VA_ARGS__)
+#define LOG_WARN(Msg, ...) Xen::GetLogger().Log(Xen::Logger::Severity::Warning, Msg, ##__VA_ARGS__)
+#define LOG_ERR(Msg, ...) Xen::GetLogger().Log(Xen::Logger::Severity::Error, Msg, ##__VA_ARGS__)
+#define LOG_CRIT(Msg, ...) Xen::GetLogger().Log(Xen::Logger::Severity::Critical, Msg, ##__VA_ARGS__)
 
 #ifndef NDEBUG
-    #define _LogDebug(Msg, ...) Xen::GetLogger().Log(Xen::Logger::Severity::Debug, Msg, ##__VA_ARGS__)
+    #define LOG_DBG(Msg, ...) Xen::GetLogger().Log(Xen::Logger::Severity::Debug, Msg, ##__VA_ARGS__)
 #else
-    #define _LogDebug(Msg, ...)
+    #define LOG_DBG(Msg, ...)
 #endif

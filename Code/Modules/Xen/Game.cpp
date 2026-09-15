@@ -40,7 +40,7 @@ namespace Xen {
                                            _EngineConfig.ResolutionY);
 
         _RenderDevice = RHI::CreateRenderDevice(RHI::Backend::OpenGL);
-        if (!_RenderDevice) { _ThrowEngineException(EngineException, "no render device for the requested backend"); }
+        if (!_RenderDevice) { THROW_ENGINE_EXCEPTION(EngineException, "no render device for the requested backend"); }
 
         RHI::DeviceDescriptor Descriptor {};
 #ifndef NDEBUG
@@ -49,7 +49,7 @@ namespace Xen {
 #endif
 
         if (!_RenderDevice->Initialize(Descriptor)) {
-            _ThrowEngineException(EngineException, "failed to initialize render device");
+            THROW_ENGINE_EXCEPTION(EngineException, "failed to initialize render device");
         }
 
         // Without this the device's swap chain size stays 0x0, BeginRenderPass
@@ -59,12 +59,12 @@ namespace Xen {
         SetViewport(_Window->GetWidth(), _Window->GetHeight());
 
         if (!_SpriteRenderer.Initialize(*_RenderDevice)) {
-            _ThrowEngineException(EngineException, "failed to initialize sprite renderer");
+            THROW_ENGINE_EXCEPTION(EngineException, "failed to initialize sprite renderer");
         }
 
         _Assets = PAK::MountAssets(MountConfig);
-        if (!_Assets) { _ThrowEngineException(EngineException, "failed to mount assets"); }
-        _LogDebug("Asset mount configuration:\n%s", PAK::DescribeMounts(*_Assets).c_str());
+        if (!_Assets) { THROW_ENGINE_EXCEPTION(EngineException, "failed to mount assets"); }
+        LOG_DBG("Asset mount configuration:\n%s", PAK::DescribeMounts(*_Assets).c_str());
 
         _Textures = std::make_unique<TextureCache>(*_Assets, *_RenderDevice);
 
@@ -91,7 +91,7 @@ namespace Xen {
         if (!_EngineConfig.StartupScene.empty()) {
             const AssetID SceneAsset = ASSET(_EngineConfig.StartupScene.c_str());
             if (!SceneAsset.IsValid()) {
-                _ThrowEngineException(EngineException,
+                THROW_ENGINE_EXCEPTION(EngineException,
                                       "invalid scene asset set as startup scene: " + _EngineConfig.StartupScene);
             }
 
@@ -240,7 +240,7 @@ namespace Xen {
 
             case PendingKind::LoadAsset: {
                 if (!_Assets->Contains(Asset)) {
-                    _ThrowEngineException(EngineException, std::format("scene asset {} not found", Asset.Value));
+                    THROW_ENGINE_EXCEPTION(EngineException, std::format("scene asset {} not found", Asset.Value));
                 }
 
                 const PAK::AssetBuffer Bytes = _Assets->Load(Asset);

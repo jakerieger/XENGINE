@@ -11,7 +11,7 @@
 #include <memory>
 
 namespace Xen::PAK {
-    _DefineEngineException(CodecException);
+    DEFINE_ENGINE_EXCEPTION(CodecException);
 
     /// @brief Common interface for a single codec's compress/decompress pair.
     class ICodec {

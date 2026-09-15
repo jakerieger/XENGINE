@@ -10,11 +10,11 @@
 #include <../Modules/Common/XenCommon.hpp>
 #include <random>
 
-_DefineComponent(BallComponent)
+REGISTER_COMPONENT(BallComponent)
 
   class BallComponent final : public Xen::IComponent {
 public:
-    _ComponentType(BallComponent);
+    XEN_COMPONENT_TYPE(BallComponent);
 
     BallComponent();
 

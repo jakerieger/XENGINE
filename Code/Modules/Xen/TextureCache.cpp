@@ -21,7 +21,7 @@ namespace Xen {
 
     TextureCache::Entry TextureCache::CreateEntry(const AssetID ID, const u32 InitialRefCount) {
         if (!_Assets->Contains(ID)) {
-            _ThrowEngineException(EngineException, std::format("texture asset {} not found", ID.Value));
+            THROW_ENGINE_EXCEPTION(EngineException, std::format("texture asset {} not found", ID.Value));
         }
 
         const PAK::AssetBuffer Encoded = _Assets->Load(ID);
@@ -40,7 +40,7 @@ namespace Xen {
 
         E.Handle = _Device->CreateTexture(Desc);
         if (!E.Handle.IsValid()) {
-            _ThrowEngineException(EngineException, std::format("GPU texture creation failed for asset {}", ID.Value));
+            THROW_ENGINE_EXCEPTION(EngineException, std::format("GPU texture creation failed for asset {}", ID.Value));
         }
 
         RHI::TextureUploadDesc Upload;
@@ -127,7 +127,7 @@ namespace Xen {
 
         stbi_uc* Pixels = stbi_load_from_memory(Bytes, CAST<int>(Size), &W, &H, &Channels, STBI_rgb_alpha);
         if (!Pixels) {
-            _ThrowEngineException(EngineException, std::format("image decode failed: {}", stbi_failure_reason()));
+            THROW_ENGINE_EXCEPTION(EngineException, std::format("image decode failed: {}", stbi_failure_reason()));
         }
 
         OutInfo.Width  = CAST<u32>(W);

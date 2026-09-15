@@ -25,16 +25,16 @@ namespace {
         void OnUpdate(f32 DeltaTime) override {}
 
         void OnSceneLoaded(Scene& S) override {
-            _LogInfo("Loaded scene: %s", S.GetName().c_str());
-            _LogInfo("Actors in scene: %llu", S.GetActorCount());
-            _LogInfo("Actors:");
+            LOG_INFO("Loaded scene: %s", S.GetName().c_str());
+            LOG_INFO("Actors in scene: %llu", S.GetActorCount());
+            LOG_INFO("Actors:");
 
             S.ForEachActor([](const Actor& A) {
-                _LogInfo("  - %s (%llu component(s))", A.GetName().c_str(), A.GetComponentCount());
+                LOG_INFO("  - %s (%llu component(s))", A.GetName().c_str(), A.GetComponentCount());
             });
         }
 
-        void OnSceneUnloading(Scene& S) override { _LogInfo("Scene unloading: %s", S.GetName().c_str()); }
+        void OnSceneUnloading(Scene& S) override { LOG_INFO("Scene unloading: %s", S.GetName().c_str()); }
     };
 
     // TODO: Move this logic out of the game executable and into some kind of separate game library so it can be called
@@ -65,7 +65,7 @@ namespace {
         const auto ScenePath = Generated::GameSettings().ContentDirs[0] / "scenes" / "main.scene";
         SceneSerializer::SaveToFile(MainScene, ScenePath);
 
-        _LogInfo("Scene saved: %s", ScenePath.string().c_str());
+        LOG_INFO("Scene saved: %s", ScenePath.string().c_str());
     }
 }  // namespace
 

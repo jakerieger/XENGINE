@@ -20,10 +20,10 @@ namespace Xen {
     ///
     /// A scene may hold several (main view, minimap, split screen). The
     /// renderer draws through the enabled one with the highest Priority.
-    _DefineComponent(CameraComponent);
+    REGISTER_COMPONENT(CameraComponent);
     class CameraComponent final : public IComponent {
     public:
-        _ComponentType(CameraComponent);
+        XEN_COMPONENT_TYPE(CameraComponent);
         CameraComponent() = default;
 
         void Reflect(IReflector& R) override {
@@ -46,29 +46,29 @@ namespace Xen {
             _ViewportHeight = Height;
         }
 
-        _NoDiscard u32 GetViewportWidth() const { return _ViewportWidth; }
-        _NoDiscard u32 GetViewportHeight() const { return _ViewportHeight; }
+        NODISCARD u32 GetViewportWidth() const { return _ViewportWidth; }
+        NODISCARD u32 GetViewportHeight() const { return _ViewportHeight; }
 
-        _NoDiscard f32 GetZoom() const { return _Zoom; }
+        NODISCARD f32 GetZoom() const { return _Zoom; }
         void SetZoom(const f32 Z) { _Zoom = std::max<f32>(Z, 0.0001f); }
 
-        _NoDiscard f32 GetPixelsPerUnit() const { return _PixelsPerUnit; }
+        NODISCARD f32 GetPixelsPerUnit() const { return _PixelsPerUnit; }
         void SetPixelsPerUnit(const f32 P) { _PixelsPerUnit = std::max<f32>(P, 0.0001f); }
 
-        _NoDiscard i32 GetPriority() const { return _Priority; }
+        NODISCARD i32 GetPriority() const { return _Priority; }
         void SetPriority(const i32 Priority) { _Priority = Priority; }
 
-        _NoDiscard glm::mat4 GetViewMatrix() const;
-        _NoDiscard glm::mat4 GetProjectionMatrix() const;
-        _NoDiscard glm::mat4 GetViewProjectionMatrix() const { return GetProjectionMatrix() * GetViewMatrix(); }
+        NODISCARD glm::mat4 GetViewMatrix() const;
+        NODISCARD glm::mat4 GetProjectionMatrix() const;
+        NODISCARD glm::mat4 GetViewProjectionMatrix() const { return GetProjectionMatrix() * GetViewMatrix(); }
 
-        _NoDiscard glm::vec2 GetVisibleWorldSize() const;
-        _NoDiscard Rect GetViewBounds() const;
-        _NoDiscard glm::vec2 ScreenToWorld(glm::vec2 ScreenPos) const;
-        _NoDiscard glm::vec2 WorldToScreen(glm::vec2 WorldPos) const;
+        NODISCARD glm::vec2 GetVisibleWorldSize() const;
+        NODISCARD Rect GetViewBounds() const;
+        NODISCARD glm::vec2 ScreenToWorld(glm::vec2 ScreenPos) const;
+        NODISCARD glm::vec2 WorldToScreen(glm::vec2 WorldPos) const;
 
     private:
-        _NoDiscard Transform GetCameraTransform() const;
+        NODISCARD Transform GetCameraTransform() const;
 
         f32 _Zoom {1.0f};
         f32 _PixelsPerUnit {100.0f};

@@ -3,9 +3,10 @@ project(Xen2D)
 add_library(XenCommon STATIC
         DateTime.hpp
         Exception.hpp
+        Hash.hpp
         Log.cpp
         Log.hpp
-        Signature.hpp
+        PrettySignature.hpp
         XenCommon.hpp
 )
 

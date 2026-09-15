@@ -118,10 +118,10 @@ namespace Xen::RHI::GL {
 
         TransientAllocation Allocate(u32 Size, BufferUsage Usage, BufferHandle ArenaHandle);
 
-        _NoDiscard BufferHandle GetHandle(const u32 FrameIndex) const { return _Handles[FrameIndex]; }
-        _NoDiscard GLuint GetBufferID(const u32 FrameIndex) const { return _Arenas[FrameIndex].ID; }
+        NODISCARD BufferHandle GetHandle(const u32 FrameIndex) const { return _Handles[FrameIndex]; }
+        NODISCARD GLuint GetBufferID(const u32 FrameIndex) const { return _Arenas[FrameIndex].ID; }
         void SetHandle(const u32 FrameIndex, const BufferHandle H) { _Handles[FrameIndex] = H; }
-        _NoDiscard u32 GetBytesUsed() const { return _Head; }
+        NODISCARD u32 GetBytesUsed() const { return _Head; }
 
     private:
         struct Arena {
@@ -147,8 +147,8 @@ namespace Xen::RHI::GL {
         bool Initialize(const DeviceDescriptor& Desc) override;
         void Shutdown() override;
 
-        _NoDiscard Backend GetBackend() const override { return Backend::OpenGL; }
-        _NoDiscard const DeviceCaps& GetCaps() const override { return _Caps; }
+        NODISCARD Backend GetBackend() const override { return Backend::OpenGL; }
+        NODISCARD const DeviceCaps& GetCaps() const override { return _Caps; }
 
         BufferHandle CreateBuffer(const BufferDesc& Desc) override;
         TextureHandle CreateTexture(const TextureDesc& Desc) override;
@@ -173,12 +173,12 @@ namespace Xen::RHI::GL {
         void EndFrame() override;
 
         void SetSwapChainSize(u32 Width, u32 Height) override;
-        _NoDiscard u32 GetSwapChainWidth() const override { return _SwapWidth; }
-        _NoDiscard u32 GetSwapChainHeight() const override { return _SwapHeight; }
+        NODISCARD u32 GetSwapChainWidth() const override { return _SwapWidth; }
+        NODISCARD u32 GetSwapChainHeight() const override { return _SwapHeight; }
 
         TransientAllocation AllocateTransient(u32 Size, BufferUsage Usage) override;
 
-        _NoDiscard const FrameStats& GetLastFrameStats() const override { return _LastStats; }
+        NODISCARD const FrameStats& GetLastFrameStats() const override { return _LastStats; }
 
     private:
         void ExecuteBeginRenderPass(const RenderPassDesc& Desc);

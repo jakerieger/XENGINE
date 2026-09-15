@@ -12,7 +12,7 @@
 #include <vector>
 
 namespace Xen::PAK {
-    _DefineEngineException(CryptoException);
+    DEFINE_ENGINE_EXCEPTION(CryptoException);
 
     constexpr size_t PAK_KEY_SIZE   = AES_256_KEY_SIZE;
     constexpr size_t PAK_SALT_SIZE  = 16;

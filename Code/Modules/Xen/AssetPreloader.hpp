@@ -5,13 +5,11 @@
 #pragma once
 
 #include <Common/XenCommon.hpp>
+#include <XenPAK/AssetID.hpp>
 
 #include "Reflection.hpp"
 #include "Scene.hpp"
 
-#include <XenPAK/AssetID.hpp>
-
-#include <unordered_set>
 #include <vector>
 
 namespace Xen {

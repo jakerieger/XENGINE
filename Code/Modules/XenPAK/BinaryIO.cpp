@@ -17,7 +17,7 @@ namespace Xen::PAK::BinaryIO {
     static u64 ReadBytes(std::istream& In, const int Count) {
         u8 Bytes[8] {};
         In.read(RCAST<char*>(Bytes), Count);
-        if (!In) { _ThrowEngineException(EngineException, "ReadBytes: unexpected EOF"); }
+        if (!In) { THROW_ENGINE_EXCEPTION(EngineException, "ReadBytes: unexpected EOF"); }
         u64 Value = 0;
         for (int i = 0; i < Count; ++i) {
             Value |= CAST<u64>(Bytes[i]) << (i * 8);

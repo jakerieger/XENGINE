@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-namespace Signature {
+namespace PrettySignature {
     namespace detail {
         constexpr bool IsIdent(char c) {
             return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
@@ -149,11 +149,11 @@ namespace Signature {
     inline std::string Here(const std::source_location& loc = std::source_location::current()) {
         return TidyMSVC(TrimSignature(loc.function_name()));
     }
-}  // namespace Signature
+}  // namespace PrettySignature
 
 #if defined(_MSC_VER) && !defined(__clang__)
-    #define _SignatureRaw __FUNCSIG__
+    #define PSIG_RAW __FUNCSIG__
 #else
-    #define _SignatureRaw __PRETTY_FUNCTION__
+    #define PSIG_RAW __PRETTY_FUNCTION__
 #endif
-#define _SignatureHere (::Signature::TidyMSVC(::Signature::TrimSignature(_SignatureRaw)))
+#define PSIG_HERE (::PrettySignature::TidyMSVC(::PrettySignature::TrimSignature(PSIG_RAW)))

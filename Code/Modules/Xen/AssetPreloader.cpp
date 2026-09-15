@@ -5,6 +5,8 @@
 #include "AssetPreloader.hpp"
 #include "TextureCache.hpp"
 
+#include <unordered_set>
+
 namespace Xen {
     std::vector<AssetID> AssetGatherer::OfKind(const AssetKind Kind) const {
         std::unordered_set<PAK::AssetIDValue> Seen;

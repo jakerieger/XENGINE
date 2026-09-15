@@ -15,6 +15,8 @@
 namespace Xen::PAK {
     class PakFileSource : public IAssetSource {
     public:
+        _AssetSourceType(PakFileSource);
+
         PakFileSource(std::filesystem::path PakPath, int Priority);
 
         size_t AssetCount() const { return _Table.size(); }
@@ -27,7 +29,6 @@ namespace Xen::PAK {
         bool Contains(AssetID ID) const override;
         AssetBuffer LoadFull(AssetID ID) override;
         int Priority() const override;
-        const char* DebugName() const override;
 
     private:
         std::filesystem::path _PakPath;

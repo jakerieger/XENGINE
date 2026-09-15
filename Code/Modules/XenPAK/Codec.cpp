@@ -15,17 +15,17 @@ namespace Xen::PAK {
         public:
             std::vector<u8> Compress(const u8* Data, const size_t Size) override {
                 if (Size > CAST<size_t>(LZ4_MAX_INPUT_SIZE)) {
-                    _ThrowEngineException(CodecException, "Input exceeds LZ4_MAX_INPUT_SIZE");
+                    THROW_ENGINE_EXCEPTION(CodecException, "Input exceeds LZ4_MAX_INPUT_SIZE");
                 }
 
                 const int SrcSize = CAST<int>(Size);
                 const int Bound   = LZ4_compressBound(SrcSize);
-                if (Bound <= 0) { _ThrowEngineException(CodecException, "LZ4_compressBound failed"); }
+                if (Bound <= 0) { THROW_ENGINE_EXCEPTION(CodecException, "LZ4_compressBound failed"); }
 
                 std::vector<u8> Out(CAST<size_t>(Bound));
                 const int Result =
                   LZ4_compress_default(RCAST<const char*>(Data), RCAST<char*>(Out.data()), SrcSize, Bound);
-                if (Result <= 0) { _ThrowEngineException(CodecException, "LZ4_compress_default failed"); }
+                if (Result <= 0) { THROW_ENGINE_EXCEPTION(CodecException, "LZ4_compress_default failed"); }
 
                 Out.resize(CAST<size_t>(Result));
                 return Out;
@@ -37,7 +37,7 @@ namespace Xen::PAK {
                             const size_t UncompressedSize) override {
                 if (CompressedSize > CAST<size_t>(std::numeric_limits<int>::max()) ||
                     UncompressedSize > CAST<size_t>(std::numeric_limits<int>::max())) {
-                    _ThrowEngineException(CodecException, "size exceeds int range");
+                    THROW_ENGINE_EXCEPTION(CodecException, "size exceeds int range");
                 }
 
                 const int Result = LZ4_decompress_safe(RCAST<const char*>(CompressedData),
@@ -46,11 +46,11 @@ namespace Xen::PAK {
                                                        CAST<int>(UncompressedSize));
 
                 if (Result < 0) {
-                    _ThrowEngineException(CodecException, "LZ4_decompress_safe failed (possibly corrupt pak)");
+                    THROW_ENGINE_EXCEPTION(CodecException, "LZ4_decompress_safe failed (possibly corrupt pak)");
                 }
 
                 if (CAST<size_t>(Result) != UncompressedSize) {
-                    _ThrowEngineException(CodecException, "decompressed size does not match expected size");
+                    THROW_ENGINE_EXCEPTION(CodecException, "decompressed size does not match expected size");
                 }
             }
 

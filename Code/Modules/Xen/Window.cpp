@@ -20,7 +20,7 @@ namespace Xen {
 
     Window::Window(const std::string& Title, Mode WindowMode, const u32 Width, const u32 Height) {
         if (g_WindowCount == 0 && glfwInit() != GLFW_TRUE) {
-            _ThrowEngineException(EngineException, "glfwInit failed");
+            THROW_ENGINE_EXCEPTION(EngineException, "glfwInit failed");
         }
 
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -32,7 +32,7 @@ namespace Xen {
 
         if (WindowMode == Mode::Windowed) {
             _Handle = glfwCreateWindow(CAST<int>(Width), CAST<int>(Height), Title.c_str(), nullptr, nullptr);
-            if (!_Handle) { _ThrowEngineException(EngineException, "glfwCreateWindow failed"); }
+            if (!_Handle) { THROW_ENGINE_EXCEPTION(EngineException, "glfwCreateWindow failed"); }
 
             CenterWindowOnScreen();
         } else {
@@ -44,19 +44,19 @@ namespace Xen {
                                        Title.c_str(),
                                        WindowMode == Mode::Borderless ? nullptr : Monitor,
                                        nullptr);
-            if (!_Handle) { _ThrowEngineException(EngineException, "glfwCreateWindow failed"); }
+            if (!_Handle) { THROW_ENGINE_EXCEPTION(EngineException, "glfwCreateWindow failed"); }
         }
 
         if (!_Handle) {
             if (g_WindowCount == 0) glfwTerminate();
-            _ThrowEngineException(EngineException, "glfwCreateWindow failed");
+            THROW_ENGINE_EXCEPTION(EngineException, "glfwCreateWindow failed");
         }
         ++g_WindowCount;
 
         glfwMakeContextCurrent(_Handle);
 
         if (!gladLoadGLLoader(RCAST<GLADloadproc>(glfwGetProcAddress))) {
-            _ThrowEngineException(EngineException, "gladLoadGLLoader failed");
+            THROW_ENGINE_EXCEPTION(EngineException, "gladLoadGLLoader failed");
         }
 
         glfwSetWindowUserPointer(_Handle, this);

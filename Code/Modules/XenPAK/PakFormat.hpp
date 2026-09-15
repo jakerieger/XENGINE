@@ -11,7 +11,7 @@
 #include <array>
 
 namespace Xen::PAK {
-    _DefineEngineException(InvalidPakException);
+    DEFINE_ENGINE_EXCEPTION(InvalidPakException);
 
     constexpr std::array PAK_MAGIC   = {'X', 'P', 'A', 'K'};
     constexpr u32 PAK_FORMAT_VERSION = 2;  // v2 added encryption salt

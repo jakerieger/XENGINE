@@ -35,7 +35,7 @@ namespace Xen {
         bool Initialize(RHI::IRenderDevice& Device, const Config& Cfg = {});
         void Shutdown();
 
-        _NoDiscard bool IsInitialized() const { return _Device != nullptr; }
+        NODISCARD bool IsInitialized() const { return _Device != nullptr; }
 
         /// @brief Records and submits one frame's sprites. Call between
         /// IRenderDevice::BeginFrame and EndFrame.
@@ -46,8 +46,8 @@ namespace Xen {
 
         void SetClearColor(const glm::vec4& Color) { _Config.ClearColor = Color; }
 
-        _NoDiscard u32 GetSpritesSubmitted() const { return _SpritesSubmitted; }
-        _NoDiscard u32 GetSpritesDropped() const { return _SpritesDropped; }
+        NODISCARD u32 GetSpritesSubmitted() const { return _SpritesSubmitted; }
+        NODISCARD u32 GetSpritesDropped() const { return _SpritesDropped; }
 
     private:
         /// @brief One quad's worth of per-instance data.

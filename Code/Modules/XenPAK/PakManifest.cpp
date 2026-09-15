@@ -53,20 +53,20 @@ namespace Xen::PAK {
 
         std::ofstream Out(Path, std::ios::trunc);
         if (!Out) {
-            _ThrowEngineException(InvalidManifestException, "failed to open manifest for writing: " + Path.string());
+            THROW_ENGINE_EXCEPTION(InvalidManifestException, "failed to open manifest for writing: " + Path.string());
         }
         Out << Root.dump(2);
     }
 
     PakManifest PakManifest::ReadFromFile(const std::filesystem::path& Path) {
         std::ifstream In(Path);
-        if (!In) { _ThrowEngineException(InvalidManifestException, "manifest not found: " + Path.string()); }
+        if (!In) { THROW_ENGINE_EXCEPTION(InvalidManifestException, "manifest not found: " + Path.string()); }
 
         Json Root;
         try {
             In >> Root;
         } catch (const Json::parse_error& Ex) {
-            _ThrowEngineException(InvalidManifestException,
+            THROW_ENGINE_EXCEPTION(InvalidManifestException,
                                   "failed to parse manifest '" + Path.string() + "': " + Ex.what());
         }
 
@@ -87,11 +87,11 @@ namespace Xen::PAK {
                 Manifest.Assets.push_back(std::move(AssetEntry));
             }
         } catch (const Json::exception& Ex) {
-            _ThrowEngineException(InvalidManifestException, "malformed manifest '" + Path.string() + "': " + Ex.what());
+            THROW_ENGINE_EXCEPTION(InvalidManifestException, "malformed manifest '" + Path.string() + "': " + Ex.what());
         }
 
         if (Manifest.FormatVersion != PAK_MANIFEST_VERSION) {
-            _ThrowEngineException(InvalidManifestException,
+            THROW_ENGINE_EXCEPTION(InvalidManifestException,
                                   "unsupported manifest version: " + std::to_string(Manifest.FormatVersion));
         }
 

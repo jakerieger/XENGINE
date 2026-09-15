@@ -2,8 +2,6 @@
 // Created by Jake Rieger on 9/8/2026.
 //
 
-#include <Common/Log.hpp>
-
 #include "Actor.hpp"
 #include "Scene.hpp"
 
@@ -28,15 +26,15 @@ namespace Xen {
     }
 
     void Actor::AttachTo(const ActorHandle Parent) {
-        if (!_Scene) { _ThrowEngineException(ActorException, "cannot attach an actor that is not in a scene"); }
-        if (Parent == _Handle) { _ThrowEngineException(ActorException, "cannot attach an actor to itself"); }
+        if (!_Scene) { THROW_ENGINE_EXCEPTION(ActorException, "cannot attach an actor that is not in a scene"); }
+        if (Parent == _Handle) { THROW_ENGINE_EXCEPTION(ActorException, "cannot attach an actor to itself"); }
 
         if (Parent.IsSet()) {
             const Actor* Ancestor = _Scene->Get(Parent);
             while (Ancestor) {
                 if (Ancestor == this) {
-                    _ThrowEngineException(ActorException,
-                                          "cannot attach an actor to its own descendant (would form a cycle)");
+                    THROW_ENGINE_EXCEPTION(ActorException,
+                                           "cannot attach an actor to its own descendant (would form a cycle)");
                 }
 
                 Ancestor = Ancestor->_Parent.IsSet() ? _Scene->Get(Ancestor->_Parent) : nullptr;

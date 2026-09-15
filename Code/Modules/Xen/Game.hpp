@@ -54,24 +54,24 @@ namespace Xen {
         void RunFrames(u32 FrameCount);
         void Quit();
 
-        _NoDiscard bool IsRunning() const { return _Running; };
+        NODISCARD bool IsRunning() const { return _Running; };
 
         void LoadScene(AssetID SceneAsset);
         void LoadSceneFromFile(std::filesystem::path Path);
         void UnloadScene();
 
-        _NoDiscard bool IsSceneChangePending() const { return _PendingSceneChange; };
-        _NoDiscard Scene* GetActiveScene() const { return _ActiveScene.get(); };
+        NODISCARD bool IsSceneChangePending() const { return _PendingSceneChange; };
+        NODISCARD Scene* GetActiveScene() const { return _ActiveScene.get(); };
 
-        _NoDiscard const EngineContext& GetContext() const { return _Context; }
-        _NoDiscard TextureCache& GetTextures() const { return *_Textures; }
-        _NoDiscard SpriteBatcher& GetBatcher() { return _SpriteBatcher; }
-        _NoDiscard SpriteRenderer& GetRenderer() { return _SpriteRenderer; }
-        _NoDiscard RHI::IRenderDevice& GetRenderDevice() const { return *_RenderDevice; }
-        _NoDiscard Window& GetWindow() const { return *_Window; }
+        NODISCARD const EngineContext& GetContext() const { return _Context; }
+        NODISCARD TextureCache& GetTextures() const { return *_Textures; }
+        NODISCARD SpriteBatcher& GetBatcher() { return _SpriteBatcher; }
+        NODISCARD SpriteRenderer& GetRenderer() { return _SpriteRenderer; }
+        NODISCARD RHI::IRenderDevice& GetRenderDevice() const { return *_RenderDevice; }
+        NODISCARD Window& GetWindow() const { return *_Window; }
 
-        _NoDiscard u64 GetFrameCount() const { return _FrameCount; }
-        _NoDiscard f32 GetLastFrameDelta() const { return _LastDelta; }
+        NODISCARD u64 GetFrameCount() const { return _FrameCount; }
+        NODISCARD f32 GetLastFrameDelta() const { return _LastDelta; }
 
         void SetFixedTimeStep(const f32 Step) {
             if (Step > 0.0f) _FixedTimeStep = Step;
@@ -86,7 +86,7 @@ namespace Xen {
         /// simulation is perfectly smooth. Interpolating rendered transforms
         /// between the previous and current fixed state by this value is the
         /// fix - see the note below.
-        _NoDiscard f32 GetFixedAlpha() const { return _FixedTimeStep > 0.0f ? _Accumulator / _FixedTimeStep : 0.0f; }
+        NODISCARD f32 GetFixedAlpha() const { return _FixedTimeStep > 0.0f ? _Accumulator / _FixedTimeStep : 0.0f; }
 
         /// @brief Pushes a framebuffer size to everything that needs one.
         ///
@@ -164,7 +164,7 @@ namespace Xen {
 
     template<typename GameClass>
     void RunGame(const std::string& Name, const AssetSettings& Settings, const int argc, char* argv[]) noexcept {
-        _AssertBaseOf(Game, GameClass);
+        ASSERT_BASE_OF(Game, GameClass);
         const auto MountConfig = BuildMountConfig(Settings, argc, argv);
 
         try {

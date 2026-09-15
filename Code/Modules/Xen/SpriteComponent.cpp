@@ -14,7 +14,7 @@ namespace Xen {
 
     SpriteComponent::SpriteComponent(const AssetID Texture, const Rect SourceRect)
         : _TextureAsset(Texture), _SourceRect(SourceRect) {
-        if (!_TextureAsset.IsValid()) { _ThrowEngineException(EngineException, "invalid sprite asset ID"); }
+        if (!_TextureAsset.IsValid()) { THROW_ENGINE_EXCEPTION(EngineException, "invalid sprite asset ID"); }
     }
 
     void SpriteComponent::Reflect(IReflector& R) {
@@ -73,14 +73,14 @@ namespace Xen {
 
     void SpriteComponent::BeginPlay() {
         if (!_TextureAsset.IsValid()) {
-            _ThrowEngineException(EngineException,
+            THROW_ENGINE_EXCEPTION(EngineException,
                                   std::format("SpriteComponent on actor '{}' has no texture asset assigned",
                                               GetOwner() ? GetOwner()->GetName() : "<none>"));
         }
 
         const Scene* S = GetScene();
         if (!S || !S->GetContext().Textures) {
-            _ThrowEngineException(EngineException,
+            THROW_ENGINE_EXCEPTION(EngineException,
                                   "SpriteComponent requires a scene with a TextureCache in its EngineContext");
         }
 

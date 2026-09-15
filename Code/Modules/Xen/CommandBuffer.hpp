@@ -221,11 +221,11 @@ namespace Xen::RHI {
             _DrawCount    = 0;
         }
 
-        _NoDiscard bool IsEmpty() const { return _Data.empty(); }
-        _NoDiscard size_t GetCommandCount() const { return _CommandCount; }
-        _NoDiscard size_t GetDrawCount() const { return _DrawCount; }
-        _NoDiscard size_t GetSizeInBytes() const { return _Data.size(); }
-        _NoDiscard const u8* GetData() const { return _Data.data(); }
+        NODISCARD bool IsEmpty() const { return _Data.empty(); }
+        NODISCARD size_t GetCommandCount() const { return _CommandCount; }
+        NODISCARD size_t GetDrawCount() const { return _DrawCount; }
+        NODISCARD size_t GetSizeInBytes() const { return _Data.size(); }
+        NODISCARD const u8* GetData() const { return _Data.data(); }
 
         // --- Render passes ----------------------------------------------
         void BeginRenderPass(const RenderPassDesc& Desc) {
@@ -440,7 +440,7 @@ namespace Xen::RHI {
         explicit CommandIterator(const CommandBuffer& Buffer)
             : _Data(Buffer.GetData()), _Size(Buffer.GetSizeInBytes()) {}
 
-        _NoDiscard bool HasNext() const { return _Offset + sizeof(CmdHeader) <= _Size; }
+        NODISCARD bool HasNext() const { return _Offset + sizeof(CmdHeader) <= _Size; }
 
         const CmdHeader& Next() {
             const auto* Header = RCAST<const CmdHeader*>(_Data + _Offset);
@@ -456,7 +456,7 @@ namespace Xen::RHI {
         }
 
         template<typename T>
-        _NoDiscard const u8* Trailing() const {
+        NODISCARD const u8* Trailing() const {
             return _Data + _Current + sizeof(CmdHeader) + sizeof(T);
         }
 

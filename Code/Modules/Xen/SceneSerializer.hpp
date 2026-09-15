@@ -18,7 +18,7 @@
 namespace Xen {
     using Json = nlohmann::ordered_json;
 
-    _DefineEngineException(SerializationException);
+    DEFINE_ENGINE_EXCEPTION(SerializationException);
 
     class JsonSaveReflector final : public IReflector {
     public:

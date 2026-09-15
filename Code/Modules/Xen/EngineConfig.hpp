@@ -5,9 +5,6 @@
 #pragma once
 
 #include <Common/XenCommon.hpp>
-#include <Common/Exception.hpp>
-#include <Common/Log.hpp>
-
 #include "Window.hpp"
 
 #include <INIReader.h>
@@ -22,7 +19,7 @@ namespace Xen {
         static EngineConfig Read(const std::string& Path) {
             const INIReader Reader(Path);
             if (Reader.ParseError() < 0) {
-                _ThrowEngineException(EngineException, "failed to load config file '" + Path + "'");
+                THROW_ENGINE_EXCEPTION(EngineException, "failed to load config file '" + Path + "'");
             }
 
             auto StrToMode = [](const std::string& Str) -> Window::Mode {
@@ -51,7 +48,7 @@ namespace Xen {
         static AudioConfig Read(const std::string& Path) {
             const INIReader Reader(Path);
             if (Reader.ParseError() < 0) {
-                _ThrowEngineException(EngineException, "failed to load config file '" + Path + "'");
+                THROW_ENGINE_EXCEPTION(EngineException, "failed to load config file '" + Path + "'");
             }
 
             return {

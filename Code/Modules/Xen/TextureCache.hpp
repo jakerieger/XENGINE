@@ -64,11 +64,11 @@ namespace Xen {
         void Release(AssetID ID);
         void Preload(AssetID ID);
 
-        _NoDiscard bool IsResident(AssetID ID) const;
-        _NoDiscard TextureInfo GetInfo(TextureHandle Handle) const;
-        _NoDiscard size_t GetResidentCount() const { return _Entries.size(); }
+        NODISCARD bool IsResident(AssetID ID) const;
+        NODISCARD TextureInfo GetInfo(TextureHandle Handle) const;
+        NODISCARD size_t GetResidentCount() const { return _Entries.size(); }
 
-        _NoDiscard u32 GetRefCount(AssetID ID) const;
+        NODISCARD u32 GetRefCount(AssetID ID) const;
         void Clear();
 
     private:
@@ -79,7 +79,7 @@ namespace Xen {
         };
 
     public:
-        _NoDiscard const std::vector<u8>* GetPixels(TextureHandle Handle) const;
+        NODISCARD const std::vector<u8>* GetPixels(TextureHandle Handle) const;
 
     private:
         static std::vector<u8> DecodeImage(const u8* Bytes, size_t Size, TextureInfo& OutInfo);

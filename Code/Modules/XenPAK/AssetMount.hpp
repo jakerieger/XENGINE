@@ -10,7 +10,7 @@
 #include <filesystem>
 
 namespace Xen::PAK {
-    _DefineEngineException(MountException);
+    DEFINE_ENGINE_EXCEPTION(MountException);
 
     /// @brief Describes everything the asset system should mount.
     ///
