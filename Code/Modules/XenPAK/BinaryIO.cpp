@@ -3,18 +3,23 @@
 //
 
 #include "BinaryIO.hpp"
+#include <Xen/Exception.hpp>
 
 namespace Xen::PAK::BinaryIO {
     static void WriteBytes(u8* Bytes, const int Count, const u64 Value) {
-        for (int i = 0; i < Count; ++i) { Bytes[i] = CAST<u8>((Value >> (i * 8)) & 0xFF); }
+        for (int i = 0; i < Count; ++i) {
+            Bytes[i] = CAST<u8>((Value >> (i * 8)) & 0xFF);
+        }
     }
 
     static u64 ReadBytes(std::istream& In, const int Count) {
         u8 Bytes[8] {};
         In.read(RCAST<char*>(Bytes), Count);
-        if (!In) throw std::runtime_error("ReadBytes: unexpected EOF");
+        if (!In) { _ThrowEngineException(EngineException, "ReadBytes: unexpected EOF"); }
         u64 Value = 0;
-        for (int i = 0; i < Count; ++i) { Value |= CAST<u64>(Bytes[i]) << (i * 8); }
+        for (int i = 0; i < Count; ++i) {
+            Value |= CAST<u64>(Bytes[i]) << (i * 8);
+        }
         return Value;
     }
 

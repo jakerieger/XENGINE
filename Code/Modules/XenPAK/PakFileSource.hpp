@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include "PakCommon.hpp"
 #include "AssetSource.hpp"
 #include "PakFormat.hpp"
 #include "Crypto.hpp"

@@ -4,6 +4,7 @@
 
 #include "Canonicalize.hpp"
 
+#include <Xen/EngineCommon.hpp>
 #include <algorithm>
 #include <cctype>
 
@@ -43,7 +44,8 @@ namespace Xen::PAK {
         }
 
         // Strip trailing slash
-        while (!Result.empty() && Result.back() == '/') Result.pop_back();
+        while (!Result.empty() && Result.back() == '/')
+            Result.pop_back();
 
         return Result;
     }

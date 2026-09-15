@@ -14,23 +14,17 @@ namespace Xen::PAK {
         public:
             std::vector<u8> Compress(const u8* Data, const size_t Size) override {
                 if (Size > CAST<size_t>(LZ4_MAX_INPUT_SIZE)) {
-                    throw CodecException(Pak_MakeExceptionStr("Input exceeds LZ4_MAX_INPUT_SIZE"));
+                    _ThrowEngineException(CodecException, "Input exceeds LZ4_MAX_INPUT_SIZE");
                 }
 
                 const int SrcSize = CAST<int>(Size);
                 const int Bound   = LZ4_compressBound(SrcSize);
-                if (Bound <= 0) {
-                    throw CodecException(Pak_MakeExceptionStr("LZ4_compressBound failed"));
-                }
+                if (Bound <= 0) { _ThrowEngineException(CodecException, "LZ4_compressBound failed"); }
 
                 std::vector<u8> Out(CAST<size_t>(Bound));
-                const int Result = LZ4_compress_default(RCAST<const char*>(Data),
-                                                        RCAST<char*>(Out.data()),
-                                                        SrcSize,
-                                                        Bound);
-                if (Result <= 0) {
-                    throw CodecException(Pak_MakeExceptionStr("LZ4_compress_default failed"));
-                }
+                const int Result =
+                  LZ4_compress_default(RCAST<const char*>(Data), RCAST<char*>(Out.data()), SrcSize, Bound);
+                if (Result <= 0) { _ThrowEngineException(CodecException, "LZ4_compress_default failed"); }
 
                 Out.resize(CAST<size_t>(Result));
                 return Out;
@@ -42,7 +36,7 @@ namespace Xen::PAK {
                             const size_t UncompressedSize) override {
                 if (CompressedSize > CAST<size_t>(std::numeric_limits<int>::max()) ||
                     UncompressedSize > CAST<size_t>(std::numeric_limits<int>::max())) {
-                    throw CodecException(Pak_MakeExceptionStr("size exceeds int range"));
+                    _ThrowEngineException(CodecException, "size exceeds int range");
                 }
 
                 const int Result = LZ4_decompress_safe(RCAST<const char*>(CompressedData),
@@ -51,13 +45,11 @@ namespace Xen::PAK {
                                                        CAST<int>(UncompressedSize));
 
                 if (Result < 0) {
-                    throw CodecException(
-                      Pak_MakeExceptionStr("LZ4_decompress_safe failed (possibly corrupt pak)"));
+                    _ThrowEngineException(CodecException, "LZ4_decompress_safe failed (possibly corrupt pak)");
                 }
 
                 if (CAST<size_t>(Result) != UncompressedSize) {
-                    throw CodecException(
-                      Pak_MakeExceptionStr("decompressed size does not match expected size"));
+                    _ThrowEngineException(CodecException, "decompressed size does not match expected size");
                 }
             }
 
@@ -67,8 +59,10 @@ namespace Xen::PAK {
 
     std::unique_ptr<ICodec> CreateCodec(const PakCodec Codec) {
         switch (Codec) {
-            case PakCodec::None: return nullptr;
-            case PakCodec::Lz4: return std::make_unique<Lz4Codec>();
+            case PakCodec::None:
+                return nullptr;
+            case PakCodec::Lz4:
+                return std::make_unique<Lz4Codec>();
             case PakCodec::ZStd:
                 throw std::runtime_error("CreateCodec - ZStd codec not supported yet");
         }

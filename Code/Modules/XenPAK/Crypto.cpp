@@ -15,12 +15,13 @@ namespace Xen::PAK {
         std::uniform_int_distribution<unsigned int> Dist(0, 255);
 
         PakSalt Salt {};
-        for (auto& B : Salt) { B = CAST<u8>(Dist(Gen)); }
+        for (auto& B : Salt) {
+            B = CAST<u8>(Dist(Gen));
+        }
         return Salt;
     }
 
-    PakNonce
-    DeriveNonce(const AssetIDValue ID, const PakSalt& Salt, const AesKeySchedule& Schedule) {
+    PakNonce DeriveNonce(const AssetIDValue ID, const PakSalt& Salt, const AesKeySchedule& Schedule) {
         PakNonce Nonce {};
         std::memcpy(Nonce.data(), Salt.data(), PAK_SALT_SIZE);
 
@@ -37,11 +38,8 @@ namespace Xen::PAK {
         return Nonce;
     }
 
-    void AesCtrXcrypt(const u8* Input,
-                      const size_t Size,
-                      u8* Output,
-                      const AesKeySchedule& Schedule,
-                      const PakNonce& Nonce) {
+    void AesCtrXcrypt(
+      const u8* Input, const size_t Size, u8* Output, const AesKeySchedule& Schedule, const PakNonce& Nonce) {
         if (Size == 0) return;
 
         u8 Counter[AES_BLOCK_SIZE];
@@ -68,9 +66,7 @@ namespace Xen::PAK {
         }
     }
 
-    void AesCtrXcryptInPlace(std::vector<u8>& Data,
-                             const AesKeySchedule& Schedule,
-                             const PakNonce& Nonce) {
+    void AesCtrXcryptInPlace(std::vector<u8>& Data, const AesKeySchedule& Schedule, const PakNonce& Nonce) {
         if (Data.empty()) return;
         AesCtrXcrypt(Data.data(), Data.size(), Data.data(), Schedule, Nonce);
     }
@@ -98,7 +94,9 @@ namespace Xen::PAK {
         // Mix in the salt so the stored value differs per pak; otherwise
         // every pak built with the same key would carry an identical,
         // recognizable 16-byte fingerprint in its header.
-        for (size_t i = 0; i < PAK_SALT_SIZE && i < AES_BLOCK_SIZE; ++i) { Check[i] ^= Salt[i]; }
+        for (size_t i = 0; i < PAK_SALT_SIZE && i < AES_BLOCK_SIZE; ++i) {
+            Check[i] ^= Salt[i];
+        }
 
         Schedule.EncryptBlock(Check.data());
         return Check;

@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "PakCommon.hpp"
+#include <Xen/EngineCommon.hpp>
 
 #include <string>
 #include <functional>
@@ -34,7 +34,8 @@ namespace Xen::PAK {
 
         constexpr size_t CExprStrLen(const char* Str) {
             size_t Len = 0;
-            while (Str[Len] != '\0') ++Len;
+            while (Str[Len] != '\0')
+                ++Len;
             return Len;
         }
 
@@ -50,7 +51,7 @@ namespace Xen::PAK {
         inline u64 FNV1A(const std::string& Str) {
             return FNV1A(Str.data(), Str.size());
         }
-    }  // namespace AssetHash
+    }  // namespace Hash
 
     constexpr AssetID ASSET(const char* CanonicalPath) {
         return AssetID(Hash::FNV1A(CanonicalPath, Hash::CExprStrLen(CanonicalPath)));
@@ -68,7 +69,5 @@ namespace Xen {
 
 template<>
 struct std::hash<Xen::AssetID> {
-    size_t operator()(const Xen::AssetID& id) const noexcept {
-        return std::hash<uint64_t>()(id.Value);
-    }
+    size_t operator()(const Xen::AssetID& id) const noexcept { return std::hash<uint64_t>()(id.Value); }
 };  // namespace std

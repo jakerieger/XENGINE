@@ -22,8 +22,7 @@ namespace Xen::PAK {
             if (Source->Contains(ID)) { return Source->LoadFull(ID); }
         }
 
-        throw std::runtime_error(
-          "AssetRegistry::Load - asset not found (id=" + std::to_string(ID.Value) + ")");
+        throw std::runtime_error("AssetRegistry::Load - asset not found (id=" + std::to_string(ID.Value) + ")");
     }
 
     bool AssetRegistry::TryLoad(const AssetID ID, AssetBuffer& OutBuffer) const {
@@ -50,10 +49,9 @@ namespace Xen::PAK {
     }
 
     void AssetRegistry::SortByPriority() {
-        std::ranges::stable_sort(
-          _Sources,
-          [](const std::unique_ptr<IAssetSource>& a, const std::unique_ptr<IAssetSource>& b) {
-              return a->Priority() > b->Priority();
-          });
+        std::ranges::stable_sort(_Sources,
+                                 [](const std::unique_ptr<IAssetSource>& a, const std::unique_ptr<IAssetSource>& b) {
+                                     return a->Priority() > b->Priority();
+                                 });
     }
 }  // namespace Xen::PAK

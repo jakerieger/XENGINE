@@ -75,4 +75,4 @@ target_link_libraries(Xen PUBLIC
         glm::glm-header-only
         glfw
 )
-target_include_directories(Xen PRIVATE ${MODULES_ROOT}/XenPAK ${VENDOR_ROOT})
+target_include_directories(Xen PRIVATE ${MODULES_ROOT} ${VENDOR_ROOT})

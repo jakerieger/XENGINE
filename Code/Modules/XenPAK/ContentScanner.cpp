@@ -5,17 +5,16 @@
 #include "ContentScanner.hpp"
 #include "Canonicalize.hpp"
 
-#include <stdexcept>
+#include <Xen/Exception.hpp>
 #include <unordered_map>
 
 namespace Xen::PAK {
     namespace fs = std::filesystem;
 
-    std::vector<ScannedAsset> ScanContentDirectory(const fs::path& RootDir,
-                                                   CollisionPolicy Policy) {
+    std::vector<ScannedAsset> ScanContentDirectory(const fs::path& RootDir, CollisionPolicy Policy) {
         if (!exists(RootDir)) {
-            throw std::runtime_error("ScanContentDirectory - root directory does not exist: " +
-                                     RootDir.string());
+            _ThrowEngineException(EngineException,
+                                  "ScanContentDirectory - root directory does not exist: " + RootDir.string());
         }
 
         std::vector<ScannedAsset> Results;
@@ -39,7 +38,7 @@ namespace Xen::PAK {
                                                   Existing.AbsolutePath.string(),
                                                   Entry.path().string(),
                                                   ID.Value);
-                if (Policy == CollisionPolicy::Throw) { throw std::runtime_error(Message); }
+                if (Policy == CollisionPolicy::Throw) { _ThrowEngineException(EngineException, Message); }
                 std::fprintf(stderr, "[ContentScanner] %s\n", Message.c_str());
 
                 continue;

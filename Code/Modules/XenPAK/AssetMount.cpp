@@ -11,7 +11,7 @@ namespace Xen::PAK {
 
     std::unique_ptr<AssetRegistry> MountAssets(const AssetMountConfig& Config) {
         if (Config.PakFiles.empty() && Config.ContentDirs.empty()) {
-            throw MountException(Pak_MakeExceptionStr("no pak files or content directories were configured"));
+            _ThrowEngineException(MountException, "no pak files or content directories were configured");
         }
 
         auto Registry = std::make_unique<AssetRegistry>();
@@ -19,7 +19,7 @@ namespace Xen::PAK {
         int Priority = MOUNT_PRIORITY_PAK_BASE;
         for (const fs::path& PakPath : Config.PakFiles) {
             if (!exists(PakPath)) {
-                throw MountException(Pak_MakeExceptionStr("pak file does not exist: " + PakPath.string()));
+                _ThrowEngineException(MountException, "pak file does not exist: " + PakPath.string());
             }
 
             Registry->AddSource(std::make_unique<PakFileSource>(PakPath, Priority));
@@ -29,11 +29,11 @@ namespace Xen::PAK {
         Priority = MOUNT_PRIORITY_LOOSE_BASE;
         for (const fs::path& Dir : Config.ContentDirs) {
             if (!exists(Dir)) {
-                throw MountException(Pak_MakeExceptionStr("content directory does not exist: " + Dir.string()));
+                _ThrowEngineException(MountException, "content directory does not exist: " + Dir.string());
             }
 
             if (!is_directory(Dir)) {
-                throw MountException(Pak_MakeExceptionStr("content path is not a directory: " + Dir.string()));
+                _ThrowEngineException(MountException, "content path is not a directory: " + Dir.string());
             }
 
             Registry->AddSource(std::make_unique<LooseFileSource>(Dir, Priority));
@@ -46,7 +46,7 @@ namespace Xen::PAK {
     void AppendContentDirsFromArgs(AssetMountConfig& Config, const int argc, char* argv[]) {
         for (int i = 1; i < argc; ++i) {
             if (const std::string Arg = argv[i]; Arg != "--content-dir") continue;
-            if (i + 1 >= argc) { throw MountException(Pak_MakeExceptionStr("--content-dir requires a path argument")); }
+            if (i + 1 >= argc) { _ThrowEngineException(MountException, "--content-dir requires a path argument"); }
             Config.ContentDirs.emplace_back(argv[++i]);
         }
     }

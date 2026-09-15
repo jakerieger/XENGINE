@@ -1,0 +1,5 @@
+project(Xen2D)
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Tools")
+
+add_subdirectory(PAKTool)
