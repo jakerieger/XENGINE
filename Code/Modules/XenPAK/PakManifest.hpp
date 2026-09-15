@@ -4,16 +4,16 @@
 
 #pragma once
 
-#include "PakCommon.hpp"
 #include "AssetID.hpp"
 #include "PakFormat.hpp"
 
+#include <Xen/Exception.hpp>
 #include <filesystem>
 #include <string>
 #include <vector>
 
 namespace Xen::PAK {
-    Pak_MakeException(InvalidManifestException);
+    _DefineEngineException(InvalidManifestException);
 
     constexpr u32 PAK_MANIFEST_VERSION = 1;
 

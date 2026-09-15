@@ -18,7 +18,7 @@ xen_configure_game(XenPong
         CONTENT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Content"
 )
 
-target_include_directories(XenPong PRIVATE ${MODULES_ROOT} ${MODULES_ROOT}/XenPAK ${VENDOR_ROOT})
+target_include_directories(XenPong PRIVATE ${MODULES_ROOT} ${VENDOR_ROOT})
 
 # Copy `Config` directory to build directory since it's needed at runtime
 add_custom_command(

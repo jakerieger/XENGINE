@@ -8,7 +8,7 @@
 #include "Reflection.hpp"
 #include "Scene.hpp"
 
-#include <PAK/AssetID.hpp>
+#include <XenPAK/AssetID.hpp>
 
 #include <unordered_set>
 #include <vector>

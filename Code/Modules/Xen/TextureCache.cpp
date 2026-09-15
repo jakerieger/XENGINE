@@ -5,7 +5,8 @@
 #include "TextureCache.hpp"
 #include "Exception.hpp"
 
-#include <PAK/AssetRegistry.hpp>
+#include <XenPAK/AssetRegistry.hpp>
+#include <XenPAK/AssetBuffer.hpp>
 
 #include <stb_image.h>
 #include <format>

@@ -25,25 +25,23 @@ namespace Xen::PAK {
         PakHeader Header;
         In.read(Header.Magic.data(), Header.Magic.size());
         if (!In || Header.Magic != PAK_MAGIC) {
-            throw InvalidPakException(
-              Pak_MakeExceptionStr("bad magic (not a pak file or file is corrupt"));
+            _ThrowEngineException(InvalidPakException, "bad magic (not a pak file or file is corrupt");
         }
 
         Header.FormatVersion = ReadU32(In);
         if (Header.FormatVersion != PAK_FORMAT_VERSION) {
-            throw InvalidPakException(Pak_MakeExceptionStr("unsupported format version: " +
-                                                        std::to_string(Header.FormatVersion)));
+            _ThrowEngineException(InvalidPakException,
+                                  "unsupported format version: " + std::to_string(Header.FormatVersion));
         }
 
         Header.TableOffset     = ReadU64(In);
         Header.TableEntryCount = ReadU32(In);
 
         In.read(RCAST<char*>(Header.Salt.data()), CAST<std::streamsize>(Header.Salt.size()));
-        if (!In) { throw InvalidPakException(Pak_MakeExceptionStr("failed to read salt")); }
+        if (!In) { _ThrowEngineException(InvalidPakException, "failed to read salt"); }
 
-        In.read(RCAST<char*>(Header.KeyCheck.data()),
-                CAST<std::streamsize>(Header.KeyCheck.size()));
-        if (!In) { throw InvalidPakException(Pak_MakeExceptionStr("failed to read key check")); }
+        In.read(RCAST<char*>(Header.KeyCheck.data()), CAST<std::streamsize>(Header.KeyCheck.size()));
+        if (!In) { _ThrowEngineException(InvalidPakException, "failed to read key check"); }
 
         return Header;
     }

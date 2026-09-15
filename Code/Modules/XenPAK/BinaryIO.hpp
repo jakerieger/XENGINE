@@ -4,10 +4,9 @@
 
 #pragma once
 
-#include "PakCommon.hpp"
+#include <Xen/EngineCommon.hpp>
 
 #include <iostream>
-#include <stdexcept>
 
 namespace Xen::PAK::BinaryIO {
     void WriteU16(std::ostream& Out, u16 Value);

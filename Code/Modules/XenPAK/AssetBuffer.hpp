@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "PakCommon.hpp"
+#include <Xen/EngineCommon.hpp>
 
 #include <memory>
 
@@ -14,8 +14,7 @@ namespace Xen::PAK {
     public:
         AssetBuffer() = default;
 
-        AssetBuffer(std::unique_ptr<u8[]> Data, const size_t Size)
-            : _Data(std::move(Data)), _Size(Size) {}
+        AssetBuffer(std::unique_ptr<u8[]> Data, const size_t Size) : _Data(std::move(Data)), _Size(Size) {}
 
         AssetBuffer(AssetBuffer&&)                 = default;
         AssetBuffer& operator=(AssetBuffer&&)      = default;

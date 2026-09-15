@@ -7,7 +7,7 @@
 #include "EngineCommon.hpp"
 #include "Reflection.hpp"
 
-#include <PAK/AssetID.hpp>
+#include <XenPAK/AssetID.hpp>
 
 namespace Xen {
     class Actor;

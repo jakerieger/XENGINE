@@ -5,6 +5,7 @@
 #include "LooseFileSource.hpp"
 #include "Canonicalize.hpp"
 
+#include <Xen/Exception.hpp>
 #include <fstream>
 #include <stdexcept>
 #include <cstdio>
@@ -24,27 +25,25 @@ namespace Xen::PAK {
     AssetBuffer LooseFileSource::LoadFull(const AssetID ID) {
         const auto It = _PathMap.find(ID.Value);
         if (It == _PathMap.end()) {
-            throw std::runtime_error("LooseFileSource::LoadFull - Unknown asset ID.");
+            _ThrowEngineException(EngineException, "LooseFileSource::LoadFull - Unknown asset ID.");
         }
 
         const fs::path& Path = It->second;
 
         std::ifstream FileStream(Path, std::ios::binary | std::ios::ate);
         if (!FileStream) {
-            throw std::runtime_error("LooseFileSource::LoadFull - Could not open file: " +
-                                     Path.string());
+            _ThrowEngineException(EngineException, "LooseFileSource::LoadFull - Could not open file: " + Path.string());
         }
 
         const std::streamsize Size = FileStream.tellg();
         if (Size < 0) {
-            throw std::runtime_error("LooseFileSource::LoadFull - tellg failed: " + Path.string());
+            _ThrowEngineException(EngineException, "LooseFileSource::LoadFull - tellg failed: " + Path.string());
         }
         FileStream.seekg(0, std::ios::beg);
 
         auto Data = std::make_unique<u8[]>(CAST<size_t>(Size));
         if (Size > 0 && !FileStream.read(RCAST<char*>(Data.get()), Size)) {
-            throw std::runtime_error("LooseFileSource::LoadFull - Could not read file: " +
-                                     Path.string());
+            _ThrowEngineException(EngineException, "LooseFileSource::LoadFull - Could not read file: " + Path.string());
         }
 
         return AssetBuffer(std::move(Data), CAST<size_t>(Size));
@@ -65,9 +64,7 @@ namespace Xen::PAK {
 
     void LooseFileSource::ScanDirectory() {
         if (!exists(_RootDir)) {
-            std::fprintf(stderr,
-                         "[LooseFileSource] Root directory does not exist: %s\n",
-                         _RootDir.string().c_str());
+            std::fprintf(stderr, "[LooseFileSource] Root directory does not exist: %s\n", _RootDir.string().c_str());
             return;
         }
 

@@ -1,10 +1,10 @@
-#include <PAK/AssetID.hpp>
-#include <PAK/Codec.hpp>
-#include <PAK/ContentScanner.hpp>
-#include <PAK/PakFileSource.hpp>
-#include <PAK/PakFormat.hpp>
-#include <PAK/PakManifest.hpp>
-#include <PAK/Crypto.hpp>
+#include <XenPAK/AssetID.hpp>
+#include <XenPAK/Codec.hpp>
+#include <XenPAK/ContentScanner.hpp>
+#include <XenPAK/PakFileSource.hpp>
+#include <XenPAK/PakFormat.hpp>
+#include <XenPAK/PakManifest.hpp>
+#include <XenPAK/Crypto.hpp>
 
 #include <CLI/CLI.hpp>
 

@@ -5,13 +5,12 @@
 #pragma once
 
 #include "AssetRegistry.hpp"
-#include "PakFormat.hpp"
-#include "PakCommon.hpp"
 
+#include <Xen/Exception.hpp>
 #include <filesystem>
 
 namespace Xen::PAK {
-    Pak_MakeException(MountException);
+    _DefineEngineException(MountException);
 
     /// @brief Describes everything the asset system should mount.
     ///

@@ -52,22 +52,21 @@ namespace Xen::PAK {
 
         std::ofstream Out(Path, std::ios::trunc);
         if (!Out) {
-            throw InvalidManifestException(
-              Pak_MakeExceptionStr("failed to open manifest for writing: " + Path.string()));
+            _ThrowEngineException(InvalidManifestException, "failed to open manifest for writing: " + Path.string());
         }
         Out << Root.dump(2);
     }
 
     PakManifest PakManifest::ReadFromFile(const std::filesystem::path& Path) {
         std::ifstream In(Path);
-        if (!In) { throw InvalidManifestException(Pak_MakeExceptionStr("manifest not found: " + Path.string())); }
+        if (!In) { _ThrowEngineException(InvalidManifestException, "manifest not found: " + Path.string()); }
 
         Json Root;
         try {
             In >> Root;
         } catch (const Json::parse_error& Ex) {
-            throw InvalidManifestException(
-              Pak_MakeExceptionStr("failed to parse manifest '" + Path.string() + "': " + Ex.what()));
+            _ThrowEngineException(InvalidManifestException,
+                                  "failed to parse manifest '" + Path.string() + "': " + Ex.what());
         }
 
         PakManifest Manifest;
@@ -87,13 +86,12 @@ namespace Xen::PAK {
                 Manifest.Assets.push_back(std::move(AssetEntry));
             }
         } catch (const Json::exception& Ex) {
-            throw InvalidManifestException(
-              Pak_MakeExceptionStr("malformed manifest '" + Path.string() + "': " + Ex.what()));
+            _ThrowEngineException(InvalidManifestException, "malformed manifest '" + Path.string() + "': " + Ex.what());
         }
 
         if (Manifest.FormatVersion != PAK_MANIFEST_VERSION) {
-            throw InvalidManifestException(
-              Pak_MakeExceptionStr("unsupported manifest version: " + std::to_string(Manifest.FormatVersion)));
+            _ThrowEngineException(InvalidManifestException,
+                                  "unsupported manifest version: " + std::to_string(Manifest.FormatVersion));
         }
 
         return Manifest;

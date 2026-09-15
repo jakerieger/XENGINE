@@ -4,14 +4,14 @@
 
 #pragma once
 
-#include "PakCommon.hpp"
 #include "AssetID.hpp"
 #include "Crypto.hpp"
 
+#include <Xen/Exception.hpp>
 #include <array>
 
 namespace Xen::PAK {
-    Pak_MakeException(InvalidPakException);
+    _DefineEngineException(InvalidPakException);
 
     constexpr std::array PAK_MAGIC   = {'X', 'P', 'A', 'K'};
     constexpr u32 PAK_FORMAT_VERSION = 2;  // v2 added encryption salt

@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include "PakCommon.hpp"
 #include "AssetID.hpp"
 
 #include <filesystem>
@@ -27,6 +26,5 @@ namespace Xen::PAK {
         Throw,
     };
 
-    std::vector<ScannedAsset> ScanContentDirectory(const std::filesystem::path& RootDir,
-                                                   CollisionPolicy Policy);
+    std::vector<ScannedAsset> ScanContentDirectory(const std::filesystem::path& RootDir, CollisionPolicy Policy);
 }  // namespace Xen::PAK

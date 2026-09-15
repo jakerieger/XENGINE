@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include "PakCommon.hpp"
 #include <string>
 
 namespace Xen::PAK {

@@ -12,8 +12,8 @@
 #include "SpriteRenderer.hpp"
 #include "Window.hpp"
 
-#include <PAK/AssetMount.hpp>
-#include <PAK/AssetRegistry.hpp>
+#include <XenPAK/AssetMount.hpp>
+#include <XenPAK/AssetRegistry.hpp>
 
 #include <filesystem>
 

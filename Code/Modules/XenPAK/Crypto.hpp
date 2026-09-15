@@ -4,15 +4,15 @@
 
 #pragma once
 
-#include "PakCommon.hpp"
 #include "AssetID.hpp"
 #include "Aes.hpp"
 
+#include <Xen/Exception.hpp>
 #include <array>
 #include <vector>
 
 namespace Xen::PAK {
-    Pak_MakeException(CryptoException);
+    _DefineEngineException(CryptoException);
 
     constexpr size_t PAK_KEY_SIZE   = AES_256_KEY_SIZE;
     constexpr size_t PAK_SALT_SIZE  = 16;
@@ -32,16 +32,10 @@ namespace Xen::PAK {
     PakNonce DeriveNonce(AssetIDValue ID, const PakSalt& Salt, const AesKeySchedule& Schedule);
 
     /// @brief AES-256-CTR.
-    void AesCtrXcrypt(const u8* Input,
-                      size_t Size,
-                      u8* Output,
-                      const AesKeySchedule& Schedule,
-                      const PakNonce& Nonce);
+    void AesCtrXcrypt(const u8* Input, size_t Size, u8* Output, const AesKeySchedule& Schedule, const PakNonce& Nonce);
 
     /// @brief In-place convenience overload.
-    void AesCtrXcryptInPlace(std::vector<u8>& Data,
-                             const AesKeySchedule& Schedule,
-                             const PakNonce& Nonce);
+    void AesCtrXcryptInPlace(std::vector<u8>& Data, const AesKeySchedule& Schedule, const PakNonce& Nonce);
 
     /// @brief The build/runtime key.
     const PakKey& GetBuiltInKey();
