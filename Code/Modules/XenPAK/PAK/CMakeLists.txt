@@ -27,6 +27,8 @@ add_library(XenPAK STATIC
         PakFileSource.hpp
         PakFormat.cpp
         PakFormat.hpp
+        PakManifest.cpp
+        PakManifest.hpp
 )
 add_library(Xen::PAK ALIAS XenPAK)
 
