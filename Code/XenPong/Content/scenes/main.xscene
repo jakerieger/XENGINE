@@ -45,7 +45,8 @@
           "Type": "BallComponent",
           "Properties": {
             "BallSpeed": 5.0,
-            "SpeedGain": 1.0
+            "SpeedGain": 1.1,
+            "MaxBallSpeed": 100
           }
         }
       ]

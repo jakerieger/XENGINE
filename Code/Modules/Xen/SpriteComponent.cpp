@@ -7,7 +7,10 @@
 
 #include "SpriteComponent.hpp"
 #include "Actor.hpp"
+#include "CameraComponent.hpp"
 #include "Scene.hpp"
+
+#include <cmath>
 
 namespace Xen {
     SpriteComponent::SpriteComponent() = default;
@@ -69,6 +72,30 @@ namespace Xen {
 
     TextureHandle SpriteComponent::GetTexture() const {
         return _Texture;
+    }
+
+    Rect SpriteComponent::GetWorldBounds() const {
+        Rect Source = _SourceRect;
+        if (Source.IsEmpty()) {
+            if (const Scene* S = GetScene(); S && S->GetContext().Textures && _Texture.IsValid()) {
+                const auto [Width, Height] = S->GetContext().Textures->GetInfo(_Texture);
+                Source                     = Rect {0.0f, 0.0f, CAST<f32>(Width), CAST<f32>(Height)};
+            }
+        }
+
+        f32 PixelsPerUnit = 100.0f;
+        if (const Scene* S = GetScene()) {
+            if (const CameraComponent* Camera = S->GetMainCamera()) { PixelsPerUnit = Camera->GetPixelsPerUnit(); }
+        }
+
+        const Transform WorldTransform = GetOwner()->GetWorldTransform();
+        const glm::vec2 Size {Source.Width / PixelsPerUnit * std::abs(WorldTransform.Scale.x),
+                              Source.Height / PixelsPerUnit * std::abs(WorldTransform.Scale.y)};
+
+        return Rect {WorldTransform.Position.x - Size.x * 0.5f,
+                    WorldTransform.Position.y - Size.y * 0.5f,
+                    Size.x,
+                    Size.y};
     }
 
     void SpriteComponent::BeginPlay() {

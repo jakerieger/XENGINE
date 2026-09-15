@@ -12,6 +12,7 @@
 #include "SpriteBatcher.hpp"
 #include "SpriteRenderer.hpp"
 #include "Window.hpp"
+#include "Input.hpp"
 
 #include <XenPAK/AssetMount.hpp>
 #include <XenPAK/AssetRegistry.hpp>
@@ -69,6 +70,7 @@ namespace Xen {
         NODISCARD SpriteRenderer& GetRenderer() { return _SpriteRenderer; }
         NODISCARD RHI::IRenderDevice& GetRenderDevice() const { return *_RenderDevice; }
         NODISCARD Window& GetWindow() const { return *_Window; }
+        NODISCARD InputManager& GetInputManager() const { return _Window->GetInputManager(); }
 
         NODISCARD u64 GetFrameCount() const { return _FrameCount; }
         NODISCARD f32 GetLastFrameDelta() const { return _LastDelta; }

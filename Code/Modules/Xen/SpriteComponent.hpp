@@ -46,6 +46,14 @@ namespace Xen {
         /// @brief The resolved GPU texture. Invalid until BeginPlay has run.
         TextureHandle GetTexture() const;
 
+        /// @brief World-space axis-aligned bounds of the sprite (position/rotation-free
+        /// extent), sized from the source rect (or full texture, if unset) scaled by the
+        /// actor's world transform and the scene's main camera's pixels-per-unit.
+        ///
+        /// For gameplay use (collision, hit-testing) - rendering's own culling bounds live
+        /// separately in SpriteBatcher, which additionally inflates them for rotation.
+        NODISCARD Rect GetWorldBounds() const;
+
     private:
         AssetID _TextureAsset {};
         Rect _SourceRect {};

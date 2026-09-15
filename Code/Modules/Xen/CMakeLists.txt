@@ -10,9 +10,6 @@ add_library(Xen STATIC
         ${VENDOR_ROOT}/glad.c
         ${VENDOR_ROOT}/glad.h
         ${VENDOR_ROOT}/khrplatform.h
-        ${VENDOR_ROOT}/INIReader.cpp
-        ${VENDOR_ROOT}/INIReader.h
-        ${VENDOR_ROOT}/ini.c
         ${VENDOR_ROOT}/ini.h
         # Engine
         ${SHADER_INCLUDES}
@@ -34,6 +31,7 @@ add_library(Xen STATIC
         EngineContext.hpp
         Game.cpp
         Game.hpp
+        Input.hpp
         Reflection.hpp
         RenderDevice.hpp
         RHI.cpp

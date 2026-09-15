@@ -22,7 +22,9 @@ namespace {
     protected:
         void OnStartup() override {}
 
-        void OnUpdate(f32 DeltaTime) override {}
+        void OnUpdate(f32 DeltaTime) override {
+            if (GetInputManager().GetKeyDown(Input::KeyCode::Escape)) { Quit(); }
+        }
 
         void OnSceneLoaded(Scene& S) override {
             LOG_INFO("Loaded scene: %s", S.GetName().c_str());

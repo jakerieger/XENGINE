@@ -11,6 +11,7 @@
 namespace Xen {
     class Actor;
     class Scene;
+    class Game;
 
     using ComponentTypeID = u64;
 
@@ -49,8 +50,11 @@ namespace Xen {
         virtual void EndPlay() {}
 
         Actor* GetOwner() const { return _Owner; }
+
         // Actually implemented in Actor.cpp
         Scene* GetScene() const;
+        Game* GetGame() const;
+
         bool IsEnabled() const { return _Enabled; }
         void SetEnabled(const bool Enabled) { _Enabled = Enabled; }
 

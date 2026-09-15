@@ -5,22 +5,15 @@
 #pragma once
 
 #include <Common/XenCommon.hpp>
+#include "Input.hpp"
+#include "EngineConfig.hpp"
 
-#include <functional>
 #include <string>
-
-struct GLFWwindow;
 
 namespace Xen {
     class Window {
     public:
-        enum class Mode : u8 {
-            Windowed   = 0,
-            Borderless = 1,
-            Fullscreen = 2,
-        };
-
-        Window(const std::string& Title, Mode WindowMode, u32 Width, u32 Height);
+        Window(const std::string& Title, EngineConfig::WindowMode Mode, u32 Width, u32 Height);
         ~Window();
 
         Window(const Window&)            = delete;
@@ -36,11 +29,19 @@ namespace Xen {
         NODISCARD u32 GetHeight() const { return _Height; }
         NODISCARD bool IsMinimized() const { return _Width == 0 || _Height == 0; }
         NODISCARD GLFWwindow* GetHandle() const { return _Handle; }
+        NODISCARD InputManager& GetInputManager() { return _InputManager; }
 
         NODISCARD bool ConsumeResized();
 
+        void ResetInput();
+
     private:
-        static void OnFramebufferResized(GLFWwindow* Handle, int W, int H);
+        static void OnFrameBufferResized(GLFWwindow* Handle, int W, int H);
+        static void OnKeyCallback(GLFWwindow* Handle, int Key, int ScanCode, int Action, int Mods);
+        static void OnMouseButtonCallback(GLFWwindow* Handle, int Button, int Action, int Mods);
+        static void OnCursorPosCallback(GLFWwindow* Handle, double X, double Y);
+        static void OnMouseScrollCallback(GLFWwindow* Handle, double DeltaX, double DeltaY);
+
         void Shutdown() const;
 
         /// @brief Center the window on the active monitor.
@@ -50,5 +51,6 @@ namespace Xen {
         u32 _Width {0};
         u32 _Height {0};
         bool _Resized {false};
+        InputManager _InputManager;
     };
 }  // namespace Xen
