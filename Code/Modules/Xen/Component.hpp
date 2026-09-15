@@ -8,32 +8,23 @@
 
 #include "Reflection.hpp"
 
-#include <XenPAK/AssetID.hpp>
-
 namespace Xen {
     class Actor;
     class Scene;
 
     using ComponentTypeID = u64;
 
-    namespace Hash {
-        constexpr u64 OfName(const char* Name) {
-            // Simply re-use the already implemented FNV1A code from XenPAK.
-            return PAK::Hash::FNV1A(Name, PAK::Hash::CExprStrLen(Name));
-        }
-    }  // namespace Hash
-
 /// @brief Declares a component's type identity. Every concrete component must
 /// use this in its public section.
 ///
 /// Gives each type a stable name and ID for GetComponent<T> lookups and, in a
 /// later phase, for spawning components by name when deserializing a scene.
-#define _ComponentType(TypeName)                                                                                       \
+#define XEN_COMPONENT_TYPE(TypeName)                                                                                   \
     static constexpr const char* StaticTypeName() {                                                                    \
         return #TypeName;                                                                                              \
     }                                                                                                                  \
     static constexpr Xen::ComponentTypeID StaticTypeID() {                                                             \
-        return Xen::Hash::OfName(#TypeName);                                                                           \
+        return Xen::Hash::FNV1A(#TypeName, Xen::Hash::detail::ConstexprStrLen(#TypeName));                             \
     }                                                                                                                  \
     const char* GetTypeName() const override {                                                                         \
         return StaticTypeName();                                                                                       \
@@ -65,7 +56,7 @@ namespace Xen {
 
         template<typename T>
         T* As() {
-            static_assert(std::is_base_of_v<IComponent, T>, "T must derive from IComponent");
+            ASSERT_BASE_OF(IComponent, T);
             return CAST<T*>(this);
         }
 

@@ -39,13 +39,13 @@ namespace Xen {
             });
         }
 
-        _NoDiscard std::unique_ptr<IComponent> Create(const std::string& TypeName) const;
-        _NoDiscard std::unique_ptr<IComponent> Create(ComponentTypeID ID) const;
-        _NoDiscard bool IsRegistered(const std::string& TypeName) const;
-        _NoDiscard bool IsRegistered(ComponentTypeID ID) const;
-        _NoDiscard const TypeInfo* FindType(ComponentTypeID ID) const;
-        _NoDiscard std::vector<std::string> GetRegisteredNames() const;
-        _NoDiscard size_t GetTypeCount() const { return _Types.size(); }
+        NODISCARD std::unique_ptr<IComponent> Create(const std::string& TypeName) const;
+        NODISCARD std::unique_ptr<IComponent> Create(ComponentTypeID ID) const;
+        NODISCARD bool IsRegistered(const std::string& TypeName) const;
+        NODISCARD bool IsRegistered(ComponentTypeID ID) const;
+        NODISCARD const TypeInfo* FindType(ComponentTypeID ID) const;
+        NODISCARD std::vector<std::string> GetRegisteredNames() const;
+        NODISCARD size_t GetTypeCount() const { return _Types.size(); }
 
         void Clear();
 
@@ -57,7 +57,7 @@ namespace Xen {
     };
 }  // namespace Xen
 
-#define _DefineComponent(Type)                                                                                         \
+#define REGISTER_COMPONENT(Type)                                                                                       \
     class Type;                                                                                                        \
     namespace {                                                                                                        \
         const struct Type##_AutoRegister {                                                                             \

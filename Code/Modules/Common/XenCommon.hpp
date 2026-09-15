@@ -6,7 +6,26 @@
 #pragma warning(disable : 4244)  // Type-conversion loss of data warning (i.e. float -> unsigned)
 
 #include <cstdint>
-#include <stdexcept>
+
+#include "Hash.hpp"
+#include "Log.hpp"
+#include "DateTime.hpp"
+#include "Exception.hpp"
+
+#include <cstdarg>
+
+#pragma region Macros
+
+#define KB(n) ((size_t)(n) * 1024)
+#define MB(n) ((size_t)(n) * 1024 * 1024)
+#define GB(n) ((size_t)(n) * 1024 * 1024 * 1024)
+#define ASSERT_BASE_OF(Base, T) static_assert(std::is_base_of_v<Base, T>, "T must derive from " #Base ".");
+#define NODISCARD [[nodiscard]]
+#define NORETURN [[noreturn]]
+
+#define PANIC(Msg, ...) Xen::Panic(PSIG_HERE, __FILE__, __LINE__, #Msg, ##__VA_ARGS__);
+
+#pragma endregion
 
 namespace Xen {
     using u8   = uint8_t;
@@ -44,11 +63,16 @@ namespace Xen {
         return reinterpret_cast<T>(Value);
     }
 
-#define _AssertBaseOf(Base, T) static_assert(std::is_base_of_v<Base, T>, "T must derive from " #Base ".");
+    NORETURN inline void
+    Panic(const std::string& Signature, const char* FileName, const u32 Line, const char* Fmt, ...) noexcept {
+        va_list ArgsList;
+        va_start(ArgsList, Fmt);
+        char Msg[2048];
+        vsnprintf(Msg, sizeof(Msg), Fmt, ArgsList);
+        va_end(ArgsList);
 
-#define _Kb(n) ((size_t)(n) * 1024)
-#define _Mb(n) ((size_t)(n) * 1024 * 1024)
-#define _Gb(n) ((size_t)(n) * 1024 * 1024 * 1024)
+        LOG_CRIT("(PANIC) %s:%d in %s: %s", FileName, Line, Signature.c_str(), Msg);
 
-#define _NoDiscard [[nodiscard]]
+        std::abort();
+    }
 }  // namespace Xen

@@ -25,25 +25,25 @@ namespace Xen::PAK {
     AssetBuffer LooseFileSource::LoadFull(const AssetID ID) {
         const auto It = _PathMap.find(ID.Value);
         if (It == _PathMap.end()) {
-            _ThrowEngineException(EngineException, "LooseFileSource::LoadFull - Unknown asset ID.");
+            THROW_ENGINE_EXCEPTION(EngineException, "LooseFileSource::LoadFull - Unknown asset ID.");
         }
 
         const fs::path& Path = It->second;
 
         std::ifstream FileStream(Path, std::ios::binary | std::ios::ate);
         if (!FileStream) {
-            _ThrowEngineException(EngineException, "LooseFileSource::LoadFull - Could not open file: " + Path.string());
+            THROW_ENGINE_EXCEPTION(EngineException, "LooseFileSource::LoadFull - Could not open file: " + Path.string());
         }
 
         const std::streamsize Size = FileStream.tellg();
         if (Size < 0) {
-            _ThrowEngineException(EngineException, "LooseFileSource::LoadFull - tellg failed: " + Path.string());
+            THROW_ENGINE_EXCEPTION(EngineException, "LooseFileSource::LoadFull - tellg failed: " + Path.string());
         }
         FileStream.seekg(0, std::ios::beg);
 
         auto Data = std::make_unique<u8[]>(CAST<size_t>(Size));
         if (Size > 0 && !FileStream.read(RCAST<char*>(Data.get()), Size)) {
-            _ThrowEngineException(EngineException, "LooseFileSource::LoadFull - Could not read file: " + Path.string());
+            THROW_ENGINE_EXCEPTION(EngineException, "LooseFileSource::LoadFull - Could not read file: " + Path.string());
         }
 
         return AssetBuffer(std::move(Data), CAST<size_t>(Size));
@@ -51,10 +51,6 @@ namespace Xen::PAK {
 
     int LooseFileSource::Priority() const {
         return _Priority;
-    }
-
-    const char* LooseFileSource::DebugName() const {
-        return "LooseFileSource";
     }
 
     std::string LooseFileSource::DebugPathFor(const AssetID ID) const {

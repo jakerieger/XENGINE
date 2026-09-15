@@ -202,7 +202,7 @@ namespace Xen {
                 // so refuse now rather than emitting a file that silently
                 // loses data later.
                 if (!ComponentRegistry::Get().IsRegistered(C->GetTypeID())) {
-                    _ThrowEngineException(
+                    THROW_ENGINE_EXCEPTION(
                       SerializationException,
                       std::format("component type '{}' on actor '{}' is not registered - it would be lost on "
                                   "load. Register it with ComponentRegistry::Register<T>().",
@@ -229,21 +229,21 @@ namespace Xen {
     }
 
     void SceneSerializer::LoadFromJson(Scene& S, const Json& Root) {
-        if (!Root.is_object()) { _ThrowEngineException(SerializationException, "scene root is not an object"); }
+        if (!Root.is_object()) { THROW_ENGINE_EXCEPTION(SerializationException, "scene root is not an object"); }
 
         const auto VersionIt = Root.find("Version");
         if (VersionIt == Root.end() || !VersionIt->is_number()) {
-            _ThrowEngineException(SerializationException, "scene is missing a version");
+            THROW_ENGINE_EXCEPTION(SerializationException, "scene is missing a version");
         }
         if (VersionIt->get<u32>() != SCENE_FORMAT_VERSION) {
-            _ThrowEngineException(
+            THROW_ENGINE_EXCEPTION(
               SerializationException,
               std::format("unsupported scene version {} (expected {})", VersionIt->get<u32>(), SCENE_FORMAT_VERSION));
         }
 
         const auto ActorsIt = Root.find("Actors");
         if (ActorsIt == Root.end() || !ActorsIt->is_array()) {
-            _ThrowEngineException(SerializationException, "scene has no Actors array");
+            THROW_ENGINE_EXCEPTION(SerializationException, "scene has no Actors array");
         }
 
         S.Clear();
@@ -258,7 +258,7 @@ namespace Xen {
         Handles.reserve(ActorsIt->size());
 
         for (const Json& AJson : *ActorsIt) {
-            if (!AJson.is_object()) { _ThrowEngineException(SerializationException, "actor entry is not an object"); }
+            if (!AJson.is_object()) { THROW_ENGINE_EXCEPTION(SerializationException, "actor entry is not an object"); }
 
             const auto IDIt   = AJson.find("ID");
             const u64 SavedID = IDIt != AJson.end() && IDIt->is_number() ? IDIt->get<u64>() : 0;
@@ -289,7 +289,7 @@ namespace Xen {
                 const auto TypeName = TypeIt->get<std::string>();
                 auto Created        = ComponentRegistry::Get().Create(TypeName);
                 if (!Created) {
-                    _ThrowEngineException(SerializationException,
+                    THROW_ENGINE_EXCEPTION(SerializationException,
                                           std::format("unknown component type '{}' on actor '{}' - was it registered?",
                                                       TypeName,
                                                       A->GetName()));
@@ -334,21 +334,21 @@ namespace Xen {
         } catch (const Json::parse_error& Ex) {
             // Translated so callers only ever have to catch our exception type
             // rather than nlohmann's as well.
-            _ThrowEngineException(SerializationException, std::string("malformed scene JSON: ") + Ex.what());
+            THROW_ENGINE_EXCEPTION(SerializationException, std::string("malformed scene JSON: ") + Ex.what());
         }
     }
 
     void SceneSerializer::SaveToFile(const Scene& S, const std::filesystem::path& Path, const i32 Indent) {
         std::ofstream Out(Path);
         if (!Out) {
-            _ThrowEngineException(SerializationException, "could not open scene file for writing: " + Path.string());
+            THROW_ENGINE_EXCEPTION(SerializationException, "could not open scene file for writing: " + Path.string());
         }
         Out << SaveToString(S, Indent);
     }
 
     void SceneSerializer::LoadFromFile(Scene& S, const std::filesystem::path& Path) {
         std::ifstream In(Path);
-        if (!In) { _ThrowEngineException(SerializationException, "could not open scene file: " + Path.string()); }
+        if (!In) { THROW_ENGINE_EXCEPTION(SerializationException, "could not open scene file: " + Path.string()); }
         std::ostringstream Buf;
         Buf << In.rdbuf();
         LoadFromString(S, Buf.str());

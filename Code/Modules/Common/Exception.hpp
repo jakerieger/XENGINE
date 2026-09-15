@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "Signature.hpp"
+#include "PrettySignature.hpp"
 
 #include <format>
 #include <exception>
@@ -25,13 +25,13 @@ namespace Xen {
     };
 }  // namespace Xen
 
-#define _DefineEngineException(Type)                                                                                   \
+#define DEFINE_ENGINE_EXCEPTION(Type)                                                                                  \
     class Type : public Xen::EngineException {                                                                         \
     public:                                                                                                            \
         using EngineException::EngineException;                                                                        \
     };
 
-#define _ThrowEngineException(Type, Message)                                                                           \
-    const auto __MsgFmt_##Type = Xen::FormatExceptionMessage(_SignatureHere, #Type, Message);                          \
-    _LogCritical(__MsgFmt_##Type.c_str());                                                                             \
+#define THROW_ENGINE_EXCEPTION(Type, Message)                                                                          \
+    const auto __MsgFmt_##Type = Xen::FormatExceptionMessage(PSIG_HERE, #Type, Message);                               \
+    LOG_ERR(__MsgFmt_##Type.c_str());                                                                                  \
     throw Type(__MsgFmt_##Type)

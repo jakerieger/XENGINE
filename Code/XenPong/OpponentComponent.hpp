@@ -6,11 +6,11 @@
 
 #include <Xen/ComponentRegistry.hpp>
 
-_DefineComponent(OpponentComponent)
+REGISTER_COMPONENT(OpponentComponent)
 
 class OpponentComponent final : public Xen::IComponent {
 public:
-    _ComponentType(OpponentComponent)
+    XEN_COMPONENT_TYPE(OpponentComponent)
     OpponentComponent() {}
 
     void Reflect(Xen::IReflector& R) override {}

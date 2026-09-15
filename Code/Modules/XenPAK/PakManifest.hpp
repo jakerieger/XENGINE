@@ -13,7 +13,7 @@
 #include <vector>
 
 namespace Xen::PAK {
-    _DefineEngineException(InvalidManifestException);
+    DEFINE_ENGINE_EXCEPTION(InvalidManifestException);
 
     constexpr u32 PAK_MANIFEST_VERSION = 1;
 

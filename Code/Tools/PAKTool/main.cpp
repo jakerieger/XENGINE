@@ -23,15 +23,15 @@ using namespace Xen::PAK;
 namespace {
     std::vector<u8> ReadWholeFile(const fs::path& Path) {
         std::ifstream File(Path, std::ios::binary | std::ios::ate);
-        if (!File) { _ThrowEngineException(EngineException, "failed to open: " + Path.string()); }
+        if (!File) { THROW_ENGINE_EXCEPTION(EngineException, "failed to open: " + Path.string()); }
 
         const std::streamsize Size = File.tellg();
-        if (Size < 0) { _ThrowEngineException(EngineException, "failed to tellg: " + Path.string()); }
+        if (Size < 0) { THROW_ENGINE_EXCEPTION(EngineException, "failed to tellg: " + Path.string()); }
         File.seekg(0, std::ios::beg);
 
         std::vector<u8> Data(CAST<size_t>(Size));
         if (Size > 0 && !File.read(RCAST<char*>(Data.data()), Size)) {
-            _ThrowEngineException(EngineException, "failed to read: " + Path.string());
+            THROW_ENGINE_EXCEPTION(EngineException, "failed to read: " + Path.string());
         }
 
         return Data;
@@ -53,23 +53,23 @@ namespace {
         PakFileSource Source(PakPath, 0);
 
         if (Source.AssetCount() != SourceAssets.size()) {
-            _ThrowEngineException(EngineException, "asset count mismatch");
+            THROW_ENGINE_EXCEPTION(EngineException, "asset count mismatch");
         }
 
         for (const auto& Asset : SourceAssets) {
             if (!Source.Contains(Asset.ID)) {
-                _ThrowEngineException(EngineException, "asset id not found in pak: " + Asset.CanonicalPath);
+                THROW_ENGINE_EXCEPTION(EngineException, "asset id not found in pak: " + Asset.CanonicalPath);
             }
 
             AssetBuffer Loaded             = Source.LoadFull(Asset.ID);
             const std::vector<u8> Original = ReadWholeFile(Asset.AbsolutePath);
 
             if (Loaded.Size() != Original.size()) {
-                _ThrowEngineException(EngineException, "size mismatch for " + Asset.CanonicalPath);
+                THROW_ENGINE_EXCEPTION(EngineException, "size mismatch for " + Asset.CanonicalPath);
             }
 
             if (Loaded.Size() > 0 && std::memcmp(Loaded.Data(), Original.data(), Loaded.Size()) != 0) {
-                _ThrowEngineException(EngineException, "byte mismatch for " + Asset.CanonicalPath);
+                THROW_ENGINE_EXCEPTION(EngineException, "byte mismatch for " + Asset.CanonicalPath);
             }
         }
 
@@ -216,7 +216,7 @@ namespace {
         for (const auto& Asset : Manifest.Assets) {
             const AssetID ID(Asset.ID);
             if (!Source.Contains(ID)) {
-                _ThrowEngineException(EngineException,
+                THROW_ENGINE_EXCEPTION(EngineException,
                                       "manifest references asset not present in pak: " + Asset.CanonicalPath);
             }
 
@@ -226,7 +226,7 @@ namespace {
             fs::create_directories(OutPath.parent_path());
 
             std::ofstream OutFile(OutPath, std::ios::binary | std::ios::trunc);
-            if (!OutFile) { _ThrowEngineException(EngineException, "failed to open output file: " + OutPath.string()); }
+            if (!OutFile) { THROW_ENGINE_EXCEPTION(EngineException, "failed to open output file: " + OutPath.string()); }
             if (Buffer.Size() > 0) {
                 OutFile.write(RCAST<const char*>(Buffer.Data()), CAST<std::streamsize>(Buffer.Size()));
             }

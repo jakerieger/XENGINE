@@ -32,9 +32,9 @@ namespace Xen::RHI {
         constexpr Handle(const u32 Index, const u32 Generation)
             : ID((Index & HANDLE_INDEX_MASK) | ((Generation & HANDLE_GEN_MASK) << HANDLE_INDEX_BITS)) {}
 
-        _NoDiscard constexpr u32 Index() const { return ID & HANDLE_INDEX_MASK; }
-        _NoDiscard constexpr u32 Generation() const { return (ID >> HANDLE_INDEX_BITS) & HANDLE_GEN_MASK; }
-        _NoDiscard constexpr bool IsValid() const { return ID != 0; }
+        NODISCARD constexpr u32 Index() const { return ID & HANDLE_INDEX_MASK; }
+        NODISCARD constexpr u32 Generation() const { return (ID >> HANDLE_INDEX_BITS) & HANDLE_GEN_MASK; }
+        NODISCARD constexpr bool IsValid() const { return ID != 0; }
 
         constexpr bool operator==(const Handle& R) const { return ID == R.ID; }
         constexpr bool operator!=(const Handle& R) const { return ID != R.ID; }
@@ -102,7 +102,7 @@ namespace Xen::RHI {
             --_LiveCount;
         }
 
-        _NoDiscard bool IsValid(const H Handle) const {
+        NODISCARD bool IsValid(const H Handle) const {
             if (!Handle.IsValid()) return false;
             const u32 Index = Handle.Index();
             return Index < _Items.size() && _Alive[Index] && _Generations[Index] == Handle.Generation();
@@ -111,7 +111,7 @@ namespace Xen::RHI {
         T* Get(const H Handle) { return IsValid(Handle) ? &_Items[Handle.Index()] : nullptr; }
         const T* Get(const H Handle) const { return IsValid(Handle) ? &_Items[Handle.Index()] : nullptr; }
 
-        _NoDiscard size_t GetLiveCount() const { return _LiveCount; }
+        NODISCARD size_t GetLiveCount() const { return _LiveCount; }
 
         template<typename Fn>
         void ForEachLive(Fn&& Visit) {
@@ -625,7 +625,7 @@ namespace Xen::RHI {
         u32 Size {0};
         void* Data {nullptr};
 
-        _NoDiscard bool IsValid() const { return Data != nullptr; }
+        NODISCARD bool IsValid() const { return Data != nullptr; }
     };
 
     struct DeviceCaps {

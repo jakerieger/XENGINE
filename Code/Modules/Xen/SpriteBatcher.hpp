@@ -32,9 +32,9 @@ namespace Xen {
     public:
         void BuildDrawList(const Scene& S);
 
-        _NoDiscard CameraComponent* GetActiveCamera() const { return _ActiveCamera; }
-        _NoDiscard const glm::mat4& GetViewProjection() const { return _ViewProjection; }
-        _NoDiscard size_t GetCulledCount() const { return _CulledCount; }
+        NODISCARD CameraComponent* GetActiveCamera() const { return _ActiveCamera; }
+        NODISCARD const glm::mat4& GetViewProjection() const { return _ViewProjection; }
+        NODISCARD size_t GetCulledCount() const { return _CulledCount; }
 
         void SetViewport(const u32 Width, const u32 Height) {
             _ViewportWidth  = Width;

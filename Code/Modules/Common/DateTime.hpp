@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include "XenCommon.hpp"
 #include <chrono>
 #include <iomanip>
 #include <sstream>
@@ -25,7 +24,7 @@ namespace Xen {
 
         /// @brief Returns a string in the following format:
         /// `YYYY-MM-DD HH:MM:SS AM/PM`
-        _NoDiscard std::string UTCString() const {
+        std::string UTCString() const {
             const auto T = std::chrono::system_clock::to_time_t(_Time);
             std::tm Tm {};
             gmtime_s(&Tm, &T);
@@ -35,7 +34,7 @@ namespace Xen {
 
         /// @brief Returns a string in the following format:
         /// `YYYY-MM-DD HH:MM:SS AM/PM`
-        _NoDiscard std::string LocalUTCString() const {
+        std::string LocalUTCString() const {
             const auto T = std::chrono::system_clock::to_time_t(_Time);
             std::tm Tm {};
             localtime_s(&Tm, &T);
@@ -45,7 +44,7 @@ namespace Xen {
 
         /// @brief Returns a string in the following format:
         /// `YYYY-MM-DD`
-        _NoDiscard std::string DateString() const {
+        std::string DateString() const {
             const auto T = std::chrono::system_clock::to_time_t(_Time);
             std::tm Tm {};
             localtime_s(&Tm, &T);
@@ -58,7 +57,7 @@ namespace Xen {
 
         /// @brief Returns a string in the following format:
         /// `HH:MM:SS AM/PM`
-        _NoDiscard std::string TimeString() const {
+        std::string TimeString() const {
             const auto T = std::chrono::system_clock::to_time_t(_Time);
             std::tm Tm {};
             localtime_s(&Tm, &T);
@@ -66,14 +65,14 @@ namespace Xen {
             return FormatTimeString(Tm);
         }
 
-        _NoDiscard i64 UnixEpoch() const {
+        int64_t UnixEpoch() const {
             const auto Duration   = _Time.time_since_epoch();
             const auto UnixMillis = std::chrono::duration_cast<std::chrono::milliseconds>(Duration).count();
 
             return UnixMillis;
         }
 
-        _NoDiscard std::string UnixEpochString() const { return std::to_string(UnixEpoch()); }
+        std::string UnixEpochString() const { return std::to_string(UnixEpoch()); }
 
     private:
         Timepoint _Time;
@@ -92,7 +91,7 @@ namespace Xen {
         static std::string FormatTimeString(const std::tm& Tm) {
             std::ostringstream Oss;
 
-            i32 Hour        = Tm.tm_hour;
+            int Hour        = Tm.tm_hour;
             const bool IsPM = Tm.tm_hour >= 12;
             Hour            = Hour % 12;
             if (Hour == 0) Hour = 12;
@@ -104,3 +103,5 @@ namespace Xen {
         }
     };
 }  // namespace Xen
+
+#define GET_TIMESTAMP Xen::DateTime::Now().UnixEpoch()

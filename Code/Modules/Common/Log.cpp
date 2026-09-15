@@ -2,9 +2,7 @@
 // Created by Jake Rieger on 9/13/2026.
 //
 
-#include "Log.hpp"
-#include "DateTime.hpp"
-#include "Exception.hpp"
+#include "XenCommon.hpp"
 
 #include <filesystem>
 
@@ -91,8 +89,7 @@ namespace Xen {
         static fs::path LogDirectory = fs::current_path() / "Logs";
         if (!exists(LogDirectory)) {
             if (const bool Result = fs::create_directories(LogDirectory); !Result) {
-                _ThrowEngineException(LogException,
-                                      std::format("failed to create logs directory at: {}", LogDirectory.string()));
+                PANIC("failed to create logs directory at: %s", LogDirectory.string().c_str());
             }
         }
 

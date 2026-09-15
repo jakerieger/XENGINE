@@ -30,14 +30,14 @@ namespace Xen {
         void SwapBuffers() const;
         void Clear(bool Depth = false);
 
-        _NoDiscard bool ShouldClose() const;
+        NODISCARD bool ShouldClose() const;
 
-        _NoDiscard u32 GetWidth() const { return _Width; }
-        _NoDiscard u32 GetHeight() const { return _Height; }
-        _NoDiscard bool IsMinimized() const { return _Width == 0 || _Height == 0; }
-        _NoDiscard GLFWwindow* GetHandle() const { return _Handle; }
+        NODISCARD u32 GetWidth() const { return _Width; }
+        NODISCARD u32 GetHeight() const { return _Height; }
+        NODISCARD bool IsMinimized() const { return _Width == 0 || _Height == 0; }
+        NODISCARD GLFWwindow* GetHandle() const { return _Handle; }
 
-        _NoDiscard bool ConsumeResized();
+        NODISCARD bool ConsumeResized();
 
     private:
         static void OnFramebufferResized(GLFWwindow* Handle, int W, int H);

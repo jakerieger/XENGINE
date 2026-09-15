@@ -13,12 +13,13 @@
 namespace Xen::PAK {
     class LooseFileSource : public IAssetSource {
     public:
+        _AssetSourceType(LooseFileSource);
+
         LooseFileSource(std::filesystem::path RootDir, int Priority);
 
         bool Contains(AssetID ID) const override;
         AssetBuffer LoadFull(AssetID ID) override;
         int Priority() const override;
-        const char* DebugName() const override;
 
         std::string DebugPathFor(AssetID ID) const;
 

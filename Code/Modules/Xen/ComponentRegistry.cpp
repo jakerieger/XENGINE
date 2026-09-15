@@ -2,9 +2,6 @@
 // Created by Jake Rieger on 9/8/2026.
 //
 
-#include <Common/Log.hpp>
-#include <Common/Exception.hpp>
-
 #include "ComponentRegistry.hpp"
 
 #include <algorithm>
@@ -59,13 +56,13 @@ namespace Xen {
         if (const auto It = _Types.find(ID); It != _Types.end()) {
             if (It->second.Name == Name) return;
 
-            _ThrowEngineException(
+            THROW_ENGINE_EXCEPTION(
               EngineException,
               std::format("component type ID collision between '{}' and '{}'", It->second.Name, Name));
         }
 
         if (const auto It = _NameToID.find(Name); It != _NameToID.end()) {
-            _ThrowEngineException(
+            THROW_ENGINE_EXCEPTION(
               EngineException,
               std::format("component name '{}' is already registered to a different type ID", Name));
         }

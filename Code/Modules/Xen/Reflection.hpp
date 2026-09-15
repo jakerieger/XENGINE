@@ -52,7 +52,7 @@ namespace Xen {
 
         AssetKind Asset {AssetKind::Unknown};
 
-        _NoDiscard bool HasRange() const { return Min != Max; }
+        NODISCARD bool HasRange() const { return Min != Max; }
     };
 
     /// @brief Visitor over a component's or actor's properties.

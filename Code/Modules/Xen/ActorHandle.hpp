@@ -16,7 +16,7 @@ namespace Xen {
         constexpr ActorHandle() = default;
         constexpr ActorHandle(const u32 InIndex, const u32 InGeneration) : Index(InIndex), Generation(InGeneration) {}
 
-        _NoDiscard constexpr bool IsSet() const { return Generation != 0; }
+        NODISCARD constexpr bool IsSet() const { return Generation != 0; }
 
         constexpr bool operator==(const ActorHandle& Other) const {
             return Index == Other.Index && Generation == Other.Generation;

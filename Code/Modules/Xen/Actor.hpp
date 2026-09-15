@@ -5,7 +5,6 @@
 #pragma once
 
 #include <Common/XenCommon.hpp>
-#include <Common/Exception.hpp>
 
 #include "ActorHandle.hpp"
 #include "Component.hpp"
@@ -18,7 +17,7 @@
 namespace Xen {
     class Scene;
 
-    _DefineEngineException(ActorException);
+    DEFINE_ENGINE_EXCEPTION(ActorException);
 
     class Actor : public IReflectable {
     public:

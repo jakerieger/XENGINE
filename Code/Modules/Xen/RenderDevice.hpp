@@ -61,8 +61,8 @@ namespace Xen::RHI {
         virtual bool Initialize(const DeviceDescriptor& Desc) = 0;
         virtual void Shutdown()                               = 0;
 
-        _NoDiscard virtual Backend GetBackend() const        = 0;
-        _NoDiscard virtual const DeviceCaps& GetCaps() const = 0;
+        NODISCARD virtual Backend GetBackend() const        = 0;
+        NODISCARD virtual const DeviceCaps& GetCaps() const = 0;
 
         // --- Resources ----------------------------------------------------
         virtual BufferHandle CreateBuffer(const BufferDesc& Desc)                       = 0;
@@ -99,8 +99,8 @@ namespace Xen::RHI {
         /// this from Window::ConsumeResized, and call it once at startup.
         virtual void SetSwapChainSize(u32 Width, u32 Height) = 0;
 
-        _NoDiscard virtual u32 GetSwapChainWidth() const  = 0;
-        _NoDiscard virtual u32 GetSwapChainHeight() const = 0;
+        NODISCARD virtual u32 GetSwapChainWidth() const  = 0;
+        NODISCARD virtual u32 GetSwapChainHeight() const = 0;
 
         /// @brief Sub-allocates from this frame's persistently mapped ring.
         /// The returned pointer is write-only and valid for this frame only.
@@ -113,7 +113,7 @@ namespace Xen::RHI {
             return Alloc;
         }
 
-        _NoDiscard virtual const FrameStats& GetLastFrameStats() const = 0;
+        NODISCARD virtual const FrameStats& GetLastFrameStats() const = 0;
     };
 
     std::unique_ptr<IRenderDevice> CreateRenderDevice(Backend API);
