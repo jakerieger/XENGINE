@@ -2,6 +2,18 @@ include_guard(GLOBAL)
 
 set(_XEN_GAME_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}")
 
+# Creates the game's executable target, picking the right per-platform
+# entry point subsystem (e.g. WIN32 on Windows so the game doesn't get a
+# console window) so individual game CMakeLists don't have to branch on
+# PLATFORM_WINDOWS/MACOS/LINUX themselves.
+function(xen_add_game_executable TARGET)
+    if (PLATFORM_WINDOWS)
+        add_executable(${TARGET} WIN32 ${ARGN})
+    else ()
+        add_executable(${TARGET} ${ARGN})
+    endif ()
+endfunction()
+
 function(xen_configure_game TARGET)
     cmake_parse_arguments(ARG
             "ALLOW_NO_PAK;LOOSE_ASSETS_IN_RELEASE;NO_COMMANDLINE_CONTENT_DIRS"
@@ -47,5 +59,5 @@ function(xen_configure_game TARGET)
             @ONLY)
 
     target_include_directories(${TARGET} PRIVATE "${gen_dir}")
-    target_link_libraries(${TARGET} PRIVATE Xen::Engine)
+    target_link_libraries(${TARGET} PRIVATE Xen::Xen)
 endfunction()

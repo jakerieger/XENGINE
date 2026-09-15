@@ -15,6 +15,9 @@ foreach (OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
     set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_BINARY_DIR}/lib)
 endforeach ()
 
+# Target platform detection (PLATFORM_NAME, PLATFORM_WINDOWS/MACOS/LINUX)
+include(CMake/DetectPlatform.cmake)
+
 # 3rd party dependencies
 include(CMake/FetchDeps.cmake)
 
@@ -22,17 +25,15 @@ set(CODE_ROOT ${CMAKE_SOURCE_DIR}/Code)
 set(MODULES_ROOT ${CODE_ROOT}/Modules)
 set(VENDOR_ROOT ${CODE_ROOT}/Vendor)
 
+set(TOOLS_BIN_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Tools")
+message(STATUS "Tools bin directory: ${TOOLS_BIN_DIR}")
+
 # CMake helpers for engine
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Code/Modules/Engine/CMake")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Code/Modules/Xen/CMake")
 
 add_subdirectory(${MODULES_ROOT}/Xen)
 add_subdirectory(${MODULES_ROOT}/XenPAK)
 add_subdirectory(${MODULES_ROOT}/CrashHandler)
 
 # Demo project
-option(BUILD_DEMO "Build the XenPong demo project")
-
-if (BUILD_DEMO)
-    message(STATUS "Building XenPong demo")
-    add_subdirectory(${CODE_ROOT}/XenPong)
-endif ()
+add_subdirectory(${CODE_ROOT}/XenPong)

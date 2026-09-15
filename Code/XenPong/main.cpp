@@ -12,46 +12,11 @@
 #include <Xen/Game.hpp>
 #include <Xen/Scene.hpp>
 #include <Xen/SceneSerializer.hpp>
-#include <PAK/AssetMount.hpp>
+#include <Xen/XenGameSettings.h>
 
 using namespace Xen;
 
 namespace {
-    // Rules for asset mounting:
-    // * For a release build, Pak file is required and the only option.
-    // * For a debug build, both Pak and content dir will be mounted with content dir taking priority. Additional
-    //   directories can be provided via `--content-dir` command args.
-    PAK::AssetMountConfig GetMountConfig(const int argc, char* argv[]) {
-        PAK::AssetMountConfig Config;
-
-#ifdef NDEBUG
-    #ifndef XEN_GAME_PAK_FILENAME
-        #error "XEN_GAME_PAK_FILENAME must be defined for release builds"
-    #endif
-
-        Config.PakFiles = {XEN_GAME_PAK_FILENAME};
-
-    #ifdef XEN_GAME_CONTENT_DIR
-        Config.ContentDirs = {XEN_GAME_CONTENT_DIR};
-    #endif
-#else
-    #ifndef XEN_GAME_CONTENT_DIR
-        #error "XEN_GAME_CONTENT_DIR must be defined for debug builds"
-    #endif
-
-        Config.ContentDirs = {XEN_GAME_CONTENT_DIR};
-
-    #ifdef XEN_GAME_PAK_FILENAME
-        Config.PakFiles = {XEN_GAME_PAK_FILENAME};
-    #endif
-
-        // Append any content directories provided via arguments (--content-dir <path>)
-        PAK::AppendContentDirsFromArgs(Config, argc, argv);
-#endif
-
-        return Config;
-    }
-
     class XenPong final : public Game {
         using Game::Game;
 
@@ -73,6 +38,8 @@ namespace {
         void OnSceneUnloading(Scene& S) override { _LogInfo("Scene unloading: %s", S.GetName().c_str()); }
     };
 
+    // TODO: Move this logic out of the game executable and into some kind of separate game library so it can be called
+    // from an independent tool. Eventually this will be integrated into an editor of some kind.
     void BuildScene(const EngineContext& Ctx) {
         Scene MainScene("Main");
         MainScene.SetContext(Ctx);
@@ -96,27 +63,11 @@ namespace {
         Actor* CameraActor             = MainScene.Get(CameraHandle);
         CameraActor->AddComponent<CameraComponent>();
 
-        const auto ScenePath = std::filesystem::path(XEN_GAME_CONTENT_DIR) / "scenes" / "main.scene";
+        const auto ScenePath = Generated::GameSettings().ContentDirs[0] / "scenes" / "main.scene";
         SceneSerializer::SaveToFile(MainScene, ScenePath);
 
         _LogInfo("Scene saved: %s", ScenePath.string().c_str());
     }
 }  // namespace
 
-int main(const int argc, char* argv[]) {
-    try {
-        XenPong Game("XenPong", GetMountConfig(argc, argv));
-
-        if (argc > 1) {
-            if (std::string(argv[1]) == "--build-scene") {
-                BuildScene(Game.GetContext());
-                return 0;
-            }
-        }
-
-        Game.Run();
-    } catch (std::exception& Ex) {
-        _LogCritical("%s", Ex.what());
-        return -1;
-    }
-}
+XEN_GAME(XenPong, "XenPong")

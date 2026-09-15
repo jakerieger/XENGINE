@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "AssetSettings.hpp"
 #include "EngineCommon.hpp"
 #include "EngineConfig.hpp"
 #include "Scene.hpp"
@@ -151,4 +152,40 @@ namespace Xen {
         u32 _MaxFixedStepsPerFrame {5};
         f32 _MaxFrameDelta {0.25f};
     };
+
+    template<typename GameClass>
+    void RunGame(const std::string& Name, const AssetSettings& Settings, const int argc, char* argv[]) noexcept {
+        _AssertBaseOf(Game, GameClass);
+        const auto MountConfig = BuildMountConfig(Settings, argc, argv);
+
+        try {
+            GameClass {Name, MountConfig}.Run();
+        } catch (const EngineException& Ex) {
+            std::fprintf(stderr, "%s\n", Ex.what());
+            std::exit(1);
+        }
+    }
 }  // namespace Xen
+
+#ifdef PLATFORM_WINDOWS
+    #ifndef _WINDOWS_
+        #define WIN32_LEAN_AND_MEAN
+        #define NOMINMAX
+        #include <Windows.h>
+    #endif
+
+    #define XEN_ENTRYPOINT int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
+
+    #define XEN_GAME(GameClass, Title)                                                                                 \
+        XEN_ENTRYPOINT {                                                                                               \
+            Xen::RunGame<GameClass>(Title, Xen::Generated::GameSettings(), __argc, __argv);                            \
+            return 0;                                                                                                  \
+        }
+#else
+    #define XEN_ENTRYPOINT int main(int argc, char** argv)
+
+    #define XEN_GAME(GameClass, Title)                                                                                 \
+        XEN_ENTRYPOINT {                                                                                               \
+            Xen::RunGame<GameClass>(Title, Xen::Generated::GameSettings(), argc, argv);                                \
+        }
+#endif
