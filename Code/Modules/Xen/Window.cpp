@@ -5,73 +5,93 @@
 #include <Common/Log.hpp>
 #include <Common/Exception.hpp>
 
-#include <glad.h>
 #include "Window.hpp"
-
-#include <format>
 
 namespace Xen {
     namespace {
-        int g_WindowCount = 0;
-    }
+        constexpr wchar_t WINDOW_CLASS_NAME[] = L"XenWindowClass";
+        int g_WindowCount                     = 0;
 
-    Window::Window(const std::string& Title, EngineConfig::WindowMode Mode, const u32 Width, const u32 Height) {
-        if (g_WindowCount == 0 && glfwInit() != GLFW_TRUE) {
-            THROW_ENGINE_EXCEPTION(EngineException, "glfwInit failed");
+        std::wstring Utf8ToWide(const std::string& Str) {
+            if (Str.empty()) return {};
+            const int Needed =
+              MultiByteToWideChar(CP_UTF8, 0, Str.data(), CAST<int>(Str.size()), nullptr, 0);
+            std::wstring Out(CAST<size_t>(Needed), L'\0');
+            MultiByteToWideChar(CP_UTF8, 0, Str.data(), CAST<int>(Str.size()), Out.data(), Needed);
+            return Out;
+        }
+    }  // namespace
+
+    Window::Window(const std::string& Title, const EngineConfig::WindowMode Mode, const u32 Width, const u32 Height) {
+        const HINSTANCE Instance = GetModuleHandleW(nullptr);
+
+        if (g_WindowCount == 0) {
+            WNDCLASSEXW WndClass {};
+            WndClass.cbSize        = sizeof(WNDCLASSEXW);
+            WndClass.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+            WndClass.lpfnWndProc   = &Window::WndProc;
+            WndClass.hInstance     = Instance;
+            WndClass.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
+            WndClass.lpszClassName = WINDOW_CLASS_NAME;
+
+            if (!RegisterClassExW(&WndClass)) {
+                THROW_ENGINE_EXCEPTION(EngineException, "RegisterClassExW failed");
+            }
         }
 
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-#ifdef __APPLE__
-        glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);  // Required for macOS
-#endif
+        DWORD Style       = WS_OVERLAPPEDWINDOW;
+        constexpr DWORD ExStyle = 0;
+        u32 CreateWidth   = Width;
+        u32 CreateHeight  = Height;
 
-        if (Mode == EngineConfig::WindowMode::Windowed) {
-            _Handle = glfwCreateWindow(CAST<int>(Width), CAST<int>(Height), Title.c_str(), nullptr, nullptr);
-            if (!_Handle) { THROW_ENGINE_EXCEPTION(EngineException, "glfwCreateWindow failed"); }
+        if (Mode != EngineConfig::WindowMode::Windowed) {
+            // Borderless and (borderless-)fullscreen both cover the whole monitor
+            // with no decoration - true exclusive-fullscreen mode switching is a
+            // swap chain concern, not a window one, and is out of scope here.
+            Style = WS_POPUP;
 
-            CenterWindowOnScreen();
-        } else {
-            if (Mode == EngineConfig::WindowMode::Borderless) { glfwWindowHint(GLFW_DECORATED, GL_FALSE); }
-            GLFWmonitor* Monitor = glfwGetPrimaryMonitor();
-            const GLFWvidmode* M = glfwGetVideoMode(Monitor);
-            _Handle              = glfwCreateWindow(M->width,
-                                       M->height,
-                                       Title.c_str(),
-                                       Mode == EngineConfig::WindowMode::Borderless ? nullptr : Monitor,
-                                       nullptr);
-            if (!_Handle) { THROW_ENGINE_EXCEPTION(EngineException, "glfwCreateWindow failed"); }
+            const HMONITOR Monitor = MonitorFromPoint(POINT {0, 0}, MONITOR_DEFAULTTOPRIMARY);
+            MONITORINFO MonInfo {};
+            MonInfo.cbSize = sizeof(MONITORINFO);
+            GetMonitorInfoW(Monitor, &MonInfo);
+
+            CreateWidth  = CAST<u32>(MonInfo.rcMonitor.right - MonInfo.rcMonitor.left);
+            CreateHeight = CAST<u32>(MonInfo.rcMonitor.bottom - MonInfo.rcMonitor.top);
         }
+
+        RECT WindowRect {0, 0, CAST<LONG>(CreateWidth), CAST<LONG>(CreateHeight)};
+        AdjustWindowRectEx(&WindowRect, Style, FALSE, ExStyle);
+
+        const std::wstring WideTitle = Utf8ToWide(Title);
+
+        _Handle = CreateWindowExW(ExStyle,
+                                  WINDOW_CLASS_NAME,
+                                  WideTitle.c_str(),
+                                  Style,
+                                  CW_USEDEFAULT,
+                                  CW_USEDEFAULT,
+                                  WindowRect.right - WindowRect.left,
+                                  WindowRect.bottom - WindowRect.top,
+                                  nullptr,
+                                  nullptr,
+                                  Instance,
+                                  this);
 
         if (!_Handle) {
-            if (g_WindowCount == 0) glfwTerminate();
-            THROW_ENGINE_EXCEPTION(EngineException, "glfwCreateWindow failed");
+            const DWORD LastError = GetLastError();
+            if (g_WindowCount == 0) UnregisterClassW(WINDOW_CLASS_NAME, Instance);
+            THROW_ENGINE_EXCEPTION(EngineException,
+                                   "CreateWindowExW failed (GetLastError=" + std::to_string(LastError) + ")");
         }
         ++g_WindowCount;
 
-        glfwMakeContextCurrent(_Handle);
+        _Width  = CreateWidth;
+        _Height = CreateHeight;
 
-        if (!gladLoadGLLoader(RCAST<GLADloadproc>(glfwGetProcAddress))) {
-            THROW_ENGINE_EXCEPTION(EngineException, "gladLoadGLLoader failed");
-        }
+        if (Mode == EngineConfig::WindowMode::Windowed) CenterWindowOnScreen();
 
-        glfwSetWindowUserPointer(_Handle, this);
-        glfwSetFramebufferSizeCallback(_Handle, &Window::OnFrameBufferResized);
-        glfwSetKeyCallback(_Handle, &Window::OnKeyCallback);
-        glfwSetMouseButtonCallback(_Handle, &Window::OnMouseButtonCallback);
-        glfwSetCursorPosCallback(_Handle, &Window::OnCursorPosCallback);
-        glfwSetScrollCallback(_Handle, &Window::OnMouseScrollCallback);
-
-        // Framebuffer size, not window size: they differ on high-DPI displays
-        // and the swap chain is sized in pixels.
-        int W = 0, H = 0;
-        glfwGetFramebufferSize(_Handle, &W, &H);
-        _Width  = CAST<u32>(W);
-        _Height = CAST<u32>(H);
-
-        // Hide mouse cursor (this doesn't disable it)
-        glfwSetInputMode(_Handle, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+        ShowWindow(_Handle, SW_SHOW);
+        UpdateWindow(_Handle);
 
         try {
             _InputManager.LoadInputMap("Config/InputConfig.ini");
@@ -85,22 +105,11 @@ namespace Xen {
     }
 
     void Window::PollEvents() const {
-        glfwPollEvents();
-    }
-
-    void Window::SwapBuffers() const {
-        glfwSwapBuffers(_Handle);
-    }
-
-    void Window::Clear(const bool Depth) {
-        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-        auto ClearFlags = GL_COLOR_BUFFER_BIT;
-        if (Depth) ClearFlags |= GL_DEPTH_BUFFER_BIT;
-        glClear(ClearFlags);
-    }
-
-    bool Window::ShouldClose() const {
-        return glfwWindowShouldClose(_Handle) == GLFW_TRUE;
+        MSG Msg;
+        while (PeekMessageW(&Msg, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&Msg);
+            DispatchMessageW(&Msg);
+        }
     }
 
     bool Window::ConsumeResized() {
@@ -113,68 +122,136 @@ namespace Xen {
         _InputManager.ResetMouseDeltas();
     }
 
-    void Window::OnFrameBufferResized(GLFWwindow* Handle, const int W, const int H) {
-        auto* Self = CAST<Window*>(glfwGetWindowUserPointer(Handle));
-        if (!Self) return;
-        Self->_Width   = CAST<u32>(W);
-        Self->_Height  = CAST<u32>(H);
-        Self->_Resized = true;
+    LRESULT CALLBACK Window::WndProc(const HWND Handle, const UINT Msg, const WPARAM WParam, const LPARAM LParam) {
+        Window* Self;
+        if (Msg == WM_NCCREATE) {
+            const auto* Create = RCAST<const CREATESTRUCTW*>(LParam);
+            Self                = CAST<Window*>(Create->lpCreateParams);
+            SetWindowLongPtrW(Handle, GWLP_USERDATA, RCAST<LONG_PTR>(Self));
+        } else {
+            Self = RCAST<Window*>(GetWindowLongPtrW(Handle, GWLP_USERDATA));
+        }
+
+        if (Self) return Self->HandleMessage(Handle, Msg, WParam, LParam);
+        return DefWindowProcW(Handle, Msg, WParam, LParam);
     }
 
-    void Window::OnKeyCallback(GLFWwindow* Handle, const int Key, int, const int Action, int) {
-        auto* Self = CAST<Window*>(glfwGetWindowUserPointer(Handle));
-        if (!Self) return;
+    LRESULT Window::HandleMessage(const HWND Handle, const UINT Msg, const WPARAM WParam, const LPARAM LParam) {
+        switch (Msg) {
+            case WM_CLOSE:
+                // Deliberately not calling DestroyWindow/DefWindowProc: the game
+                // loop polls ShouldClose() and tears the window down itself once
+                // it notices, mirroring glfwWindowShouldClose's semantics.
+                _ShouldClose = true;
+                return 0;
 
-        if (Action == GLFW_PRESS) {
-            Self->GetInputManager().UpdateKeyState(Key, true);
-        } else if (Action == GLFW_RELEASE) {
-            Self->GetInputManager().UpdateKeyState(Key, false);
+            case WM_SIZE: {
+                const u32 W = CAST<u32>(LOWORD(LParam));
+                const u32 H = CAST<u32>(HIWORD(LParam));
+                if (W != _Width || H != _Height) {
+                    _Width   = W;
+                    _Height  = H;
+                    _Resized = true;
+                }
+                return 0;
+            }
+
+            // Hide the cursor only while it's over the client area, matching
+            // GLFW_CURSOR_HIDDEN (still moves, just invisible - never captured).
+            case WM_SETCURSOR:
+                if (LOWORD(LParam) == HTCLIENT) {
+                    SetCursor(nullptr);
+                    return TRUE;
+                }
+                return DefWindowProcW(Handle, Msg, WParam, LParam);
+
+            case WM_KEYDOWN:
+            case WM_SYSKEYDOWN:
+            case WM_KEYUP:
+            case WM_SYSKEYUP: {
+                const bool Pressed = Msg == WM_KEYDOWN || Msg == WM_SYSKEYDOWN;
+                _InputManager.UpdateKeyState(TranslateVirtualKey(WParam, LParam), Pressed);
+                return 0;
+            }
+
+            case WM_LBUTTONDOWN:
+            case WM_LBUTTONUP:
+                _InputManager.UpdateMouseButtonState(Input::MouseButton::Left, Msg == WM_LBUTTONDOWN);
+                return 0;
+
+            case WM_RBUTTONDOWN:
+            case WM_RBUTTONUP:
+                _InputManager.UpdateMouseButtonState(Input::MouseButton::Right, Msg == WM_RBUTTONDOWN);
+                return 0;
+
+            case WM_MBUTTONDOWN:
+            case WM_MBUTTONUP:
+                _InputManager.UpdateMouseButtonState(Input::MouseButton::Middle, Msg == WM_MBUTTONDOWN);
+                return 0;
+
+            case WM_XBUTTONDOWN:
+            case WM_XBUTTONUP: {
+                const i16 Button =
+                  HIWORD(WParam) == XBUTTON1 ? Input::MouseButton::Button4 : Input::MouseButton::Button5;
+                _InputManager.UpdateMouseButtonState(Button, Msg == WM_XBUTTONDOWN);
+                return TRUE;
+            }
+
+            case WM_MOUSEMOVE: {
+                // GLFW's cursor-pos callback reports an absolute position and
+                // InputManager derives its own delta; do the same here rather
+                // than trusting raw input deltas, so both backends feed it
+                // identically.
+                static i32 LastX = 0, LastY = 0;
+                const auto X = CAST<i32>(CAST<short>(LOWORD(LParam)));
+                const auto Y = CAST<i32>(CAST<short>(HIWORD(LParam)));
+                _InputManager.UpdateMousePosition(X - LastX, Y - LastY);
+                LastX = X;
+                LastY = Y;
+                return 0;
+            }
+
+            default:
+                return DefWindowProcW(Handle, Msg, WParam, LParam);
         }
     }
 
-    void Window::OnMouseButtonCallback(GLFWwindow* Handle, const int Button, const int Action, int) {
-        auto* Self = CAST<Window*>(glfwGetWindowUserPointer(Handle));
-        if (!Self) return;
+    i16 Window::TranslateVirtualKey(const WPARAM WParam, const LPARAM LParam) {
+        i16 Key = CAST<i16>(WParam);
 
-        if (Action == GLFW_PRESS) {
-            Self->GetInputManager().UpdateMouseButtonState(Button, true);
-        } else if (Action == GLFW_RELEASE) {
-            Self->GetInputManager().UpdateMouseButtonState(Button, false);
+        if (Key == VK_SHIFT || Key == VK_CONTROL || Key == VK_MENU) {
+            const auto ScanCode    = CAST<UINT>((LParam >> 16) & 0xFF);
+            const UINT Mapped = MapVirtualKeyW(ScanCode, MAPVK_VSC_TO_VK_EX);
+            if (Mapped != 0) Key = CAST<i16>(Mapped);
         }
+
+        return Key;
     }
 
-    void Window::OnCursorPosCallback(GLFWwindow* Handle, const double X, const double Y) {
-        auto* Self = CAST<Window*>(glfwGetWindowUserPointer(Handle));
-        if (!Self) return;
-        Self->GetInputManager().UpdateMousePosition(X, Y);
-    }
-
-    void Window::OnMouseScrollCallback(GLFWwindow* Handle, double DeltaX, double DeltaY) {
-        // TODO: Implement OnMouseScrollCallback
-        (void)Handle;
-        (void)DeltaX;
-        (void)DeltaY;
-    }
-
-    void Window::Shutdown() const {
+    void Window::Shutdown() {
         if (_Handle) {
-            glfwDestroyWindow(_Handle);
+            DestroyWindow(_Handle);
+            _Handle = nullptr;
             --g_WindowCount;
         }
 
-        if (g_WindowCount == 0) glfwTerminate();
+        if (g_WindowCount == 0) UnregisterClassW(WINDOW_CLASS_NAME, GetModuleHandleW(nullptr));
     }
 
     void Window::CenterWindowOnScreen() const {
-        int MonX, MonY, MonW, MonH;
-        glfwGetMonitorWorkarea(glfwGetPrimaryMonitor(), &MonX, &MonY, &MonW, &MonH);
+        RECT WindowRect;
+        GetWindowRect(_Handle, &WindowRect);
+        const int WinW = WindowRect.right - WindowRect.left;
+        const int WinH = WindowRect.bottom - WindowRect.top;
 
-        int WinW, WinH;
-        glfwGetWindowSize(_Handle, &WinW, &WinH);
+        const HMONITOR Monitor = MonitorFromWindow(_Handle, MONITOR_DEFAULTTOPRIMARY);
+        MONITORINFO MonInfo {};
+        MonInfo.cbSize = sizeof(MONITORINFO);
+        GetMonitorInfoW(Monitor, &MonInfo);
 
-        const int ScreenX = MonX + (MonW - WinW) / 2;
-        const int ScreenY = MonY + (MonH - WinH) / 2;
+        const int ScreenX = MonInfo.rcWork.left + ((MonInfo.rcWork.right - MonInfo.rcWork.left) - WinW) / 2;
+        const int ScreenY = MonInfo.rcWork.top + ((MonInfo.rcWork.bottom - MonInfo.rcWork.top) - WinH) / 2;
 
-        glfwSetWindowPos(_Handle, ScreenX, ScreenY);
+        SetWindowPos(_Handle, nullptr, ScreenX, ScreenY, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
     }
 }  // namespace Xen

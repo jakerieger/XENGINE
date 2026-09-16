@@ -11,15 +11,13 @@
 #include "SpriteBatcher.hpp"
 #include "TextureCache.hpp"
 
-#include <glm/glm.hpp>
-
 namespace Xen {
     class SpriteRenderer {
     public:
         struct Config {
             RHI::FilterMode Filter {RHI::FilterMode::Nearest};
             u32 MaxSpritesPerFrame {65536};
-            glm::vec4 ClearColor {0.1f, 0.1f, 0.1f, 1.0f};
+            Float4 ClearColor {0.1f, 0.1f, 0.1f, 1.0f};
 
             Config() {}
         };
@@ -44,7 +42,7 @@ namespace Xen {
         /// back buffer still gets cleared on a frame with nothing visible.
         void Render(const SpriteBatcher& Batcher, const TextureCache& Textures);
 
-        void SetClearColor(const glm::vec4& Color) { _Config.ClearColor = Color; }
+        void SetClearColor(const Float4& Color) { _Config.ClearColor = Color; }
 
         NODISCARD u32 GetSpritesSubmitted() const { return _SpritesSubmitted; }
         NODISCARD u32 GetSpritesDropped() const { return _SpritesDropped; }
@@ -56,17 +54,17 @@ namespace Xen {
         /// so there is no per-vertex buffer at all: the whole frame is this
         /// array, written straight into mapped memory.
         struct SpriteInstance {
-            glm::vec2 Center;  // world units
-            glm::vec2 Size;    // world units, signed - negative flips
-            f32 Rotation;      // radians
+            Float2 Center;  // world units
+            Float2 Size;    // world units, signed - negative flips
+            f32 Rotation;   // radians
             f32 _Pad;
-            glm::vec4 UVRect;  // xy = min uv, zw = uv size
-            glm::vec4 Tint;
+            Float4 UVRect;  // xy = min uv, zw = uv size
+            Float4 Tint;
         };
         static_assert(sizeof(SpriteInstance) == 56, "SpriteInstance layout must match the shader");
 
         struct FrameUniforms {
-            glm::mat4 ViewProjection;
+            Float4x4 ViewProjection;
         };
 
         RHI::IRenderDevice* _Device {nullptr};

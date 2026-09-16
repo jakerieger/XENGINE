@@ -43,5 +43,5 @@ void PlayerComponent::Reset() {
     auto PosX = -(BoundsX / 2.1f);
     auto PosY = BoundsY * 0.5f;
 
-    GetOwner()->SetPosition(glm::vec2(PosX, PosY));
+    GetOwner()->SetPosition(Float2(PosX, PosY));
 }

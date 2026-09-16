@@ -58,14 +58,26 @@ namespace Xen {
         NODISCARD i32 GetPriority() const { return _Priority; }
         void SetPriority(const i32 Priority) { _Priority = Priority; }
 
-        NODISCARD glm::mat4 GetViewMatrix() const;
-        NODISCARD glm::mat4 GetProjectionMatrix() const;
-        NODISCARD glm::mat4 GetViewProjectionMatrix() const { return GetProjectionMatrix() * GetViewMatrix(); }
+        NODISCARD Float4x4 GetViewMatrix() const;
+        NODISCARD Float4x4 GetProjectionMatrix() const;
 
-        NODISCARD glm::vec2 GetVisibleWorldSize() const;
+        /// @brief View-then-projection, composed for DirectXMath's row-vector
+        /// convention (v' = v * View * Projection).
+        NODISCARD Float4x4 GetViewProjectionMatrix() const {
+            using namespace DirectX;
+            const Float4x4 View = GetViewMatrix();
+            const Float4x4 Proj = GetProjectionMatrix();
+            const XMMATRIX M    = XMLoadFloat4x4(&View) * XMLoadFloat4x4(&Proj);
+
+            Float4x4 Out;
+            XMStoreFloat4x4(&Out, M);
+            return Out;
+        }
+
+        NODISCARD Float2 GetVisibleWorldSize() const;
         NODISCARD Rect GetViewBounds() const;
-        NODISCARD glm::vec2 ScreenToWorld(glm::vec2 ScreenPos) const;
-        NODISCARD glm::vec2 WorldToScreen(glm::vec2 WorldPos) const;
+        NODISCARD Float2 ScreenToWorld(Float2 ScreenPos) const;
+        NODISCARD Float2 WorldToScreen(Float2 WorldPos) const;
 
     private:
         NODISCARD Transform GetCameraTransform() const;

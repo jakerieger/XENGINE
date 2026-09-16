@@ -303,11 +303,12 @@ namespace Xen::RHI {
     // --- Shaders ----------------------------------------------------------
     enum class ShaderStage : u8 { Vertex, Fragment, Geometry, Compute };
 
-    /// @brief GLSL for fast iteration; SPIR-V for shipping.
-    ///
-    /// GL 4.6 consumes SPIR-V natively through GL_ARB_gl_spirv, and the same
-    /// blob feeds a future Vulkan backend without recompilation.
-    enum class ShaderSourceType : u8 { GLSL, SPIRV };
+    /// @brief GLSL/SPIRV are retained from the pre-D3D12 GL backend for
+    /// reference; the only source type any current backend consumes is HLSL,
+    /// compiled at shader-creation time via the legacy D3DCompile (SM 5.x) -
+    /// no offline shader build step, matching the old GLSL runtime-compile
+    /// workflow.
+    enum class ShaderSourceType : u8 { GLSL, SPIRV, HLSL };
 
     struct ShaderDesc {
         ShaderStage Stage {ShaderStage::Vertex};

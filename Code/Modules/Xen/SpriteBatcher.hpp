@@ -18,7 +18,7 @@ namespace Xen {
         TextureHandle Texture {};
         Transform WorldTransform {};
         Rect SourceRect {};
-        glm::vec4 Tint {1.0f};
+        Float4 Tint {1.0f, 1.0f, 1.0f, 1.0f};
         i32 Layer {0};
     };
 
@@ -33,7 +33,7 @@ namespace Xen {
         void BuildDrawList(const Scene& S);
 
         NODISCARD CameraComponent* GetActiveCamera() const { return _ActiveCamera; }
-        NODISCARD const glm::mat4& GetViewProjection() const { return _ViewProjection; }
+        NODISCARD const Float4x4& GetViewProjection() const { return _ViewProjection; }
         NODISCARD size_t GetCulledCount() const { return _CulledCount; }
 
         void SetViewport(const u32 Width, const u32 Height) {
@@ -56,7 +56,7 @@ namespace Xen {
         std::vector<SpriteBatch> _Batches;
 
         CameraComponent* _ActiveCamera {nullptr};
-        glm::mat4 _ViewProjection {1.0f};
+        Float4x4 _ViewProjection {IdentityFloat4x4};
         u32 _ViewportWidth {1280};
         u32 _ViewportHeight {720};
         size_t _CulledCount {0};

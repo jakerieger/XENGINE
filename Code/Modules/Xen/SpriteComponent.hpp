@@ -37,8 +37,8 @@ namespace Xen {
         i32 GetLayer() const;
         void SetLayer(i32 NewLayer);
 
-        const glm::vec4& GetTint() const;
-        void SetTint(const glm::vec4& NewTint);
+        const Float4& GetTint() const;
+        void SetTint(const Float4& NewTint);
 
         bool IsVisible() const;
         void SetVisible(bool NewVisible);
@@ -58,7 +58,7 @@ namespace Xen {
         AssetID _TextureAsset {};
         Rect _SourceRect {};
         i32 _Layer {0};
-        glm::vec4 _Tint {1.0f};
+        Float4 _Tint {1.0f, 1.0f, 1.0f, 1.0f};
         bool _Visible {true};
 
         // Runtime state

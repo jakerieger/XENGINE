@@ -52,7 +52,7 @@ namespace Xen::RHI {
         UpdateBuffer,  // trailing bytes follow the payload
         CopyBuffer,
         GenerateMips,
-        MemoryBarrier,
+        PipelineBarrier,
 
         PushDebugGroup,  // trailing string follows the payload
         PopDebugGroup,
@@ -195,7 +195,11 @@ namespace Xen::RHI {
             return (CAST<u32>(A) & CAST<u32>(B)) != 0;
         }
 
-        struct MemoryBarrier {
+        // Named PipelineBarrier, not MemoryBarrier: winnt.h #defines MemoryBarrier()
+        // as a parameterless macro (__faststorefence on x64), which silently mangles
+        // any occurrence of that identifier - including this one - in a TU that also
+        // includes <Windows.h>.
+        struct PipelineBarrier {
             BarrierBits Bits;
         };
 
@@ -382,8 +386,8 @@ namespace Xen::RHI {
             Emit<Cmd::GenerateMips>(CmdType::GenerateMips).Texture = Texture;
         }
 
-        void MemoryBarrier(const Cmd::BarrierBits Bits) {
-            Emit<Cmd::MemoryBarrier>(CmdType::MemoryBarrier).Bits = Bits;
+        void PipelineBarrier(const Cmd::BarrierBits Bits) {
+            Emit<Cmd::PipelineBarrier>(CmdType::PipelineBarrier).Bits = Bits;
         }
 
         // --- Debug --------------------------------------------------------

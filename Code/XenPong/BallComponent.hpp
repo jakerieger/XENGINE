@@ -31,17 +31,17 @@ private:
 
     /// @brief Checks the ball's predicted position against one paddle's world bounds and,
     /// on overlap, mirrors Next.x off the paddle's near edge and flips _Velocity.x.
-    bool TryBouncePaddle(const Xen::Actor* Paddle, glm::vec2& Next);
+    bool TryBouncePaddle(const Xen::Actor* Paddle, Xen::Float2& Next);
 
-    glm::vec2 _Velocity {0.0f, 0.0f};
+    Xen::Float2 _Velocity {0.0f, 0.0f};
     Xen::f32 _BallSpeed {5.0f};
-    glm::vec2 _Bounds {0.0f, 0.0f};
+    Xen::Float2 _Bounds {0.0f, 0.0f};
     Xen::f32 _SpeedGain {1.0f};
     Xen::f32 _MaxBallSpeed {15.0f};
 
     // Cached at BeginPlay: the ball's own SpriteComponent has already resolved its texture
     // by then (it's added before this component on the actor), and the size doesn't change.
-    glm::vec2 _BallHalfSize {0.0f, 0.0f};
+    Xen::Float2 _BallHalfSize {0.0f, 0.0f};
 
     Xen::Actor* _PlayerPaddle {nullptr};
     Xen::Actor* _OpponentPaddle {nullptr};

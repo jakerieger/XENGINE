@@ -34,13 +34,13 @@ namespace Xen {
         void Visit(const char* Name, f32& Value, const PropertyMeta&) override;
         void Visit(const char* Name, f64& Value, const PropertyMeta&) override;
         void Visit(const char* Name, std::string& Value, const PropertyMeta&) override;
-        void Visit(const char* Name, glm::vec2& Value, const PropertyMeta&) override;
+        void Visit(const char* Name, Float2& Value, const PropertyMeta&) override;
         void Visit(const char* Name, Transform& Value, const PropertyMeta&) override;
         void Visit(const char* Name, ActorHandle& Value, const PropertyMeta&) override;
         void Visit(const char* N, AssetID& V, const PropertyMeta& M) override;
         void Visit(const char* Name, Rect& Value, const PropertyMeta& Meta) override;
-        void Visit(const char* Name, glm::vec3& Value, const PropertyMeta& Meta) override;
-        void Visit(const char* Name, glm::vec4& Value, const PropertyMeta& Meta) override;
+        void Visit(const char* Name, Float3& Value, const PropertyMeta& Meta) override;
+        void Visit(const char* Name, Float4& Value, const PropertyMeta& Meta) override;
 
     private:
         const Scene* _Scene;
@@ -62,13 +62,13 @@ namespace Xen {
         void Visit(const char* Name, f32& Value, const PropertyMeta&) override;
         void Visit(const char* Name, f64& Value, const PropertyMeta&) override;
         void Visit(const char* Name, std::string& Value, const PropertyMeta&) override;
-        void Visit(const char* Name, glm::vec2& Value, const PropertyMeta&) override;
+        void Visit(const char* Name, Float2& Value, const PropertyMeta&) override;
         void Visit(const char* Name, Transform& Value, const PropertyMeta&) override;
         void Visit(const char* Name, ActorHandle& Value, const PropertyMeta&) override;
         void Visit(const char* N, AssetID& V, const PropertyMeta& Meta) override;
         void Visit(const char* Name, Rect& Value, const PropertyMeta& Meta) override;
-        void Visit(const char* Name, glm::vec3& Value, const PropertyMeta& Meta) override;
-        void Visit(const char* Name, glm::vec4& Value, const PropertyMeta& Meta) override;
+        void Visit(const char* Name, Float3& Value, const PropertyMeta& Meta) override;
+        void Visit(const char* Name, Float4& Value, const PropertyMeta& Meta) override;
 
     private:
         template<typename Pred>

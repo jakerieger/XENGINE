@@ -8,6 +8,7 @@ add_library(XenCommon STATIC
         Log.hpp
         PrettySignature.hpp
         XenCommon.hpp
+        XenMath.hpp
 )
 
 add_library(Xen::Common ALIAS XenCommon)

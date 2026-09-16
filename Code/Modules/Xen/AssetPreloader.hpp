@@ -34,12 +34,12 @@ namespace Xen {
         void Visit(const char* Name, f32& Value, const PropertyMeta& Meta) override {}
         void Visit(const char* Name, f64& Value, const PropertyMeta& Meta) override {}
         void Visit(const char* Name, std::string& Value, const PropertyMeta& Meta) override {}
-        void Visit(const char* Name, glm::vec2& Value, const PropertyMeta& Meta) override {}
+        void Visit(const char* Name, Float2& Value, const PropertyMeta& Meta) override {}
         void Visit(const char* Name, Transform& Value, const PropertyMeta& Meta) override {}
         void Visit(const char* Name, Rect& Value, const PropertyMeta& Meta) override {}
         void Visit(const char* Name, ActorHandle& Value, const PropertyMeta& Meta) override {}
-        void Visit(const char* Name, glm::vec3& Value, const PropertyMeta& Meta) override {}
-        void Visit(const char* Name, glm::vec4& Value, const PropertyMeta& Meta) override {}
+        void Visit(const char* Name, Float3& Value, const PropertyMeta& Meta) override {}
+        void Visit(const char* Name, Float4& Value, const PropertyMeta& Meta) override {}
 
     private:
         std::vector<std::pair<PAK::AssetIDValue, AssetKind>> _Found;

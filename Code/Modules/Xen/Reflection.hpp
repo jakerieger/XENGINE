@@ -5,6 +5,7 @@
 #pragma once
 
 #include <Common/XenCommon.hpp>
+#include <Common/XenMath.hpp>
 
 #include "ActorHandle.hpp"
 #include "Transform.hpp"
@@ -102,9 +103,9 @@ namespace Xen {
         virtual void Visit(const char* Name, f32& Value, const PropertyMeta& Meta)         = 0;
         virtual void Visit(const char* Name, f64& Value, const PropertyMeta& Meta)         = 0;
         virtual void Visit(const char* Name, std::string& Value, const PropertyMeta& Meta) = 0;
-        virtual void Visit(const char* Name, glm::vec2& Value, const PropertyMeta& Meta)   = 0;
-        virtual void Visit(const char* Name, glm::vec3& Value, const PropertyMeta& Meta)   = 0;
-        virtual void Visit(const char* Name, glm::vec4& Value, const PropertyMeta& Meta)   = 0;
+        virtual void Visit(const char* Name, Float2& Value, const PropertyMeta& Meta)      = 0;
+        virtual void Visit(const char* Name, Float3& Value, const PropertyMeta& Meta)      = 0;
+        virtual void Visit(const char* Name, Float4& Value, const PropertyMeta& Meta)      = 0;
         virtual void Visit(const char* Name, Transform& Value, const PropertyMeta& Meta)   = 0;
         virtual void Visit(const char* Name, Rect& Value, const PropertyMeta& Meta)        = 0;
 

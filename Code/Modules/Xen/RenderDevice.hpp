@@ -19,12 +19,19 @@ namespace Xen::RHI {
     };
 
     struct DeviceDescriptor {
-        Backend API {Backend::OpenGL};
+        Backend API {Backend::D3D12};
 
-        /// GL: installs the KHR_debug callback and validates handles.
+        /// @brief The native window handle to create the swap chain against
+        /// (an HWND, opaque here so this header stays platform-agnostic).
+        /// Required by any backend that owns its own presentation surface
+        /// (D3D12); a backend that instead attaches to a context the window
+        /// already made current wouldn't need this at all.
+        void* NativeWindowHandle {nullptr};
+
+        /// D3D12: enables the debug layer.
         bool EnableValidation {false};
-        /// GL: enables glObjectLabel and glPushDebugGroup, so RenderDoc
-        /// captures come out labelled. Cheap; leave on outside of shipping.
+        /// D3D12: enables PIX/RenderDoc-visible object/event labelling. Cheap;
+        /// leave on outside of shipping.
         bool EnableDebugMarkers {false};
 
         /// Ring depth for transient memory. 3 means a BeginFrame almost never
@@ -32,9 +39,9 @@ namespace Xen::RHI {
         u32 FramesInFlight {3};
         u32 TransientBufferSize {8 * 1024 * 1024};  // per frame in flight
 
-        /// Off by default, because it only works when the window was created
-        /// with GLFW_SRGB_CAPABLE and the textures were uploaded as sRGB.
-        /// Turning it on without both produces washed-out colour.
+        /// Off by default, because it only works when the swap chain format is
+        /// an sRGB variant and the textures were uploaded as sRGB. Turning it
+        /// on without both produces washed-out colour.
         bool EnableSrgbFramebuffer {false};
 
         void (*ErrorCallback)(const char* Message, void* UserData) {nullptr};

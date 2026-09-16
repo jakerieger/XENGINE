@@ -35,10 +35,11 @@ namespace Xen {
         _Window =
           std::make_unique<Window>(Title, _EngineConfig.Mode, _EngineConfig.ResolutionX, _EngineConfig.ResolutionY);
 
-        _RenderDevice = RHI::CreateRenderDevice(RHI::Backend::OpenGL);
+        _RenderDevice = RHI::CreateRenderDevice(RHI::Backend::D3D12);
         if (!_RenderDevice) { THROW_ENGINE_EXCEPTION(EngineException, "no render device for the requested backend"); }
 
         RHI::DeviceDescriptor Descriptor {};
+        Descriptor.NativeWindowHandle = _Window->GetHandle();
 #ifndef NDEBUG
         Descriptor.EnableValidation   = true;
         Descriptor.EnableDebugMarkers = true;
@@ -166,7 +167,6 @@ namespace Xen {
 
             TickFrame(Delta);
 
-            _Window->SwapBuffers();
             _Window->PollEvents();
         }
     }

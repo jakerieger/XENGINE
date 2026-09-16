@@ -54,11 +54,11 @@ namespace Xen {
         _Layer = NewLayer;
     }
 
-    const glm::vec4& SpriteComponent::GetTint() const {
+    const Float4& SpriteComponent::GetTint() const {
         return _Tint;
     }
 
-    void SpriteComponent::SetTint(const glm::vec4& NewTint) {
+    void SpriteComponent::SetTint(const Float4& NewTint) {
         _Tint = NewTint;
     }
 
@@ -89,8 +89,8 @@ namespace Xen {
         }
 
         const Transform WorldTransform = GetOwner()->GetWorldTransform();
-        const glm::vec2 Size {Source.Width / PixelsPerUnit * std::abs(WorldTransform.Scale.x),
-                              Source.Height / PixelsPerUnit * std::abs(WorldTransform.Scale.y)};
+        const Float2 Size {Source.Width / PixelsPerUnit * std::abs(WorldTransform.Scale.x),
+                          Source.Height / PixelsPerUnit * std::abs(WorldTransform.Scale.y)};
 
         return Rect {WorldTransform.Position.x - Size.x * 0.5f,
                     WorldTransform.Position.y - Size.y * 0.5f,

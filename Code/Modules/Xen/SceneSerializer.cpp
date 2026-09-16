@@ -36,7 +36,7 @@ namespace Xen {
         _Out[N] = V;
     }
 
-    void JsonSaveReflector::Visit(const char* N, glm::vec2& V, const PropertyMeta&) {
+    void JsonSaveReflector::Visit(const char* N, Float2& V, const PropertyMeta&) {
         _Out[N] = Json::array({V.x, V.y});
     }
 
@@ -67,11 +67,11 @@ namespace Xen {
         _Out[N] = Json::array({V.X, V.Y, V.Width, V.Height});
     }
 
-    void JsonSaveReflector::Visit(const char* N, glm::vec3& V, const PropertyMeta&) {
+    void JsonSaveReflector::Visit(const char* N, Float3& V, const PropertyMeta&) {
         _Out[N] = Json::array({V.x, V.y, V.z});
     }
 
-    void JsonSaveReflector::Visit(const char* N, glm::vec4& V, const PropertyMeta&) {
+    void JsonSaveReflector::Visit(const char* N, Float4& V, const PropertyMeta&) {
         _Out[N] = Json::array({V.x, V.y, V.z, V.w});
     }
 
@@ -100,7 +100,7 @@ namespace Xen {
         if (const Json* J = Get(N, [](const Json& X) { return X.is_string(); })) { V = J->get<std::string>(); }
     }
 
-    void JsonLoadReflector::Visit(const char* N, glm::vec2& V, const PropertyMeta&) {
+    void JsonLoadReflector::Visit(const char* N, Float2& V, const PropertyMeta&) {
         const Json* J = Get(N, [](const Json& X) { return X.is_array() && X.size() >= 2; });
         if (!J) return;
         V.x = (*J)[0].get<f32>();
@@ -156,7 +156,7 @@ namespace Xen {
         V.Height = (*J)[3].get<f32>();
     }
 
-    void JsonLoadReflector::Visit(const char* N, glm::vec3& V, const PropertyMeta&) {
+    void JsonLoadReflector::Visit(const char* N, Float3& V, const PropertyMeta&) {
         const Json* J = Get(N, [](const Json& X) { return X.is_array() && X.size() >= 3; });
         if (!J) return;
         V.x = (*J)[0].get<f32>();
@@ -164,7 +164,7 @@ namespace Xen {
         V.z = (*J)[2].get<f32>();
     }
 
-    void JsonLoadReflector::Visit(const char* N, glm::vec4& V, const PropertyMeta&) {
+    void JsonLoadReflector::Visit(const char* N, Float4& V, const PropertyMeta&) {
         const Json* J = Get(N, [](const Json& X) { return X.is_array() && X.size() >= 4; });
         if (!J) return;
         V.x = (*J)[0].get<f32>();

@@ -20,10 +20,15 @@ xen_configure_game(XenPong
 
 target_include_directories(XenPong PRIVATE ${MODULES_ROOT} ${VENDOR_ROOT})
 
-# Copy `Config` directory to build directory since it's needed at runtime
+# Copy `Config` directory to build directory since it's needed at runtime.
+# $<TARGET_FILE_DIR:XenPong> (not CMAKE_RUNTIME_OUTPUT_DIRECTORY) because the
+# per-config output dirs the top-level CMakeLists.txt sets take precedence
+# over the generic variable this file reassigned above, on a multi-config
+# generator - using the variable directly copied Config next to a folder the
+# .exe was never actually placed in.
 add_custom_command(
         TARGET XenPong POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/Config"
-        "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Config"
+        "$<TARGET_FILE_DIR:XenPong>/Config"
 )
