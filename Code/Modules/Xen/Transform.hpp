@@ -5,7 +5,7 @@
 #pragma once
 
 #include <Common/XenCommon.hpp>
-#include <Common/XenMath.hpp>
+#include <Common/Math.hpp>
 
 namespace Xen {
     struct Transform {

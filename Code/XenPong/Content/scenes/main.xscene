@@ -45,8 +45,8 @@
           "Type": "BallComponent",
           "Properties": {
             "BallSpeed": 5.0,
-            "SpeedGain": 1.1,
-            "MaxBallSpeed": 100
+            "SpeedGain": 1.0,
+            "MaxBallSpeed": 15.0
           }
         }
       ]
@@ -165,7 +165,34 @@
           "Properties": {
             "Zoom": 1.0,
             "PixelsPerUnit": 100.0,
-            "Priority": 100
+            "Priority": 0
+          }
+        }
+      ]
+    },
+    {
+      "ID": 5,
+      "Parent": 0,
+      "Properties": {
+        "Name": "GameManager",
+        "Transform": {
+          "Position": [
+            0.0,
+            0.0
+          ],
+          "Rotation": 0.0,
+          "Scale": [
+            1.0,
+            1.0
+          ]
+        },
+        "Enabled": true
+      },
+      "Components": [
+        {
+          "Type": "GameManagerComponent",
+          "Properties": {
+            "ScoreToWin": 5
           }
         }
       ]

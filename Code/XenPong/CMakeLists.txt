@@ -7,6 +7,8 @@ xen_add_game_executable(XenPong
         main.cpp
         BallComponent.cpp
         BallComponent.hpp
+        GameManagerComponent.cpp
+        GameManagerComponent.hpp
         OpponentComponent.cpp
         OpponentComponent.hpp
         PlayerComponent.cpp

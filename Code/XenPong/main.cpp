@@ -3,6 +3,7 @@
 //
 
 #include "BallComponent.hpp"
+#include "GameManagerComponent.hpp"
 #include "OpponentComponent.hpp"
 #include "PlayerComponent.hpp"
 
@@ -13,9 +14,9 @@
 #include <Xen/SceneSerializer.hpp>
 #include <Xen/XenGameSettings.h>
 
-using namespace Xen;
-
 namespace {
+    using namespace Xen;
+
     class XenPong final : public Game {
         using Game::Game;
 
@@ -64,11 +65,28 @@ namespace {
         Actor* CameraActor             = MainScene.Get(CameraHandle);
         CameraActor->AddComponent<CameraComponent>();
 
-        const auto ScenePath = Generated::GameSettings().ContentDirs[0] / "scenes" / "main.scene";
+        const ActorHandle GameManagerHandle = MainScene.Spawn("GameManager");
+        Actor* GameManagerActor             = MainScene.Get(GameManagerHandle);
+        GameManagerActor->AddComponent<GameManagerComponent>();
+
+        const auto ScenePath = Generated::GameSettings().ContentDirs[0] / "scenes" / "main.xscene";
         SceneSerializer::SaveToFile(MainScene, ScenePath);
 
         LOG_INFO("Scene saved: %s", ScenePath.string().c_str());
     }
 }  // namespace
 
-XEN_GAME(XenPong, "XenPong")
+XEN_ENTRYPOINT {
+    try {
+        XenPong Game("XenPong", BuildMountConfig(Generated::GameSettings(), __argc, __argv));
+
+#ifndef NDEBUG
+        BuildScene(Game.GetContext());
+#endif
+
+        Game.Run();
+    } catch (const EngineException& Ex) {
+        LOG_CRIT("%s", Ex.what());
+        return 1;
+    }
+}

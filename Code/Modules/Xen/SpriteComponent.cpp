@@ -24,8 +24,8 @@ namespace Xen {
         R.Property("TextureAsset", _TextureAsset, {.Category = "Sprite", .Asset = AssetKind::Texture});
         R.Property("SourceRect",
                    _SourceRect,
-                   {.Tooltip = "Region of the texture to draw. Empty means the whole texture.", .Category = "Sprite"});
-        R.Property("Layer", _Layer, {.Tooltip = "Draw order. Lower layers draw first.", .Category = "Sprite"});
+                   {.ToolTip = "Region of the texture to draw. Empty means the whole texture.", .Category = "Sprite"});
+        R.Property("Layer", _Layer, {.ToolTip = "Draw order. Lower layers draw first.", .Category = "Sprite"});
         R.Property("Tint", _Tint, {.Category = "Sprite"});
         R.Property("Visible", _Visible, {.Category = "Sprite"});
         // _Texture is deliberately not reflected: it is a runtime GPU

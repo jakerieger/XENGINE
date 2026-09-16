@@ -279,7 +279,6 @@ namespace Xen {
 
         _ActiveScene->EndPlay();
         _ActiveScene.reset();
-
         _Textures->Clear();
     }
 

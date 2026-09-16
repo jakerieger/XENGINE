@@ -8,40 +8,48 @@
 
 #include <Xen/Scene.hpp>
 #include <Xen/Actor.hpp>
+#include <Xen/SpriteComponent.hpp>
 
-using namespace Xen;
+#include <algorithm>
 
-void PlayerComponent::Reflect(IReflector& R) {}
+namespace Xen {
+    void PlayerComponent::Reflect(IReflector& R) {}
 
-void PlayerComponent::BeginPlay() {
-    Reset();
-}
+    void PlayerComponent::BeginPlay() {
+        if (const auto* Sprite = GetOwner()->GetComponent<SpriteComponent>()) {
+            _HalfHeight = Sprite->GetWorldBounds().Height * 0.5f;
+        }
 
-void PlayerComponent::Tick(f32 DeltaTime) {}
+        Reset();
+    }
 
-void PlayerComponent::FixedTick(f32 FixedDelta) {
-    const auto CurrentPos = GetOwner()->GetPosition();
+    void PlayerComponent::Tick(f32 DeltaTime) {}
 
-    if (GetGame()->GetInputManager().GetKeyDown(Input::KeyCode::Up)) {
-        const auto PosY = CurrentPos.y + 8.f * FixedDelta;
+    void PlayerComponent::FixedTick(const f32 FixedDelta) {
+        const auto CurrentPos = GetOwner()->GetPosition();
+        f32 PosY              = CurrentPos.y;
+
+        if (GetGame()->GetInputManager().GetKeyDown(Input::KeyCode::Up)) { PosY += 8.f * FixedDelta; }
+        if (GetGame()->GetInputManager().GetKeyDown(Input::KeyCode::Down)) { PosY -= 8.f * FixedDelta; }
+
+        const auto* MainCamera = GetOwner()->GetScene()->GetMainCamera();
+        const f32 BoundsY      = (MainCamera->GetViewportHeight() / MainCamera->GetPixelsPerUnit()) * 0.5f;
+
+        PosY = std::clamp(PosY, -BoundsY + _HalfHeight, BoundsY - _HalfHeight);
+
         GetOwner()->SetPosition({CurrentPos.x, PosY});
     }
 
-    if (GetGame()->GetInputManager().GetKeyDown(Input::KeyCode::Down)) {
-        const auto PosY = CurrentPos.y - 8.f * FixedDelta;
-        GetOwner()->SetPosition({CurrentPos.x, PosY});
+    void PlayerComponent::EndPlay() {}
+
+    void PlayerComponent::Reset() {
+        const auto MainCamera = GetOwner()->GetScene()->GetMainCamera();
+        const auto BoundsX    = MainCamera->GetViewportWidth() / MainCamera->GetPixelsPerUnit();
+
+        // Just inboard of the left edge, vertically centered (Y=0 is screen center,
+        // not the top - GetViewBounds() spans -BoundsY/2..+BoundsY/2).
+        const auto PosX = -(BoundsX / 2.1f);
+
+        GetOwner()->SetPosition(Float2(PosX, 0.0f));
     }
-}
-
-void PlayerComponent::EndPlay() {}
-
-void PlayerComponent::Reset() {
-    auto MainCamera = GetOwner()->GetScene()->GetMainCamera();
-    auto BoundsX    = MainCamera->GetViewportWidth() / MainCamera->GetPixelsPerUnit();
-    auto BoundsY    = MainCamera->GetViewportHeight() / MainCamera->GetPixelsPerUnit();
-
-    auto PosX = -(BoundsX / 2.1f);
-    auto PosY = BoundsY * 0.5f;
-
-    GetOwner()->SetPosition(Float2(PosX, PosY));
-}
+}  // namespace Xen
