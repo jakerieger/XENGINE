@@ -44,10 +44,10 @@ namespace Xen {
 
             /// @brief Upload as sRGB so the GPU linearizes on sample.
             ///
-            /// Only correct if the device was created with
-            /// EnableSrgbFramebuffer and the window with GLFW_SRGB_CAPABLE.
-            /// Enabling one without the others gives washed-out or overly
-            /// dark output, so all three move together.
+            /// Only correct if the device was created with an sRGB swap chain
+            /// format (DeviceDescriptor::EnableSrgbFramebuffer). Enabling one
+            /// without the other gives washed-out or overly dark output, so
+            /// both move together.
             bool SrgbTextures {false};
 
             Config() {}

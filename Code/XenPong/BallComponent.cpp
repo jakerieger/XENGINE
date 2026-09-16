@@ -52,8 +52,8 @@ void BallComponent::Tick(f32) {
 }
 
 void BallComponent::FixedTick(const f32 FixedDelta) {
-    const glm::vec2 Current = GetOwner()->GetPosition();
-    glm::vec2 Next          = Current + _Velocity * _BallSpeed * FixedDelta;
+    const Float2 Current = GetOwner()->GetPosition();
+    Float2 Next           = Current + _Velocity * _BallSpeed * FixedDelta;
 
     if (Next.y > _Bounds.y) {
         Next.y      = 2.0f * _Bounds.y - Next.y;
@@ -84,7 +84,7 @@ void BallComponent::ApplySpeedGain() {
     _BallSpeed = std::min(_BallSpeed * _SpeedGain, _MaxBallSpeed);
 }
 
-bool BallComponent::TryBouncePaddle(const Actor* Paddle, glm::vec2& Next) {
+bool BallComponent::TryBouncePaddle(const Actor* Paddle, Float2& Next) {
     if (!Paddle) return false;
 
     const auto* PaddleSprite = Paddle->GetComponent<SpriteComponent>();
@@ -114,7 +114,7 @@ void BallComponent::EndPlay() {}
 void BallComponent::Reset() {
     GetOwner()->SetPosition({0.0f, 0.0f});
 
-    std::uniform_real_distribution Angle(0.0f, glm::two_pi<f32>());
+    std::uniform_real_distribution Angle(0.0f, TWO_PI);
 
     f32 Theta = 0.0f;
     for (int Attempt = 0; Attempt < 16; ++Attempt) {

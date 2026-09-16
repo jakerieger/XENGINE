@@ -7,135 +7,149 @@
 #include <Common/XenCommon.hpp>
 #include "EngineConfig.hpp"
 
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
+// Only virtual-key constants are needed here, not the rest of the Windows API
+// surface - WIN32_LEAN_AND_MEAN keeps this header (transitively included
+// everywhere Input.hpp is) cheap to parse. NOMINMAX is required: without it,
+// Windows.h's min/max macros shadow std::min/std::max at every call site that
+// transitively includes this header.
+#ifndef WIN32_LEAN_AND_MEAN
+    #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+    #define NOMINMAX
+#endif
+#include <Windows.h>
 
 #include <unordered_map>
 
 namespace Xen {
+    // Win32 virtual-key codes (VK_*). Letters and digits deliberately reuse
+    // their ASCII values (Win32 defines no VK_A.../VK_0... macros - the docs
+    // say to use the bare character codes), which is also why these numbers
+    // are unchanged from this table's previous GLFW-key-code values.
     namespace Input::KeyCode {
-        constexpr i16 Unknown      = GLFW_KEY_UNKNOWN;
-        constexpr i16 Space        = GLFW_KEY_SPACE;
-        constexpr i16 Apostrophe   = GLFW_KEY_APOSTROPHE;
-        constexpr i16 Comma        = GLFW_KEY_COMMA;
-        constexpr i16 Minus        = GLFW_KEY_MINUS;
-        constexpr i16 Period       = GLFW_KEY_PERIOD;
-        constexpr i16 Slash        = GLFW_KEY_SLASH;
-        constexpr i16 Num0         = GLFW_KEY_0;
-        constexpr i16 Num1         = GLFW_KEY_1;
-        constexpr i16 Num2         = GLFW_KEY_2;
-        constexpr i16 Num3         = GLFW_KEY_3;
-        constexpr i16 Num4         = GLFW_KEY_4;
-        constexpr i16 Num5         = GLFW_KEY_5;
-        constexpr i16 Num6         = GLFW_KEY_6;
-        constexpr i16 Num7         = GLFW_KEY_7;
-        constexpr i16 Num8         = GLFW_KEY_8;
-        constexpr i16 Num9         = GLFW_KEY_9;
-        constexpr i16 Semicolon    = GLFW_KEY_SEMICOLON;
-        constexpr i16 Equal        = GLFW_KEY_EQUAL;
-        constexpr i16 A            = GLFW_KEY_A;
-        constexpr i16 B            = GLFW_KEY_B;
-        constexpr i16 C            = GLFW_KEY_C;
-        constexpr i16 D            = GLFW_KEY_D;
-        constexpr i16 E            = GLFW_KEY_E;
-        constexpr i16 F            = GLFW_KEY_F;
-        constexpr i16 G            = GLFW_KEY_G;
-        constexpr i16 H            = GLFW_KEY_H;
-        constexpr i16 I            = GLFW_KEY_I;
-        constexpr i16 J            = GLFW_KEY_J;
-        constexpr i16 K            = GLFW_KEY_K;
-        constexpr i16 L            = GLFW_KEY_L;
-        constexpr i16 M            = GLFW_KEY_M;
-        constexpr i16 N            = GLFW_KEY_N;
-        constexpr i16 O            = GLFW_KEY_O;
-        constexpr i16 P            = GLFW_KEY_P;
-        constexpr i16 Q            = GLFW_KEY_Q;
-        constexpr i16 R            = GLFW_KEY_R;
-        constexpr i16 S            = GLFW_KEY_S;
-        constexpr i16 T            = GLFW_KEY_T;
-        constexpr i16 U            = GLFW_KEY_U;
-        constexpr i16 V            = GLFW_KEY_V;
-        constexpr i16 W            = GLFW_KEY_W;
-        constexpr i16 X            = GLFW_KEY_X;
-        constexpr i16 Y            = GLFW_KEY_Y;
-        constexpr i16 Z            = GLFW_KEY_Z;
-        constexpr i16 LeftBracket  = GLFW_KEY_LEFT_BRACKET;
-        constexpr i16 Backslash    = GLFW_KEY_BACKSLASH;
-        constexpr i16 RightBracket = GLFW_KEY_RIGHT_BRACKET;
-        constexpr i16 GraveAccent  = GLFW_KEY_GRAVE_ACCENT;
-        constexpr i16 World1       = GLFW_KEY_WORLD_1;
-        constexpr i16 World2       = GLFW_KEY_WORLD_2;
-        constexpr i16 Escape       = GLFW_KEY_ESCAPE;
-        constexpr i16 Enter        = GLFW_KEY_ENTER;
-        constexpr i16 Tab          = GLFW_KEY_TAB;
-        constexpr i16 Backspace    = GLFW_KEY_BACKSPACE;
-        constexpr i16 Insert       = GLFW_KEY_INSERT;
-        constexpr i16 Delete       = GLFW_KEY_DELETE;
-        constexpr i16 Right        = GLFW_KEY_RIGHT;
-        constexpr i16 Left         = GLFW_KEY_LEFT;
-        constexpr i16 Down         = GLFW_KEY_DOWN;
-        constexpr i16 Up           = GLFW_KEY_UP;
-        constexpr i16 PageUp       = GLFW_KEY_PAGE_UP;
-        constexpr i16 PageDown     = GLFW_KEY_PAGE_DOWN;
-        constexpr i16 Home         = GLFW_KEY_HOME;
-        constexpr i16 End          = GLFW_KEY_END;
-        constexpr i16 CapsLock     = GLFW_KEY_CAPS_LOCK;
-        constexpr i16 ScrollLock   = GLFW_KEY_SCROLL_LOCK;
-        constexpr i16 NumLock      = GLFW_KEY_NUM_LOCK;
-        constexpr i16 PrintScreen  = GLFW_KEY_PRINT_SCREEN;
-        constexpr i16 Pause        = GLFW_KEY_PAUSE;
-        constexpr i16 F1           = GLFW_KEY_F1;
-        constexpr i16 F2           = GLFW_KEY_F2;
-        constexpr i16 F3           = GLFW_KEY_F3;
-        constexpr i16 F4           = GLFW_KEY_F4;
-        constexpr i16 F5           = GLFW_KEY_F5;
-        constexpr i16 F6           = GLFW_KEY_F6;
-        constexpr i16 F7           = GLFW_KEY_F7;
-        constexpr i16 F8           = GLFW_KEY_F8;
-        constexpr i16 F9           = GLFW_KEY_F9;
-        constexpr i16 F10          = GLFW_KEY_F10;
-        constexpr i16 F11          = GLFW_KEY_F11;
-        constexpr i16 F12          = GLFW_KEY_F12;
-        constexpr i16 F13          = GLFW_KEY_F13;
-        constexpr i16 F14          = GLFW_KEY_F14;
-        constexpr i16 F15          = GLFW_KEY_F15;
-        constexpr i16 F16          = GLFW_KEY_F16;
-        constexpr i16 F17          = GLFW_KEY_F17;
-        constexpr i16 F18          = GLFW_KEY_F18;
-        constexpr i16 F19          = GLFW_KEY_F19;
-        constexpr i16 F20          = GLFW_KEY_F20;
-        constexpr i16 F21          = GLFW_KEY_F21;
-        constexpr i16 F22          = GLFW_KEY_F22;
-        constexpr i16 F23          = GLFW_KEY_F23;
-        constexpr i16 F24          = GLFW_KEY_F24;
-        constexpr i16 F25          = GLFW_KEY_F25;
-        constexpr i16 Kp0          = GLFW_KEY_KP_0;
-        constexpr i16 Kp1          = GLFW_KEY_KP_1;
-        constexpr i16 Kp2          = GLFW_KEY_KP_2;
-        constexpr i16 Kp3          = GLFW_KEY_KP_3;
-        constexpr i16 Kp4          = GLFW_KEY_KP_4;
-        constexpr i16 Kp5          = GLFW_KEY_KP_5;
-        constexpr i16 Kp6          = GLFW_KEY_KP_6;
-        constexpr i16 Kp7          = GLFW_KEY_KP_7;
-        constexpr i16 Kp8          = GLFW_KEY_KP_8;
-        constexpr i16 Kp9          = GLFW_KEY_KP_9;
-        constexpr i16 KpDecimal    = GLFW_KEY_KP_DECIMAL;
-        constexpr i16 KpDivide     = GLFW_KEY_KP_DIVIDE;
-        constexpr i16 KpMultiply   = GLFW_KEY_KP_MULTIPLY;
-        constexpr i16 KpSubtract   = GLFW_KEY_KP_SUBTRACT;
-        constexpr i16 KpAdd        = GLFW_KEY_KP_ADD;
-        constexpr i16 KpEnter      = GLFW_KEY_KP_ENTER;
-        constexpr i16 KpEqual      = GLFW_KEY_KP_EQUAL;
-        constexpr i16 LeftShift    = GLFW_KEY_LEFT_SHIFT;
-        constexpr i16 LeftControl  = GLFW_KEY_LEFT_CONTROL;
-        constexpr i16 LeftAlt      = GLFW_KEY_LEFT_ALT;
-        constexpr i16 LeftSuper    = GLFW_KEY_LEFT_SUPER;
-        constexpr i16 RightShift   = GLFW_KEY_RIGHT_SHIFT;
-        constexpr i16 RightControl = GLFW_KEY_RIGHT_CONTROL;
-        constexpr i16 RightAlt     = GLFW_KEY_RIGHT_ALT;
-        constexpr i16 RightSuper   = GLFW_KEY_RIGHT_SUPER;
-        constexpr i16 Menu         = GLFW_KEY_MENU;
-        constexpr i16 Last         = GLFW_KEY_LAST;
+        constexpr i16 Unknown      = -1;
+        constexpr i16 Space        = VK_SPACE;
+        constexpr i16 Apostrophe   = VK_OEM_7;
+        constexpr i16 Comma        = VK_OEM_COMMA;
+        constexpr i16 Minus        = VK_OEM_MINUS;
+        constexpr i16 Period       = VK_OEM_PERIOD;
+        constexpr i16 Slash        = VK_OEM_2;
+        constexpr i16 Num0         = '0';
+        constexpr i16 Num1         = '1';
+        constexpr i16 Num2         = '2';
+        constexpr i16 Num3         = '3';
+        constexpr i16 Num4         = '4';
+        constexpr i16 Num5         = '5';
+        constexpr i16 Num6         = '6';
+        constexpr i16 Num7         = '7';
+        constexpr i16 Num8         = '8';
+        constexpr i16 Num9         = '9';
+        constexpr i16 Semicolon    = VK_OEM_1;
+        constexpr i16 Equal        = VK_OEM_PLUS;
+        constexpr i16 A            = 'A';
+        constexpr i16 B            = 'B';
+        constexpr i16 C            = 'C';
+        constexpr i16 D            = 'D';
+        constexpr i16 E            = 'E';
+        constexpr i16 F            = 'F';
+        constexpr i16 G            = 'G';
+        constexpr i16 H            = 'H';
+        constexpr i16 I            = 'I';
+        constexpr i16 J            = 'J';
+        constexpr i16 K            = 'K';
+        constexpr i16 L            = 'L';
+        constexpr i16 M            = 'M';
+        constexpr i16 N            = 'N';
+        constexpr i16 O            = 'O';
+        constexpr i16 P            = 'P';
+        constexpr i16 Q            = 'Q';
+        constexpr i16 R            = 'R';
+        constexpr i16 S            = 'S';
+        constexpr i16 T            = 'T';
+        constexpr i16 U            = 'U';
+        constexpr i16 V            = 'V';
+        constexpr i16 W            = 'W';
+        constexpr i16 X            = 'X';
+        constexpr i16 Y            = 'Y';
+        constexpr i16 Z            = 'Z';
+        constexpr i16 LeftBracket  = VK_OEM_4;
+        constexpr i16 Backslash    = VK_OEM_5;
+        constexpr i16 RightBracket = VK_OEM_6;
+        constexpr i16 GraveAccent  = VK_OEM_3;
+        constexpr i16 World1       = VK_OEM_8;    // No exact Win32 equivalent - closest "extra OEM key".
+        constexpr i16 World2       = VK_OEM_102;  // Ditto.
+        constexpr i16 Escape       = VK_ESCAPE;
+        constexpr i16 Enter        = VK_RETURN;
+        constexpr i16 Tab          = VK_TAB;
+        constexpr i16 Backspace    = VK_BACK;
+        constexpr i16 Insert       = VK_INSERT;
+        constexpr i16 Delete       = VK_DELETE;
+        constexpr i16 Right        = VK_RIGHT;
+        constexpr i16 Left         = VK_LEFT;
+        constexpr i16 Down         = VK_DOWN;
+        constexpr i16 Up           = VK_UP;
+        constexpr i16 PageUp       = VK_PRIOR;
+        constexpr i16 PageDown     = VK_NEXT;
+        constexpr i16 Home         = VK_HOME;
+        constexpr i16 End          = VK_END;
+        constexpr i16 CapsLock     = VK_CAPITAL;
+        constexpr i16 ScrollLock   = VK_SCROLL;
+        constexpr i16 NumLock      = VK_NUMLOCK;
+        constexpr i16 PrintScreen  = VK_SNAPSHOT;
+        constexpr i16 Pause        = VK_PAUSE;
+        constexpr i16 F1           = VK_F1;
+        constexpr i16 F2           = VK_F2;
+        constexpr i16 F3           = VK_F3;
+        constexpr i16 F4           = VK_F4;
+        constexpr i16 F5           = VK_F5;
+        constexpr i16 F6           = VK_F6;
+        constexpr i16 F7           = VK_F7;
+        constexpr i16 F8           = VK_F8;
+        constexpr i16 F9           = VK_F9;
+        constexpr i16 F10          = VK_F10;
+        constexpr i16 F11          = VK_F11;
+        constexpr i16 F12          = VK_F12;
+        constexpr i16 F13          = VK_F13;
+        constexpr i16 F14          = VK_F14;
+        constexpr i16 F15          = VK_F15;
+        constexpr i16 F16          = VK_F16;
+        constexpr i16 F17          = VK_F17;
+        constexpr i16 F18          = VK_F18;
+        constexpr i16 F19          = VK_F19;
+        constexpr i16 F20          = VK_F20;
+        constexpr i16 F21          = VK_F21;
+        constexpr i16 F22          = VK_F22;
+        constexpr i16 F23          = VK_F23;
+        constexpr i16 F24          = VK_F24;
+        constexpr i16 F25          = VK_F24 + 1;  // Win32 has no VK_F24-past key; kept distinct, never sent.
+        constexpr i16 Kp0          = VK_NUMPAD0;
+        constexpr i16 Kp1          = VK_NUMPAD1;
+        constexpr i16 Kp2          = VK_NUMPAD2;
+        constexpr i16 Kp3          = VK_NUMPAD3;
+        constexpr i16 Kp4          = VK_NUMPAD4;
+        constexpr i16 Kp5          = VK_NUMPAD5;
+        constexpr i16 Kp6          = VK_NUMPAD6;
+        constexpr i16 Kp7          = VK_NUMPAD7;
+        constexpr i16 Kp8          = VK_NUMPAD8;
+        constexpr i16 Kp9          = VK_NUMPAD9;
+        constexpr i16 KpDecimal    = VK_DECIMAL;
+        constexpr i16 KpDivide     = VK_DIVIDE;
+        constexpr i16 KpMultiply   = VK_MULTIPLY;
+        constexpr i16 KpSubtract   = VK_SUBTRACT;
+        constexpr i16 KpAdd        = VK_ADD;
+        constexpr i16 KpEnter      = VK_RETURN;  // Win32 reports the same VK for main and numpad Enter.
+        constexpr i16 KpEqual      = VK_OEM_NEC_EQUAL;
+        constexpr i16 LeftShift    = VK_LSHIFT;
+        constexpr i16 LeftControl  = VK_LCONTROL;
+        constexpr i16 LeftAlt      = VK_LMENU;
+        constexpr i16 LeftSuper    = VK_LWIN;
+        constexpr i16 RightShift   = VK_RSHIFT;
+        constexpr i16 RightControl = VK_RCONTROL;
+        constexpr i16 RightAlt     = VK_RMENU;
+        constexpr i16 RightSuper   = VK_RWIN;
+        constexpr i16 Menu         = VK_APPS;
+        constexpr i16 Last         = Menu;
 
         inline static const std::unordered_map<std::string, i16> KeyCodeMap = {
           {"Space", KeyCode::Space},
@@ -263,19 +277,27 @@ namespace Xen {
         };
     }  // namespace Input::KeyCode
 
+    // Win32 has no single "mouse button code" table the way GLFW does - only
+    // VK_LBUTTON/VK_RBUTTON/VK_MBUTTON/VK_XBUTTON1/VK_XBUTTON2 exist as real
+    // virtual-key codes. Button6-8 have no Win32 equivalent at all (WM_XBUTTON*
+    // only carries XBUTTON1/XBUTTON2 in its wParam), so they're just distinct
+    // placeholders the Win32 window will never actually send - kept for
+    // interface parity with GLFW's 8-button model. Mouse and keyboard states
+    // live in separate maps in InputManager, so these values only need to be
+    // unique from each other, not from Input::KeyCode's.
     namespace Input::MouseButton {
-        constexpr i16 Button1 = GLFW_MOUSE_BUTTON_1;
-        constexpr i16 Button2 = GLFW_MOUSE_BUTTON_2;
-        constexpr i16 Button3 = GLFW_MOUSE_BUTTON_3;
-        constexpr i16 Button4 = GLFW_MOUSE_BUTTON_4;
-        constexpr i16 Button5 = GLFW_MOUSE_BUTTON_5;
-        constexpr i16 Button6 = GLFW_MOUSE_BUTTON_6;
-        constexpr i16 Button7 = GLFW_MOUSE_BUTTON_7;
-        constexpr i16 Button8 = GLFW_MOUSE_BUTTON_8;
-        constexpr i16 Left    = GLFW_MOUSE_BUTTON_LEFT;
-        constexpr i16 Right   = GLFW_MOUSE_BUTTON_RIGHT;
-        constexpr i16 Middle  = GLFW_MOUSE_BUTTON_MIDDLE;
-        constexpr i16 Last    = GLFW_MOUSE_BUTTON_LAST;
+        constexpr i16 Left    = VK_LBUTTON;
+        constexpr i16 Right   = VK_RBUTTON;
+        constexpr i16 Middle  = VK_MBUTTON;
+        constexpr i16 Button1 = Left;
+        constexpr i16 Button2 = Right;
+        constexpr i16 Button3 = Middle;
+        constexpr i16 Button4 = VK_XBUTTON1;
+        constexpr i16 Button5 = VK_XBUTTON2;
+        constexpr i16 Button6 = VK_XBUTTON2 + 1;
+        constexpr i16 Button7 = VK_XBUTTON2 + 2;
+        constexpr i16 Button8 = VK_XBUTTON2 + 3;
+        constexpr i16 Last    = Button8;
 
         inline static const std::unordered_map<std::string, i16> MouseButtonMap = {
           {"Left", MouseButton::Left},

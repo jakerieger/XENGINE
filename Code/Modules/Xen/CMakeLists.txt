@@ -7,9 +7,6 @@ add_library(Xen STATIC
         ${VENDOR_ROOT}/nlohmann/json.hpp
         ${VENDOR_ROOT}/stb_image.cpp
         ${VENDOR_ROOT}/stb_image.h
-        ${VENDOR_ROOT}/glad.c
-        ${VENDOR_ROOT}/glad.h
-        ${VENDOR_ROOT}/khrplatform.h
         ${VENDOR_ROOT}/ini.h
         # Engine
         ${SHADER_INCLUDES}
@@ -51,10 +48,10 @@ add_library(Xen STATIC
         Transform.hpp
         Window.cpp
         Window.hpp
-        # Engine/Backends (TODO: dynamically select this based on platform)
-        Backends/GLTranslate.hpp
-        Backends/GLRenderDevice.cpp
-        Backends/GLRenderDevice.hpp
+        # Engine/Backends - Windows + D3D12 only, per DetectPlatform.cmake's PLATFORM_WINDOWS.
+        Backends/D3D12Translate.hpp
+        Backends/D3D12RenderDevice.cpp
+        Backends/D3D12RenderDevice.hpp
 )
 add_library(Xen::Xen ALIAS Xen)
 
@@ -62,10 +59,20 @@ target_include_directories(Xen PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 
+# Every Win32 call in Window.cpp/Input.hpp is the wide (W) variant - UNICODE/_UNICODE
+# make macros like IDC_ARROW resolve to their wide form too, instead of silently
+# defaulting to the ANSI one and producing an LPSTR/LPCWSTR mismatch.
+target_compile_definitions(Xen PUBLIC UNICODE _UNICODE)
+
 target_link_libraries(Xen PUBLIC
         Xen::Common
         Xen::PAK
-        glm::glm-header-only
-        glfw
+        Microsoft::DirectX-Headers
+        Microsoft::DirectX-Guids
+        D3D12MemoryAllocator
+        d3d12.lib
+        dxgi.lib
+        dxguid.lib
+        d3dcompiler.lib
 )
 target_include_directories(Xen PRIVATE ${MODULES_ROOT} ${VENDOR_ROOT})

@@ -35,7 +35,7 @@ namespace Xen {
             // No camera: draw everything unculled rather than nothing, so a
             // scene missing a camera shows up as "wrong view" rather than a
             // blank screen with no clue why.
-            _ViewProjection = glm::mat4 {1.0f};
+            _ViewProjection = IdentityFloat4x4;
         }
 
         S.ForEachActor([&](Actor& A) {
@@ -130,12 +130,12 @@ namespace Xen {
     Rect SpriteBatcher::ComputeSpriteBounds(const Transform& WorldTransform,
                                             const Rect& SourceRect,
                                             const f32 PixelsPerUnit) {
-        const glm::vec2 Size {SourceRect.Width / PixelsPerUnit * std::abs(WorldTransform.Scale.x),
-                              SourceRect.Height / PixelsPerUnit * std::abs(WorldTransform.Scale.y)};
+        const Float2 Size {SourceRect.Width / PixelsPerUnit * std::abs(WorldTransform.Scale.x),
+                          SourceRect.Height / PixelsPerUnit * std::abs(WorldTransform.Scale.y)};
 
         const f32 Extent = WorldTransform.Rotation == 0.0f ? 0.0f : std::max(Size.x, Size.y) * 0.41422f;  // sqrt(2)-1
 
-        const glm::vec2 Half {Size.x * 0.5f + Extent, Size.y * 0.5f + Extent};
+        const Float2 Half {Size.x * 0.5f + Extent, Size.y * 0.5f + Extent};
 
         return Rect {WorldTransform.Position.x - Half.x,
                      WorldTransform.Position.y - Half.y,

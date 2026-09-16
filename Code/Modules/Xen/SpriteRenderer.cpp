@@ -8,64 +8,64 @@
 
 namespace Xen {
     namespace {
-        // Embedded GLSL keeps the first cut buildable with no asset pipeline.
-        // When you set up an offline glslang step, switch ShaderSourceType to
-        // SPIRV and load the blobs - GL 4.6 takes SPIR-V natively, and the
-        // identical bytes feed a Vulkan backend later.
-
-        constexpr auto SpriteVertexShader = R"(#version 460 core
-
-layout(location = 0) in vec2 InCenter;
-layout(location = 1) in vec2 InSize;
-layout(location = 2) in float InRotation;
-layout(location = 3) in vec4 InUVRect;
-layout(location = 4) in vec4 InTint;
-
-layout(std140, binding = 0) uniform FrameData {
-    mat4 ViewProjection;
+        // Kept identical to Shaders/HLSL/Sprite.hlsl (which carries the fully
+        // commented version) - embedded here rather than loaded from disk so
+        // the demo has no asset pipeline dependency. D3D12RenderDevice::
+        // CreateShader compiles this at creation time via the legacy
+        // D3DCompile (SM 5.x), the same "author a shader, run the demo"
+        // workflow the old runtime-compiled GLSL had.
+        constexpr auto SpriteShaderSource = R"(
+cbuffer FrameData : register(b0) {
+    row_major float4x4 ViewProjection;
 };
 
-out vec2 vUV;
-out vec4 vTint;
+Texture2D Albedo : register(t0);
+SamplerState AlbedoSampler : register(s0);
 
-// Triangle strip order: BL, BR, TL, TR.
-const vec2 Corners[4] = vec2[4](
-    vec2(-0.5, -0.5), vec2(0.5, -0.5), vec2(-0.5, 0.5), vec2(0.5, 0.5)
-);
+struct VSInput {
+    float2 Center   : TEXCOORD0;
+    float2 Size     : TEXCOORD1;
+    float Rotation  : TEXCOORD2;
+    float4 UVRect   : TEXCOORD3;
+    float4 Tint     : TEXCOORD4;
+    uint VertexID   : SV_VertexID;
+};
 
-// v flipped against the corner y, because stb_image loads top-down while
-// world space is y-up. Sprite top must sample the first row of the image.
-const vec2 CornerUVs[4] = vec2[4](
-    vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(0.0, 0.0), vec2(1.0, 0.0)
-);
+struct PSInput {
+    float4 Position : SV_Position;
+    float2 UV : TEXCOORD0;
+    float4 Tint : COLOR0;
+};
 
-void main() {
-    vec2 Local = Corners[gl_VertexID] * InSize;
+static const float2 Corners[4] = {
+  float2(-0.5, -0.5), float2(0.5, -0.5), float2(-0.5, 0.5), float2(0.5, 0.5)
+};
 
-    float C = cos(InRotation);
-    float S = sin(InRotation);
-    vec2 Rotated = vec2(Local.x * C - Local.y * S, Local.x * S + Local.y * C);
+static const float2 CornerUVs[4] = {
+  float2(0.0, 1.0), float2(1.0, 1.0), float2(0.0, 0.0), float2(1.0, 0.0)
+};
 
-    vUV   = InUVRect.xy + CornerUVs[gl_VertexID] * InUVRect.zw;
-    vTint = InTint;
+PSInput VSMain(VSInput In) {
+    const float2 Local = Corners[In.VertexID] * In.Size;
 
-    gl_Position = ViewProjection * vec4(InCenter + Rotated, 0.0, 1.0);
+    const float C = cos(In.Rotation);
+    const float S = sin(In.Rotation);
+    const float2 Rotated = float2(Local.x * C - Local.y * S, Local.x * S + Local.y * C);
+
+    PSInput Out;
+    Out.UV   = In.UVRect.xy + CornerUVs[In.VertexID] * In.UVRect.zw;
+    Out.Tint = In.Tint;
+
+    const float2 WorldPos = In.Center + Rotated;
+    Out.Position          = mul(float4(WorldPos, 0.0, 1.0), ViewProjection);
+
+    return Out;
 }
-)";
 
-        constexpr auto SpriteFragmentShader = R"(#version 460 core
-
-in vec2 vUV;
-in vec4 vTint;
-
-layout(binding = 0) uniform sampler2D Albedo;
-
-out vec4 FragColor;
-
-void main() {
-    vec4 Color = texture(Albedo, vUV) * vTint;
-    if (Color.a <= 0.0) discard;
-    FragColor = Color;
+float4 PSMain(PSInput In) : SV_Target {
+    const float4 Color = Albedo.Sample(AlbedoSampler, In.UV) * In.Tint;
+    clip(Color.a <= 0.0 ? -1.0 : 1.0);
+    return Color;
 }
 )";
     }  // namespace
@@ -80,17 +80,19 @@ void main() {
 
         RHI::ShaderDesc VertexDesc;
         VertexDesc.Stage      = RHI::ShaderStage::Vertex;
-        VertexDesc.SourceType = RHI::ShaderSourceType::GLSL;
-        VertexDesc.Code       = SpriteVertexShader;
-        VertexDesc.CodeSize   = std::strlen(SpriteVertexShader);
-        VertexDesc.DebugName  = "Sprite.vert";
+        VertexDesc.SourceType = RHI::ShaderSourceType::HLSL;
+        VertexDesc.Code       = SpriteShaderSource;
+        VertexDesc.CodeSize   = std::strlen(SpriteShaderSource);
+        VertexDesc.EntryPoint = "VSMain";
+        VertexDesc.DebugName  = "Sprite.vs";
 
         RHI::ShaderDesc FragmentDesc;
         FragmentDesc.Stage      = RHI::ShaderStage::Fragment;
-        FragmentDesc.SourceType = RHI::ShaderSourceType::GLSL;
-        FragmentDesc.Code       = SpriteFragmentShader;
-        FragmentDesc.CodeSize   = std::strlen(SpriteFragmentShader);
-        FragmentDesc.DebugName  = "Sprite.frag";
+        FragmentDesc.SourceType = RHI::ShaderSourceType::HLSL;
+        FragmentDesc.Code       = SpriteShaderSource;
+        FragmentDesc.CodeSize   = std::strlen(SpriteShaderSource);
+        FragmentDesc.EntryPoint = "PSMain";
+        FragmentDesc.DebugName  = "Sprite.ps";
 
         const RHI::ShaderHandle Vertex   = Device.CreateShader(VertexDesc);
         const RHI::ShaderHandle Fragment = Device.CreateShader(FragmentDesc);
@@ -169,10 +171,10 @@ void main() {
         _Commands.Reset();
         _Commands.PushDebugGroup("Sprites");
 
-        RHI::RenderPassDesc Pass = RHI::RenderPassDesc::SwapChain(_Config.ClearColor.r,
-                                                                  _Config.ClearColor.g,
-                                                                  _Config.ClearColor.b,
-                                                                  _Config.ClearColor.a);
+        RHI::RenderPassDesc Pass = RHI::RenderPassDesc::SwapChain(_Config.ClearColor.x,
+                                                                  _Config.ClearColor.y,
+                                                                  _Config.ClearColor.z,
+                                                                  _Config.ClearColor.w);
         Pass.DebugName           = "Sprites";
         _Commands.BeginRenderPass(Pass);
 
@@ -213,14 +215,14 @@ void main() {
 
                     auto& [Center, Size, Rotation, _Pad, UVRect, Tint] = Out[i];
                     Center                                             = Item.WorldTransform.Position;
-                    Size     = glm::vec2 {Item.SourceRect.Width / PixelsPerUnit * Item.WorldTransform.Scale.x,
-                                      Item.SourceRect.Height / PixelsPerUnit * Item.WorldTransform.Scale.y};
+                    Size     = Float2 {Item.SourceRect.Width / PixelsPerUnit * Item.WorldTransform.Scale.x,
+                                    Item.SourceRect.Height / PixelsPerUnit * Item.WorldTransform.Scale.y};
                     Rotation = Item.WorldTransform.Rotation;
                     _Pad     = 0.0f;
-                    UVRect   = glm::vec4 {Item.SourceRect.X / TexWidth,
-                                        Item.SourceRect.Y / TexHeight,
-                                        Item.SourceRect.Width / TexWidth,
-                                        Item.SourceRect.Height / TexHeight};
+                    UVRect   = Float4 {Item.SourceRect.X / TexWidth,
+                                    Item.SourceRect.Y / TexHeight,
+                                    Item.SourceRect.Width / TexWidth,
+                                    Item.SourceRect.Height / TexHeight};
                     Tint     = Item.Tint;
                 }
 

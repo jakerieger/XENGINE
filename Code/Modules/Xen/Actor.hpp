@@ -42,8 +42,8 @@ namespace Xen {
         Transform& GetLocalTransform() { return _Transform; }
         void SetLocalTransform(const Transform& Transform) { _Transform = Transform; }
 
-        glm::vec2 GetPosition() const { return _Transform.Position; }
-        void SetPosition(const glm::vec2& Position) { _Transform.Position = Position; }
+        Float2 GetPosition() const { return _Transform.Position; }
+        void SetPosition(const Float2& Position) { _Transform.Position = Position; }
 
         f32 GetRotation() const { return _Transform.Rotation; }
         void SetRotation(const f32 Rotation) { _Transform.Rotation = Rotation; }
