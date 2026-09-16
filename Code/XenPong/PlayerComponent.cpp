@@ -29,8 +29,9 @@ namespace Xen {
         const auto CurrentPos = GetOwner()->GetPosition();
         f32 PosY              = CurrentPos.y;
 
-        if (GetGame()->GetInputManager().GetKeyDown(Input::KeyCode::Up)) { PosY += 8.f * FixedDelta; }
-        if (GetGame()->GetInputManager().GetKeyDown(Input::KeyCode::Down)) { PosY -= 8.f * FixedDelta; }
+        // Actions are defined in Config/InputConfig and must use snake_case or lowercase for their names.
+        if (GetGame()->GetInputManager().GetAction("move_up")) { PosY += 8.f * FixedDelta; }
+        if (GetGame()->GetInputManager().GetAction("move_down")) { PosY -= 8.f * FixedDelta; }
 
         const auto* MainCamera = GetOwner()->GetScene()->GetMainCamera();
         const f32 BoundsY      = (MainCamera->GetViewportHeight() / MainCamera->GetPixelsPerUnit()) * 0.5f;
