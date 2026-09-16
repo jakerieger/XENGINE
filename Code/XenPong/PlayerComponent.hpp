@@ -20,7 +20,7 @@ namespace Xen {
         void FixedTick(f32 FixedDelta) override;
         void EndPlay() override;
 
-        void Reset();
+        void Reset() const;
 
     private:
         // Cached at BeginPlay, same reasoning as BallComponent's _BallHalfSize: the

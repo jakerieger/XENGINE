@@ -59,9 +59,17 @@ namespace Xen {
         /// assigns a fresh one, exactly like Spawn.
         ActorHandle SpawnWithID(u64 ActorID, std::string Name = "Actor");
 
-        /// @brief Destroys every actor immediately and resets the scene.
-        /// Unlike EndPlay, the scene stays usable and keeps its begun-play
-        /// state - this is what loading a scene over an existing one uses.
+        /// @brief Destroys every actor and resets the scene. Unlike EndPlay,
+        /// the scene stays usable and keeps its begun-play state - this is
+        /// what loading a scene over an existing one uses.
+        ///
+        /// Safe to call from inside a Tick/FixedTick dispatch (e.g. from a
+        /// component reacting to something mid-frame): the actual clear is
+        /// deferred until the enclosing Tick/FixedTick's actor loop has fully
+        /// returned, the same way Destroy() defers via _PendingDestroy. Doing
+        /// it immediately would destroy the actor (and component) whose
+        /// method is still on the call stack, and would empty _Slots out from
+        /// under the loop that is still indexing it.
         void Clear();
 
         /// @brief Resolves a handle. Returns nullptr if the actor was
@@ -135,6 +143,7 @@ namespace Xen {
         void SweepPendingDestroys();
         void DestroyImmediate(u32 Index);
         void MarkForDestruction(ActorHandle Handle);
+        void ClearImmediate();
 
         std::string _Name;
         EngineContext _Context {};
@@ -147,6 +156,7 @@ namespace Xen {
 
         bool _BeganPlay {false};
         bool _Ticking {false};
+        bool _PendingClear {false};
         std::vector<ActorHandle> _PendingDestroy;
     };
 }  // namespace Xen

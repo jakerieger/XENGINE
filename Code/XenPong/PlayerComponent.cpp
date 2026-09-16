@@ -43,7 +43,7 @@ namespace Xen {
 
     void PlayerComponent::EndPlay() {}
 
-    void PlayerComponent::Reset() {
+    void PlayerComponent::Reset() const {
         const auto MainCamera = GetOwner()->GetScene()->GetMainCamera();
         const auto BoundsX    = MainCamera->GetViewportWidth() / MainCamera->GetPixelsPerUnit();
 
