@@ -12,11 +12,22 @@
 namespace Xen {
     PAK::AssetMountConfig BuildMountConfig(const AssetSettings& Settings, const int argc, char* argv[]) {
         PAK::AssetMountConfig Config;
-        Config.PakFiles = Settings.PakFiles;
 
         if (Settings.MountContentDirs) {
+            // Dev/debug: loose content dirs cover asset loading on their own, so a
+            // pak that hasn't been built yet (or hasn't been rebuilt since the last
+            // content change) shouldn't be fatal - MountAssets throws on any listed
+            // pak file that's missing, with no allowance for "it's optional here".
+            for (const auto& Pak : Settings.PakFiles) {
+                if (exists(Pak)) Config.PakFiles.push_back(Pak);
+            }
+
             Config.ContentDirs = Settings.ContentDirs;
             if (Settings.AllowCommandLineContentDirs) { PAK::AppendContentDirsFromArgs(Config, argc, argv); }
+        } else {
+            // Shippable build: the pak is the only source, so a missing one is a
+            // real packaging error and should still fail loudly.
+            Config.PakFiles = Settings.PakFiles;
         }
 
         return Config;
