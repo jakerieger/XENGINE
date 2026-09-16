@@ -89,4 +89,6 @@ XEN_ENTRYPOINT {
         LOG_CRIT("%s", Ex.what());
         return 1;
     }
+
+    return 0;
 }
