@@ -30,15 +30,6 @@ FetchContent_Declare(
         GIT_TAG v2.7.2
 )
 
-# D3D12MemoryAllocator's CMakeLists installs an export set for itself that
-# (once we link DirectX-Headers into it below) would also require
-# DirectX-Headers/DirectX-Guids to be part of an export set - which they
-# aren't, since they're fetched directly rather than found via
-# find_package(). We never install any of this project's dependencies, so
-# skipping install() processing entirely for everything FetchContent adds
-# here sidesteps that validation rather than fighting it.
-set(CMAKE_SKIP_INSTALL_RULES ON)
-
 FetchContent_MakeAvailable(
         DirectX-Headers
         D3D12MemoryAllocator
@@ -49,6 +40,21 @@ FetchContent_MakeAvailable(
 # D3D12MemoryAllocator's own CMakeLists doesn't know about DirectX-Headers - it only
 # reads D3D12MA_USING_DIRECTX_HEADERS as a preprocessor macro inside D3D12MemAlloc.h,
 # switching its #include between <directx/d3d12.h> (open-source headers) and the
-# Windows SDK's <d3d12.h>. Wire both the macro and the include path in ourselves.
+# Windows SDK's <d3d12.h>. The macro must stay PUBLIC so it reaches Xen too (Xen
+# includes D3D12MemAlloc.h and needs the same branch selected).
+#
+# For the include path, deliberately NOT target_link_libraries(... Microsoft::DirectX-Headers):
+# D3D12MemoryAllocator's own CMakeLists (unconditionally, not something we control) does
+# install(TARGETS D3D12MemoryAllocator EXPORT ...), and for a static library, any target
+# named in target_link_libraries - PUBLIC or PRIVATE alike - becomes part of what that
+# export requires (static libs carry their link dependencies forward to whatever finally
+# links them, so CMake tracks that regardless of visibility). That breaks the moment we
+# name a target (DirectX-Headers) that isn't itself exported. Pulling just the include
+# directory via a generator expression gives D3D12MemAlloc.cpp what it needs to compile
+# without creating that link-graph edge at all. D3D12MemoryAllocator already links the
+# classic dxguid.lib itself (unconditionally, in its own CMakeLists), which provides the
+# same GUID symbols DirectX-Guids would - no need to add that one either.
 target_compile_definitions(D3D12MemoryAllocator PUBLIC D3D12MA_USING_DIRECTX_HEADERS)
-target_link_libraries(D3D12MemoryAllocator PUBLIC Microsoft::DirectX-Headers Microsoft::DirectX-Guids)
+target_include_directories(D3D12MemoryAllocator PRIVATE
+        $<TARGET_PROPERTY:Microsoft::DirectX-Headers,INTERFACE_INCLUDE_DIRECTORIES>
+)
