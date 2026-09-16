@@ -3,6 +3,9 @@
 //
 
 #include "BallComponent.hpp"
+
+#include "Game.hpp"
+#include "GameManagerComponent.hpp"
 #include "OpponentComponent.hpp"
 #include "PlayerComponent.hpp"
 
@@ -33,11 +36,14 @@ namespace Xen {
             _BallHalfSize     = {Bounds.Width * 0.5f, Bounds.Height * 0.5f};
         }
 
-        if (Scene* S = GetOwner()->GetScene()) {
-            const std::vector<Actor*> Players   = S->FindActorsWith<PlayerComponent>();
-            const std::vector<Actor*> Opponents = S->FindActorsWith<OpponentComponent>();
-            _PlayerPaddle                       = Players.empty() ? nullptr : Players.front();
-            _OpponentPaddle                     = Opponents.empty() ? nullptr : Opponents.front();
+        if (const Scene* S = GetScene()) {
+            const std::vector<Actor*> Players     = S->FindActorsWith<PlayerComponent>();
+            const std::vector<Actor*> Opponents   = S->FindActorsWith<OpponentComponent>();
+            const std::vector<Actor*> GameManager = S->FindActorsWith<GameManagerComponent>();
+            _PlayerPaddle                         = Players.empty() ? nullptr : Players.front();
+            _OpponentPaddle                       = Opponents.empty() ? nullptr : Opponents.front();
+
+            if (!GameManager.empty()) { _GameManager = GameManager.front()->GetComponent<GameManagerComponent>(); }
         }
 
         Reset();
@@ -46,13 +52,22 @@ namespace Xen {
     void BallComponent::Tick(f32) {
         // For now, just update bounds every frame. In the future, doing this only when a resize is triggered would be
         // preferential.
-        if (const auto MainCamera = GetOwner()->GetScene()->GetMainCamera()) {
+        if (const auto MainCamera = GetScene()->GetMainCamera()) {
             _Bounds.x = MainCamera->GetViewBounds().Width / 2;
             _Bounds.y = MainCamera->GetViewBounds().Height / 2;
         }
     }
 
     void BallComponent::FixedTick(const f32 FixedDelta) {
+        if (_GameManager) {
+            const GameState State = _GameManager->GetGameState();
+            if (State != GameState::Ongoing) {
+                // Game is over. Determine winner and reset match.
+                LOG_INFO("Game over. Winner is %s.", State == GameState::PlayerWon ? "Player" : "Opponent");
+                _GameManager->ResetGame();
+            }
+        }
+
         const Float2 Current = GetOwner()->GetPosition();
         Float2 Next          = Current + _Velocity * _BallSpeed * FixedDelta;
 
@@ -69,9 +84,12 @@ namespace Xen {
         if (TryBouncePaddle(_PlayerPaddle, Next) || TryBouncePaddle(_OpponentPaddle, Next)) {
             ApplySpeedGain();
         } else if (Next.x > _Bounds.x || Next.x < -_Bounds.x) {
-            // Left/right are goal lines, not walls: a paddle that missed lets the
-            // ball sail past into out-of-bounds, so the rally restarts from center
-            // instead of bouncing back in.
+            if (Next.x > _Bounds.x) {
+                _GameManager->AddPlayerScore();
+            } else {
+                _GameManager->AddOpponentScore();
+            }
+
             Reset();
             return;
         }

@@ -65,13 +65,28 @@ namespace Xen {
     }
 
     void Scene::Clear() {
+        if (_Ticking) {
+            // Deferred exactly like Destroy()/_PendingDestroy: a caller mid-
+            // dispatch (e.g. a component's own Tick/FixedTick) is still on the
+            // call stack of an actor this would destroy, and Tick/FixedTick's
+            // loop is still indexing _Slots - clearing it out now would be a
+            // use-after-free plus an out-of-bounds read the moment control
+            // returns to that loop.
+            _PendingClear = true;
+            return;
+        }
+        ClearImmediate();
+    }
+
+    void Scene::ClearImmediate() {
         for (size_t i = _Slots.size(); i > 0; --i) {
             if (_Slots[i - 1].Actor) _Slots[i - 1].Actor->DispatchEndPlay();
         }
         _Slots.clear();
         _FreeSlots.clear();
         _PendingDestroy.clear();
-        _NextActorID = 1;
+        _PendingClear = false;
+        _NextActorID  = 1;
     }
 
     Actor* Scene::Get(const ActorHandle Handle) const {
@@ -226,7 +241,9 @@ namespace Xen {
         }
 
         _Ticking = false;
-        SweepPendingDestroys();
+
+        if (_PendingClear) ClearImmediate();
+        else SweepPendingDestroys();
     }
 
     void Scene::FixedTick(const f32 FixedDelta) {
@@ -241,7 +258,8 @@ namespace Xen {
 
         _Ticking = false;
 
-        SweepPendingDestroys();
+        if (_PendingClear) ClearImmediate();
+        else SweepPendingDestroys();
     }
 
     void Scene::EndPlay() {

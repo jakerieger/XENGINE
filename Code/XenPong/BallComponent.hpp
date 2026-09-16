@@ -11,6 +11,8 @@
 #include <random>
 
 namespace Xen {
+    class GameManagerComponent;
+
     REGISTER_COMPONENT(BallComponent)
 
     class BallComponent final : public IComponent {
@@ -47,6 +49,7 @@ namespace Xen {
 
         Actor* _PlayerPaddle {nullptr};
         Actor* _OpponentPaddle {nullptr};
+        GameManagerComponent* _GameManager {nullptr};
 
         std::mt19937 _Rng;
     };
