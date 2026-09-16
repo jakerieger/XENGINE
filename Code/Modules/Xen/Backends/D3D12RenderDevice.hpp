@@ -11,6 +11,7 @@
 #include <wrl/client.h>
 
 #include <array>
+#include <deque>
 #include <functional>
 #include <unordered_map>
 
@@ -54,6 +55,20 @@ namespace Xen::RHI::D3D12Backend {
         bool IsCompute {false};
     };
 
+    /// @brief A pool slot's contents, moved out at Destroy*() time and held
+    /// here until the fence proves no in-flight frame can still reference it.
+    ///
+    /// This is what makes Destroy*() safe to call the same frame a resource
+    /// was drawn with, per IRenderDevice's documented contract: the pool slot
+    /// is freed/recycled immediately (Pool::Free), but the actual COM object -
+    /// and therefore the real GPU delete - doesn't happen until FenceValue has
+    /// been signaled.
+    template<typename T>
+    struct RetiredResource {
+        u64 FenceValue {0};
+        T Item;
+    };
+
     /// @brief Per-frame-in-flight upload-heap ring for AllocateTransient.
     ///
     /// One persistently-mapped upload buffer per frame in flight, bump-
@@ -95,6 +110,10 @@ namespace Xen::RHI::D3D12Backend {
 
         bool Initialize(const DeviceDescriptor& Desc) override;
         void Shutdown() override;
+        void WaitIdle() override {
+            WaitForGPUIdle();
+            ProcessDeferredDeletes();
+        }
 
         NODISCARD Backend GetBackend() const override { return Backend::D3D12; }
         NODISCARD const DeviceCaps& GetCaps() const override { return _Caps; }
@@ -134,6 +153,12 @@ namespace Xen::RHI::D3D12Backend {
         void ResizeSwapChain(u32 Width, u32 Height);
         void WaitForFrame(u32 FrameIndex);
         void WaitForGPUIdle();
+
+        /// @brief Releases every retired resource whose tagged fence value the
+        /// GPU has already passed. Cheap (a few completed-value checks) so it
+        /// runs every BeginFrame; also called explicitly from WaitIdle()/
+        /// Shutdown() to force a full flush once the GPU is known idle.
+        void ProcessDeferredDeletes();
 
         void ExecuteBeginRenderPass(const RenderPassDesc& Desc);
         void ExecuteEndRenderPass();
@@ -192,6 +217,18 @@ namespace Xen::RHI::D3D12Backend {
         Pool<D3DSampler, SamplerHandle> _Samplers;
         Pool<D3DShader, ShaderHandle> _Shaders;
         Pool<D3DPipeline, PipelineHandle> _Pipelines;
+
+        // Declared after the pools/allocator above (and so destroyed before
+        // them, in reverse declaration order) so a still-populated queue at
+        // teardown releases its COM objects while the allocator that created
+        // them is still alive. Shutdown() flushes these explicitly anyway
+        // once the GPU is confirmed idle, so this ordering is a backstop, not
+        // the primary mechanism.
+        std::deque<RetiredResource<D3DBuffer>> _RetiredBuffers;
+        std::deque<RetiredResource<D3DTexture>> _RetiredTextures;
+        std::deque<RetiredResource<D3DSampler>> _RetiredSamplers;
+        std::deque<RetiredResource<D3DShader>> _RetiredShaders;
+        std::deque<RetiredResource<D3DPipeline>> _RetiredPipelines;
 
         TransientRing _Transient;
 

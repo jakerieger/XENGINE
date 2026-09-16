@@ -23,6 +23,15 @@ namespace Xen::RHI::D3D12Backend {
             if (Any(Usage & BufferUsage::Index)) return D3D12_RESOURCE_STATE_INDEX_BUFFER;
             return D3D12_RESOURCE_STATE_GENERIC_READ;
         }
+
+        // Retirement queues are pushed to in non-decreasing FenceValue order
+        // (destroys happen in temporal order and _NextFenceValue only ever
+        // grows), so popping from the front while the fence has passed the
+        // tag is enough - no need to scan the whole deque.
+        template<typename Deque>
+        void ReleaseCompleted(Deque& Q, const u64 CompletedValue) {
+            while (!Q.empty() && Q.front().FenceValue <= CompletedValue) Q.pop_front();
+        }
     }  // namespace
 
     // --- TransientRing ---------------------------------------------------
@@ -278,6 +287,10 @@ namespace Xen::RHI::D3D12Backend {
         if (!_Initialized) return;
 
         WaitForGPUIdle();
+        // Every Destroy*() call ever made only moved its resource into a
+        // retirement queue; this is what actually lets them go, now that the
+        // wait above guarantees the GPU is done with all of them.
+        ProcessDeferredDeletes();
 
         _Transient.Shutdown();
 
@@ -393,10 +406,22 @@ namespace Xen::RHI::D3D12Backend {
         }
     }
 
+    void D3D12RenderDevice::ProcessDeferredDeletes() {
+        if (!_Fence) return;
+        const u64 Completed = _Fence->GetCompletedValue();
+        ReleaseCompleted(_RetiredBuffers, Completed);
+        ReleaseCompleted(_RetiredTextures, Completed);
+        ReleaseCompleted(_RetiredSamplers, Completed);
+        ReleaseCompleted(_RetiredShaders, Completed);
+        ReleaseCompleted(_RetiredPipelines, Completed);
+    }
+
     // --- Frame -----------------------------------------------------------
 
     void D3D12RenderDevice::BeginFrame() {
         _Stats = {};
+
+        ProcessDeferredDeletes();
 
         if (_SwapChain) _FrameIndex = _SwapChain->GetCurrentBackBufferIndex();
         WaitForFrame(_FrameIndex);
@@ -704,7 +729,11 @@ namespace Xen::RHI::D3D12Backend {
     }
 
     void D3D12RenderDevice::DestroyBuffer(const BufferHandle Handle) {
-        if (const D3DBuffer* B = _Buffers.Get(Handle); B && B->Transient) return;  // owned by the ring, not by us
+        D3DBuffer* B = _Buffers.Get(Handle);
+        if (B) {
+            if (B->Transient) return;  // owned by the ring, not by us - never freed from the pool either
+            _RetiredBuffers.push_back({_NextFenceValue, std::move(*B)});
+        }
         _Buffers.Free(Handle);
     }
 
@@ -859,6 +888,7 @@ namespace Xen::RHI::D3D12Backend {
     }
 
     void D3D12RenderDevice::DestroyTexture(const TextureHandle Handle) {
+        if (D3DTexture* Tex = _Textures.Get(Handle)) _RetiredTextures.push_back({_NextFenceValue, std::move(*Tex)});
         _Textures.Free(Handle);
     }
 
@@ -888,6 +918,7 @@ namespace Xen::RHI::D3D12Backend {
     }
 
     void D3D12RenderDevice::DestroySampler(const SamplerHandle Handle) {
+        if (D3DSampler* Samp = _Samplers.Get(Handle)) _RetiredSamplers.push_back({_NextFenceValue, std::move(*Samp)});
         _Samplers.Free(Handle);
     }
 
@@ -932,6 +963,7 @@ namespace Xen::RHI::D3D12Backend {
     }
 
     void D3D12RenderDevice::DestroyShader(const ShaderHandle Handle) {
+        if (D3DShader* Shader = _Shaders.Get(Handle)) _RetiredShaders.push_back({_NextFenceValue, std::move(*Shader)});
         _Shaders.Free(Handle);
     }
 
@@ -1050,6 +1082,7 @@ namespace Xen::RHI::D3D12Backend {
     }
 
     void D3D12RenderDevice::DestroyPipeline(const PipelineHandle Handle) {
+        if (D3DPipeline* Pipe = _Pipelines.Get(Handle)) _RetiredPipelines.push_back({_NextFenceValue, std::move(*Pipe)});
         _Pipelines.Free(Handle);
     }
 

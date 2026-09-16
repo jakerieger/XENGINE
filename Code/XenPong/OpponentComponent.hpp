@@ -6,15 +6,20 @@
 
 #include <Xen/ComponentRegistry.hpp>
 
-REGISTER_COMPONENT(OpponentComponent)
+namespace Xen {
+    REGISTER_COMPONENT(OpponentComponent)
 
-class OpponentComponent final : public Xen::IComponent {
-public:
-    XEN_COMPONENT_TYPE(OpponentComponent)
-    OpponentComponent() {}
+    class OpponentComponent final : public Xen::IComponent {
+    public:
+        XEN_COMPONENT_TYPE(OpponentComponent)
+        OpponentComponent() {}
 
-    void Reflect(Xen::IReflector& R) override {}
-    void BeginPlay() override {}
-    void Tick(Xen::f32 DeltaTime) override {}
-    void EndPlay() override {}
-};
+        void Reflect(Xen::IReflector& R) override;
+        void BeginPlay() override;
+        void Tick(Xen::f32 DeltaTime) override;
+        void EndPlay() override;
+
+        void Reset();
+    };
+
+}  // namespace Xen

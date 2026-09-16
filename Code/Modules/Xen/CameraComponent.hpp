@@ -29,16 +29,16 @@ namespace Xen {
         void Reflect(IReflector& R) override {
             R.Property("Zoom",
                        _Zoom,
-                       {.Tooltip  = "Magnification. 2 shows half as much world, twice as large.",
+                       {.ToolTip  = "Magnification. 2 shows half as much world, twice as large.",
                         .Category = "Camera",
                         .Min      = 0.01f,
                         .Max      = 100.0f});
             R.Property("PixelsPerUnit",
                        _PixelsPerUnit,
-                       {.Tooltip = "Screen pixels per world unit at zoom 1.", .Category = "Camera"});
+                       {.ToolTip = "Screen pixels per world unit at zoom 1.", .Category = "Camera"});
             R.Property("Priority",
                        _Priority,
-                       {.Tooltip = "Highest priority enabled camera renders the scene.", .Category = "Camera"});
+                       {.ToolTip = "Highest priority enabled camera renders the scene.", .Category = "Camera"});
         }
 
         void SetViewport(const u32 Width, const u32 Height) {

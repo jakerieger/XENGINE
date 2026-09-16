@@ -7,11 +7,6 @@
 #include <Common/XenCommon.hpp>
 #include "EngineConfig.hpp"
 
-// Only virtual-key constants are needed here, not the rest of the Windows API
-// surface - WIN32_LEAN_AND_MEAN keeps this header (transitively included
-// everywhere Input.hpp is) cheap to parse. NOMINMAX is required: without it,
-// Windows.h's min/max macros shadow std::min/std::max at every call site that
-// transitively includes this header.
 #ifndef WIN32_LEAN_AND_MEAN
     #define WIN32_LEAN_AND_MEAN
 #endif
@@ -20,13 +15,10 @@
 #endif
 #include <Windows.h>
 
+#include <array>
 #include <unordered_map>
 
 namespace Xen {
-    // Win32 virtual-key codes (VK_*). Letters and digits deliberately reuse
-    // their ASCII values (Win32 defines no VK_A.../VK_0... macros - the docs
-    // say to use the bare character codes), which is also why these numbers
-    // are unchanged from this table's previous GLFW-key-code values.
     namespace Input::KeyCode {
         constexpr i16 Unknown      = -1;
         constexpr i16 Space        = VK_SPACE;
@@ -376,16 +368,41 @@ namespace Xen {
         InputManager& operator=(const InputManager&) = delete;
         InputManager& operator=(InputManager&&)      = delete;
 
+        // VK_* codes (and this engine's MouseButton placeholders) are all single
+        // bytes, so a flat array indexed directly by code is both correct and
+        // faster than a hash map - and unlike map[key], querying a key that was
+        // never pressed can't silently grow anything.
+        static constexpr size_t STATE_TABLE_SIZE = 256;
+        using StateTable                         = std::array<bool, STATE_TABLE_SIZE>;
+
     public:
-        bool GetKeyDown(const i16 Key) { return _KeyStates[Key]; }
-        bool GetKeyUp(const i16 Key) { return !_KeyStates[Key]; }
-        bool GetMouseButtonDown(const i16 Button) { return _MouseButtonStates[Button]; }
-        bool GetMouseButtonUp(const i16 Button) { return !_MouseButtonStates[Button]; }
+        // --- Level-triggered: true for as long as the key/button is held. ---
+        NODISCARD bool GetKeyDown(const i16 Key) const { return IsSet(_KeyStates, Key); }
+        NODISCARD bool GetKeyUp(const i16 Key) const { return !IsSet(_KeyStates, Key); }
+        NODISCARD bool GetMouseButtonDown(const i16 Button) const { return IsSet(_MouseButtonStates, Button); }
+        NODISCARD bool GetMouseButtonUp(const i16 Button) const { return !IsSet(_MouseButtonStates, Button); }
 
-        bool GetAction(const std::string& Name) {
-            if (!_InputMap.IsLoaded() || _InputMap.GetActions().contains(Name)) return false;
+        // --- Edge-triggered: true for exactly the one frame the state changed. ---
+        NODISCARD bool WasKeyPressed(const i16 Key) const {
+            return IsSet(_KeyStates, Key) && !IsSet(_PrevKeyStates, Key);
+        }
+        NODISCARD bool WasKeyReleased(const i16 Key) const {
+            return !IsSet(_KeyStates, Key) && IsSet(_PrevKeyStates, Key);
+        }
+        NODISCARD bool WasMouseButtonPressed(const i16 Button) const {
+            return IsSet(_MouseButtonStates, Button) && !IsSet(_PrevMouseButtonStates, Button);
+        }
+        NODISCARD bool WasMouseButtonReleased(const i16 Button) const {
+            return !IsSet(_MouseButtonStates, Button) && IsSet(_PrevMouseButtonStates, Button);
+        }
 
-            const auto [KeyCodes, MouseButtons] = _InputMap.GetActions().at(Name);
+        NODISCARD bool GetAction(const std::string& Name) const {
+            if (!_InputMap.IsLoaded()) return false;
+
+            const auto It = _InputMap.GetActions().find(Name);
+            if (It == _InputMap.GetActions().end()) return false;
+
+            const auto& [KeyCodes, MouseButtons] = It->second;
             const bool KeyDown = std::ranges::any_of(KeyCodes, [this](const i16 Key) { return GetKeyDown(Key); });
             const bool MouseDown =
               std::ranges::any_of(MouseButtons, [this](const i16 Button) { return GetMouseButtonDown(Button); });
@@ -401,11 +418,17 @@ namespace Xen {
     private:
         InputManager() = default;
 
+        static bool IsSet(const StateTable& States, const i16 Code) {
+            return Code >= 0 && CAST<size_t>(Code) < STATE_TABLE_SIZE && States[Code];
+        }
+
         InputMap _InputMap;
-        std::unordered_map<i16, bool> _KeyStates;
-        std::unordered_map<i16, bool> _MouseButtonStates;
-        i32 _MouseX, _MouseY;
-        i32 _MouseDeltaX, _MouseDeltaY;
+        StateTable _KeyStates {};
+        StateTable _PrevKeyStates {};
+        StateTable _MouseButtonStates {};
+        StateTable _PrevMouseButtonStates {};
+        i32 _MouseX {0}, _MouseY {0};
+        i32 _MouseDeltaX {0}, _MouseDeltaY {0};
         bool _Enabled {true};
 
         void LoadInputMap(const std::filesystem::path& InputConfig) { _InputMap.Load(InputConfig); }
@@ -413,33 +436,40 @@ namespace Xen {
         void SetEnabled(const bool Enabled) { _Enabled = Enabled; }
 
         void UpdateKeyState(const i16 KeyCode, const bool Pressed) {
-            if (!_Enabled) return;
+            if (!_Enabled || KeyCode < 0 || CAST<size_t>(KeyCode) >= STATE_TABLE_SIZE) return;
             _KeyStates[KeyCode] = Pressed;
         }
 
         void UpdateMouseButtonState(const i16 Button, const bool Pressed) {
-            if (!_Enabled) return;
+            if (!_Enabled || Button < 0 || CAST<size_t>(Button) >= STATE_TABLE_SIZE) return;
             _MouseButtonStates[Button] = Pressed;
         }
 
-        void UpdateMousePosition(const i32 DeltaX, const i32 DeltaY) {
+        /// @brief Absolute client-area cursor position, from WM_MOUSEMOVE.
+        void SetMousePosition(const i32 X, const i32 Y) {
             if (!_Enabled) return;
-
-            _MouseDeltaX = DeltaX;
-            _MouseDeltaY = DeltaY;
-
-            // TODO: Find a better way to do this, frame rate dependent (forces input checks to FixedTick)
-            constexpr f32 DeadZone = 2.5f;
-            if (std::abs(_MouseDeltaX) < DeadZone) _MouseDeltaX = 0.0f;
-            if (std::abs(_MouseDeltaY) < DeadZone) _MouseDeltaY = 0.0f;
-
-            _MouseX += DeltaX;
-            _MouseY += DeltaY;
+            _MouseX = X;
+            _MouseY = Y;
         }
 
-        void ResetMouseDeltas() {
-            _MouseDeltaX = 0;
-            _MouseDeltaY = 0;
+        /// @brief Accumulates one raw-input mouse-motion event. Summed rather
+        /// than overwritten: a high-poll-rate mouse can report several WM_INPUT
+        /// motion events between two frames, and only summing captures all of it.
+        void AddMouseDelta(const i32 DeltaX, const i32 DeltaY) {
+            if (!_Enabled) return;
+            _MouseDeltaX += DeltaX;
+            _MouseDeltaY += DeltaY;
+        }
+
+        /// @brief Called once per frame (Window::ResetInput, driven by
+        /// Game::TickFrame) after gameplay code has had the chance to read this
+        /// frame's state - snapshots it as "previous" for edge detection and
+        /// clears the per-frame mouse delta accumulator.
+        void EndFrame() {
+            _PrevKeyStates         = _KeyStates;
+            _PrevMouseButtonStates = _MouseButtonStates;
+            _MouseDeltaX           = 0;
+            _MouseDeltaY           = 0;
         }
     };
 }  // namespace Xen

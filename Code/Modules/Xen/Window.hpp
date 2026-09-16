@@ -41,11 +41,25 @@ namespace Xen {
         /// CreateWindowExW, before it has returned a value for _Handle to hold.
         LRESULT HandleMessage(HWND Handle, UINT Msg, WPARAM WParam, LPARAM LParam);
 
-        /// @brief Resolves WM_KEYDOWN/UP's wParam to a distinct Left/Right code for
-        /// Shift/Control/Alt - Win32 reports the generic VK_SHIFT/VK_CONTROL/VK_MENU
-        /// for both keyboard halves at the wParam level; only the scan code (in
-        /// lParam) tells them apart.
-        static i16 TranslateVirtualKey(WPARAM WParam, LPARAM LParam);
+        /// @brief Registers this window for raw keyboard + mouse input (WM_INPUT).
+        /// Raw input is the authoritative source for key/button state and mouse
+        /// deltas - see HandleRawKeyboard/HandleRawMouse - because it reports every
+        /// physical event straight from the driver: mouse deltas aren't run through
+        /// OS pointer acceleration or clamped at the screen edge the way
+        /// WM_MOUSEMOVE-derived deltas are, which matters for camera-look controls.
+        /// WM_MOUSEMOVE is still used for absolute cursor position, which raw
+        /// input's relative-motion stream doesn't provide.
+        void RegisterRawInput() const;
+
+        void HandleRawInput(LPARAM LParam);
+        void HandleRawKeyboard(const RAWKEYBOARD& KB);
+        void HandleRawMouse(const RAWMOUSE& Mouse);
+
+        /// @brief Resolves a scan code to a distinct Left/Right code for
+        /// Shift/Control/Alt - both raw input and the legacy messages report the
+        /// generic VK_SHIFT/VK_CONTROL/VK_MENU for both keyboard halves at the
+        /// virtual-key level; only the scan code tells them apart.
+        static i16 DisambiguateModifierKey(i16 VKey, UINT ScanCode);
 
         void Shutdown();
 

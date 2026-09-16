@@ -6,18 +6,25 @@
 
 #include <Xen/ComponentRegistry.hpp>
 
-REGISTER_COMPONENT(PlayerComponent)
+namespace Xen {
+    REGISTER_COMPONENT(PlayerComponent)
 
-class PlayerComponent final : public Xen::IComponent {
-public:
-    XEN_COMPONENT_TYPE(PlayerComponent)
-    PlayerComponent() {}
+    class PlayerComponent final : public IComponent {
+    public:
+        XEN_COMPONENT_TYPE(PlayerComponent)
+        PlayerComponent() {}
 
-    void Reflect(Xen::IReflector& R) override;
-    void BeginPlay() override;
-    void Tick(Xen::f32 DeltaTime) override;
-    void FixedTick(Xen::f32 FixedDelta) override;
-    void EndPlay() override;
+        void Reflect(IReflector& R) override;
+        void BeginPlay() override;
+        void Tick(f32 DeltaTime) override;
+        void FixedTick(f32 FixedDelta) override;
+        void EndPlay() override;
 
-    void Reset();
-};
+        void Reset();
+
+    private:
+        // Cached at BeginPlay, same reasoning as BallComponent's _BallHalfSize: the
+        // paddle's own SpriteComponent has already resolved its texture by then.
+        f32 _HalfHeight {0.0f};
+    };
+}  // namespace Xen

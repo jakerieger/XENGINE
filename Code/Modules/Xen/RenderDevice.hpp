@@ -68,6 +68,14 @@ namespace Xen::RHI {
         virtual bool Initialize(const DeviceDescriptor& Desc) = 0;
         virtual void Shutdown()                               = 0;
 
+        /// @brief Blocks until the GPU has finished every previously-submitted
+        /// frame. Callers that are about to destroy resources outside the
+        /// normal per-frame Destroy*() deferred-delete path (e.g. tearing down
+        /// a scene, or the final shutdown teardown before this device itself is
+        /// destroyed) must call this first - otherwise a resource can be
+        /// released while the GPU is still reading it.
+        virtual void WaitIdle() = 0;
+
         NODISCARD virtual Backend GetBackend() const        = 0;
         NODISCARD virtual const DeviceCaps& GetCaps() const = 0;
 

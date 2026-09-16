@@ -5,7 +5,7 @@
 #pragma once
 
 #include <Common/XenCommon.hpp>
-#include <Common/XenMath.hpp>
+#include <Common/Math.hpp>
 
 #include "ActorHandle.hpp"
 #include "Transform.hpp"
@@ -45,7 +45,7 @@ namespace Xen {
     /// written today won't need revisiting when the editor arrives.
     struct PropertyMeta {
         const char* DisplayName {nullptr};
-        const char* Tooltip {nullptr};
+        const char* ToolTip {nullptr};
         const char* Category {nullptr};
         f32 Min {0.0f};
         f32 Max {0.0f};

@@ -26,7 +26,7 @@ namespace Xen {
 
     /// @brief 4x4 identity, for default member initializers (XMFLOAT4X4 has no
     /// implicit identity - it's a plain POD with an uninitialized default ctor).
-    inline const Float4x4 IdentityFloat4x4 {
+    inline constexpr Float4x4 IdentityFloat4x4 {
       1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 
     // --- Float2 -------------------------------------------------------------

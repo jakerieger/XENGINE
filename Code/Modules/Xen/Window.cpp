@@ -7,6 +7,8 @@
 
 #include "Window.hpp"
 
+#include <vector>
+
 namespace Xen {
     namespace {
         constexpr wchar_t WINDOW_CLASS_NAME[] = L"XenWindowClass";
@@ -93,6 +95,8 @@ namespace Xen {
         ShowWindow(_Handle, SW_SHOW);
         UpdateWindow(_Handle);
 
+        RegisterRawInput();
+
         try {
             _InputManager.LoadInputMap("Config/InputConfig.ini");
         } catch (const EngineException& Ex) {
@@ -119,7 +123,7 @@ namespace Xen {
     }
 
     void Window::ResetInput() {
-        _InputManager.ResetMouseDeltas();
+        _InputManager.EndFrame();
     }
 
     LRESULT CALLBACK Window::WndProc(const HWND Handle, const UINT Msg, const WPARAM WParam, const LPARAM LParam) {
@@ -165,49 +169,28 @@ namespace Xen {
                 }
                 return DefWindowProcW(Handle, Msg, WParam, LParam);
 
-            case WM_KEYDOWN:
+            // Key/button *state* comes entirely from WM_INPUT now (see
+            // HandleRawKeyboard/HandleRawMouse) - it reports every physical
+            // event straight from the driver rather than through OS pointer
+            // acceleration/edge-clamping. WM_SYSKEYDOWN/UP (Alt, F10, Alt+F4,
+            // ...) are deliberately forwarded to DefWindowProcW unconditionally
+            // rather than handled here: that default processing is what
+            // actually implements Alt+F4 closing the window, and swallowing
+            // the message (as this used to do) silently broke it.
             case WM_SYSKEYDOWN:
-            case WM_KEYUP:
-            case WM_SYSKEYUP: {
-                const bool Pressed = Msg == WM_KEYDOWN || Msg == WM_SYSKEYDOWN;
-                _InputManager.UpdateKeyState(TranslateVirtualKey(WParam, LParam), Pressed);
-                return 0;
-            }
+            case WM_SYSKEYUP:
+                return DefWindowProcW(Handle, Msg, WParam, LParam);
 
-            case WM_LBUTTONDOWN:
-            case WM_LBUTTONUP:
-                _InputManager.UpdateMouseButtonState(Input::MouseButton::Left, Msg == WM_LBUTTONDOWN);
+            case WM_INPUT:
+                HandleRawInput(LParam);
                 return 0;
-
-            case WM_RBUTTONDOWN:
-            case WM_RBUTTONUP:
-                _InputManager.UpdateMouseButtonState(Input::MouseButton::Right, Msg == WM_RBUTTONDOWN);
-                return 0;
-
-            case WM_MBUTTONDOWN:
-            case WM_MBUTTONUP:
-                _InputManager.UpdateMouseButtonState(Input::MouseButton::Middle, Msg == WM_MBUTTONDOWN);
-                return 0;
-
-            case WM_XBUTTONDOWN:
-            case WM_XBUTTONUP: {
-                const i16 Button =
-                  HIWORD(WParam) == XBUTTON1 ? Input::MouseButton::Button4 : Input::MouseButton::Button5;
-                _InputManager.UpdateMouseButtonState(Button, Msg == WM_XBUTTONDOWN);
-                return TRUE;
-            }
 
             case WM_MOUSEMOVE: {
-                // GLFW's cursor-pos callback reports an absolute position and
-                // InputManager derives its own delta; do the same here rather
-                // than trusting raw input deltas, so both backends feed it
-                // identically.
-                static i32 LastX = 0, LastY = 0;
+                // Absolute client-area position only - raw input's relative-motion
+                // stream (used for deltas) doesn't carry this.
                 const auto X = CAST<i32>(CAST<short>(LOWORD(LParam)));
                 const auto Y = CAST<i32>(CAST<short>(HIWORD(LParam)));
-                _InputManager.UpdateMousePosition(X - LastX, Y - LastY);
-                LastX = X;
-                LastY = Y;
+                _InputManager.SetMousePosition(X, Y);
                 return 0;
             }
 
@@ -216,16 +199,96 @@ namespace Xen {
         }
     }
 
-    i16 Window::TranslateVirtualKey(const WPARAM WParam, const LPARAM LParam) {
-        i16 Key = CAST<i16>(WParam);
+    void Window::RegisterRawInput() const {
+        RAWINPUTDEVICE Devices[2] {};
 
-        if (Key == VK_SHIFT || Key == VK_CONTROL || Key == VK_MENU) {
-            const auto ScanCode    = CAST<UINT>((LParam >> 16) & 0xFF);
-            const UINT Mapped = MapVirtualKeyW(ScanCode, MAPVK_VSC_TO_VK_EX);
-            if (Mapped != 0) Key = CAST<i16>(Mapped);
+        // Mouse: usage page 1 ("generic desktop"), usage 2 ("mouse").
+        Devices[0].usUsagePage = 0x01;
+        Devices[0].usUsage     = 0x02;
+        Devices[0].dwFlags     = 0;
+        Devices[0].hwndTarget  = _Handle;
+
+        // Keyboard: usage page 1, usage 6 ("keyboard"). No RIDEV_NOLEGACY - the
+        // legacy WM_KEYDOWN/WM_SYSKEYDOWN stream keeps flowing too, which is what
+        // lets WM_SYSKEYDOWN/UP still reach DefWindowProcW for system shortcuts
+        // (Alt+F4, the system menu) while WM_INPUT is what actually drives game
+        // input state.
+        Devices[1].usUsagePage = 0x01;
+        Devices[1].usUsage     = 0x06;
+        Devices[1].dwFlags     = 0;
+        Devices[1].hwndTarget  = _Handle;
+
+        RegisterRawInputDevices(Devices, 2, sizeof(RAWINPUTDEVICE));
+    }
+
+    void Window::HandleRawInput(const LPARAM LParam) {
+        UINT Size = 0;
+        GetRawInputData(RCAST<HRAWINPUT>(LParam), RID_INPUT, nullptr, &Size, sizeof(RAWINPUTHEADER));
+        if (Size == 0) return;
+
+        // Mouse/keyboard RAWINPUT is well under this in practice; fall back to a
+        // heap buffer only on the off chance a future device reports more.
+        alignas(alignof(RAWINPUT)) BYTE StackBuffer[64];
+        std::vector<BYTE> HeapBuffer;
+        BYTE* Buffer = StackBuffer;
+        if (Size > sizeof(StackBuffer)) {
+            HeapBuffer.resize(Size);
+            Buffer = HeapBuffer.data();
         }
 
-        return Key;
+        if (GetRawInputData(RCAST<HRAWINPUT>(LParam), RID_INPUT, Buffer, &Size, sizeof(RAWINPUTHEADER)) != Size) return;
+
+        const auto* Raw = RCAST<const RAWINPUT*>(Buffer);
+        if (Raw->header.dwType == RIM_TYPEKEYBOARD) {
+            HandleRawKeyboard(Raw->data.keyboard);
+        } else if (Raw->header.dwType == RIM_TYPEMOUSE) {
+            HandleRawMouse(Raw->data.mouse);
+        }
+    }
+
+    void Window::HandleRawKeyboard(const RAWKEYBOARD& KB) {
+        // 0xFF is raw input's "this event carries no valid key" sentinel (e.g.
+        // one half of an escaped multi-byte sequence) - not a real key press.
+        if (KB.VKey == 0xFF) return;
+
+        const bool Pressed = (KB.Flags & RI_KEY_BREAK) == 0;
+        const i16 Key      = DisambiguateModifierKey(CAST<i16>(KB.VKey), KB.MakeCode);
+
+        _InputManager.UpdateKeyState(Key, Pressed);
+    }
+
+    void Window::HandleRawMouse(const RAWMOUSE& Mouse) {
+        // Absolute-mode devices (pen tablets, some VM/RDP setups) aren't handled
+        // here - they're rare enough for a desktop game not to special-case, and
+        // WM_MOUSEMOVE already covers absolute position for the normal case.
+        if ((Mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0 && (Mouse.lLastX != 0 || Mouse.lLastY != 0)) {
+            _InputManager.AddMouseDelta(Mouse.lLastX, Mouse.lLastY);
+        }
+
+        struct ButtonMapping {
+            USHORT DownFlag;
+            USHORT UpFlag;
+            i16 Button;
+        };
+        static constexpr ButtonMapping Mappings[] = {
+          {RI_MOUSE_LEFT_BUTTON_DOWN,   RI_MOUSE_LEFT_BUTTON_UP,   Input::MouseButton::Left  },
+          {RI_MOUSE_RIGHT_BUTTON_DOWN,  RI_MOUSE_RIGHT_BUTTON_UP,  Input::MouseButton::Right },
+          {RI_MOUSE_MIDDLE_BUTTON_DOWN, RI_MOUSE_MIDDLE_BUTTON_UP, Input::MouseButton::Middle},
+          {RI_MOUSE_BUTTON_4_DOWN,      RI_MOUSE_BUTTON_4_UP,      Input::MouseButton::Button4},
+          {RI_MOUSE_BUTTON_5_DOWN,      RI_MOUSE_BUTTON_5_UP,      Input::MouseButton::Button5},
+        };
+
+        for (const auto& [DownFlag, UpFlag, Button] : Mappings) {
+            if (Mouse.usButtonFlags & DownFlag) _InputManager.UpdateMouseButtonState(Button, true);
+            if (Mouse.usButtonFlags & UpFlag) _InputManager.UpdateMouseButtonState(Button, false);
+        }
+    }
+
+    i16 Window::DisambiguateModifierKey(const i16 VKey, const UINT ScanCode) {
+        if (VKey != VK_SHIFT && VKey != VK_CONTROL && VKey != VK_MENU) return VKey;
+
+        const UINT Mapped = MapVirtualKeyW(ScanCode, MAPVK_VSC_TO_VK_EX);
+        return Mapped != 0 ? CAST<i16>(Mapped) : VKey;
     }
 
     void Window::Shutdown() {
