@@ -123,8 +123,11 @@ float4 PSMain(PSInput In) : SV_Target {
         PipelineDesc.DepthStencil.DepthWriteEnable = false;
         PipelineDesc.Blend.Attachments[0]          = RHI::BlendAttachmentState::AlphaBlend();
         PipelineDesc.ColorAttachmentCount          = 1;
-        PipelineDesc.ColorFormats[0]               = RHI::Format::RGBA8_UNORM;
-        PipelineDesc.DebugName                     = "Sprite";
+        // Must match Viewport's own color format (see Viewport::Initialize) -
+        // both this PSO's declared render-target format and the actual
+        // attachment it draws into need to agree.
+        PipelineDesc.ColorFormats[0] = RHI::Format::BGRA8_UNORM;
+        PipelineDesc.DebugName       = "Sprite";
 
         _Pipeline = Device.CreateGraphicsPipeline(PipelineDesc);
 
@@ -162,7 +165,7 @@ float4 PSMain(PSInput In) : SV_Target {
         _Device   = nullptr;
     }
 
-    void SpriteRenderer::Render(const SpriteBatcher& Batcher, const TextureCache& Textures) {
+    void SpriteRenderer::Render(const SpriteBatcher& Batcher, const TextureCache& Textures, const Viewport& Target) {
         if (!_Device) return;
 
         _SpritesSubmitted = 0;
@@ -171,10 +174,11 @@ float4 PSMain(PSInput In) : SV_Target {
         _Commands.Reset();
         _Commands.PushDebugGroup("Sprites");
 
-        RHI::RenderPassDesc Pass = RHI::RenderPassDesc::SwapChain(_Config.ClearColor.x,
-                                                                  _Config.ClearColor.y,
-                                                                  _Config.ClearColor.z,
-                                                                  _Config.ClearColor.w);
+        RHI::RenderPassDesc Pass = RHI::RenderPassDesc::ColorTarget(Target.GetColorTarget(),
+                                                                    _Config.ClearColor.x,
+                                                                    _Config.ClearColor.y,
+                                                                    _Config.ClearColor.z,
+                                                                    _Config.ClearColor.w);
         Pass.DebugName           = "Sprites";
         _Commands.BeginRenderPass(Pass);
 

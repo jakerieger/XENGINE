@@ -151,6 +151,35 @@ namespace Xen::RHI::D3D12Backend {
         return D3D12_TEXTURE_ADDRESS_MODE_WRAP;
     }
 
+    /// @brief The underlying resource format a depth texture must be created
+    /// with if it also needs an SRV: a DSV and an SRV over the same memory
+    /// can't both use a depth-typed format (D32_FLOAT, ...), so the resource
+    /// itself is typeless and each view picks its own compatible format.
+    /// Returns UNKNOWN for a non-depth format - callers only use this when
+    /// TextureUsage::DepthTarget is set.
+    inline DXGI_FORMAT ToTypelessDepthFormat(const Format Fmt) {
+        switch (Fmt) {
+            case Format::D16_UNORM: return DXGI_FORMAT_R16_TYPELESS;
+            case Format::D24_UNORM_S8_UINT: return DXGI_FORMAT_R24G8_TYPELESS;
+            case Format::D32_FLOAT: return DXGI_FORMAT_R32_TYPELESS;
+            default: return DXGI_FORMAT_UNKNOWN;
+        }
+    }
+
+    /// @brief The SRV format that reads the depth channel of a typeless depth
+    /// resource created via ToTypelessDepthFormat. Stencil sampling isn't
+    /// exposed - depth is the overwhelmingly common case (soft particles,
+    /// SSAO, depth-based post-process) and stencil-as-SRV needs its own
+    /// format/slot, not needed yet.
+    inline DXGI_FORMAT ToDepthSrvFormat(const Format Fmt) {
+        switch (Fmt) {
+            case Format::D16_UNORM: return DXGI_FORMAT_R16_UNORM;
+            case Format::D24_UNORM_S8_UINT: return DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+            case Format::D32_FLOAT: return DXGI_FORMAT_R32_FLOAT;
+            default: return DXGI_FORMAT_UNKNOWN;
+        }
+    }
+
     inline D3D12_FILTER ToD3DFilter(const FilterMode Min, const FilterMode Mag, const MipMode Mip, const bool Aniso) {
         if (Aniso) return D3D12_FILTER_ANISOTROPIC;
 

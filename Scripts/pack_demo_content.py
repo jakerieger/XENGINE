@@ -71,12 +71,6 @@ def pack_demo_content():
         print(f"fatal: {str(paktool.name)} failed with code {result.returncode}", file=sys.stderr)
         sys.exit(result.returncode)
 
-    if build_config == BuildConfig.Release:
-        # delete the .xmeta file PAKTool creates for dev purposes
-        xmeta_file = pak_filename.with_suffix(".xmeta")
-        if xmeta_file.exists():
-            xmeta_file.unlink()
-
 
 if __name__ == "__main__":
     pack_demo_content()

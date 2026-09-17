@@ -10,6 +10,7 @@
 #include "RenderDevice.hpp"
 #include "SpriteBatcher.hpp"
 #include "TextureCache.hpp"
+#include "Viewport.hpp"
 
 namespace Xen {
     class SpriteRenderer {
@@ -35,12 +36,13 @@ namespace Xen {
 
         NODISCARD bool IsInitialized() const { return _Device != nullptr; }
 
-        /// @brief Records and submits one frame's sprites. Call between
-        /// IRenderDevice::BeginFrame and EndFrame.
+        /// @brief Records and submits one frame's sprites into Target's color
+        /// target. Call between IRenderDevice::BeginFrame and EndFrame.
         ///
-        /// Always opens a render pass, even with an empty draw list, so the
-        /// back buffer still gets cleared on a frame with nothing visible.
-        void Render(const SpriteBatcher& Batcher, const TextureCache& Textures);
+        /// Always opens a render pass, even with an empty draw list, so
+        /// Target's color target still gets cleared on a frame with nothing
+        /// visible.
+        void Render(const SpriteBatcher& Batcher, const TextureCache& Textures, const Viewport& Target);
 
         void SetClearColor(const Float4& Color) { _Config.ClearColor = Color; }
 
