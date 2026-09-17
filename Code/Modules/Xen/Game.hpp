@@ -11,6 +11,7 @@
 #include "Scene.hpp"
 #include "SpriteBatcher.hpp"
 #include "SpriteRenderer.hpp"
+#include "Viewport.hpp"
 #include "Window.hpp"
 #include "Input.hpp"
 
@@ -68,6 +69,7 @@ namespace Xen {
         NODISCARD TextureCache& GetTextures() const { return *_Textures; }
         NODISCARD SpriteBatcher& GetBatcher() { return _SpriteBatcher; }
         NODISCARD SpriteRenderer& GetRenderer() { return _SpriteRenderer; }
+        NODISCARD Viewport& GetMainViewport() { return _MainViewport; }
         NODISCARD RHI::IRenderDevice& GetRenderDevice() const { return *_RenderDevice; }
         NODISCARD Window& GetWindow() const { return *_Window; }
         NODISCARD InputManager& GetInputManager() const { return _Window->GetInputManager(); }
@@ -92,10 +94,12 @@ namespace Xen {
 
         /// @brief Pushes a framebuffer size to everything that needs one.
         ///
-        /// Both halves matter. The device sizes the swap chain viewport from
-        /// it - miss that and the viewport stays 0x0 and nothing rasterizes.
-        /// The batcher feeds it to the active camera, which is what decides
-        /// how much world fits on screen.
+        /// Resizes the swap chain, the main Viewport's color target (kept
+        /// the same size as the swap chain so CopyToSwapChain stays a valid
+        /// plain copy - see Viewport::Initialize), and feeds the size to the
+        /// batcher's active camera, which is what decides how much world
+        /// fits on screen. Miss any of these and something stays 0x0 or
+        /// stale while the others resize around it.
         void SetViewport(u32 Width, u32 Height);
 
     protected:
@@ -146,6 +150,7 @@ namespace Xen {
         SpriteBatcher _SpriteBatcher;
         std::unique_ptr<Window> _Window;
         std::unique_ptr<RHI::IRenderDevice> _RenderDevice;
+        Viewport _MainViewport;
         SpriteRenderer _SpriteRenderer;
 
         std::unique_ptr<Scene> _ActiveScene;

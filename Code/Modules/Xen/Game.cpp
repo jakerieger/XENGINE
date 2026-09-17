@@ -60,6 +60,10 @@ namespace Xen {
             THROW_ENGINE_EXCEPTION(EngineException, "failed to initialize render device");
         }
 
+        if (!_MainViewport.Initialize(*_RenderDevice, _Window->GetWidth(), _Window->GetHeight())) {
+            THROW_ENGINE_EXCEPTION(EngineException, "failed to initialize main viewport");
+        }
+
         // Without this the device's swap chain size stays 0x0, BeginRenderPass
         // sets a 0x0 viewport, and every triangle is clipped away while the
         // clear still works - which looks exactly like a correct frame with no
@@ -84,11 +88,12 @@ namespace Xen {
     Game::~Game() {
         if (_ActiveScene) TearDownActiveScene();
 
-        // Explicit, so the renderer releases its pipeline and sampler while
-        // the device is unambiguously alive. The declaration order in Game.hpp
-        // would get this right anyway; doing it here makes the dependency
-        // visible instead of implicit.
+        // Explicit, so the renderer and viewport release their GPU resources
+        // while the device is unambiguously alive. The declaration order in
+        // Game.hpp would get this right anyway; doing it here makes the
+        // dependency visible instead of implicit.
         _SpriteRenderer.Shutdown();
+        _MainViewport.Shutdown();
         _Textures.reset();
     }
 
@@ -162,6 +167,7 @@ namespace Xen {
 
     void Game::SetViewport(const u32 Width, const u32 Height) {
         if (_RenderDevice) _RenderDevice->SetSwapChainSize(Width, Height);
+        _MainViewport.Resize(Width, Height);
         _SpriteBatcher.SetViewport(Width, Height);
     }
 
@@ -221,7 +227,13 @@ namespace Xen {
 
             _SpriteBatcher.BuildDrawList(*_ActiveScene);
             OnRender();
-            _SpriteRenderer.Render(_SpriteBatcher, *_Textures);
+            _SpriteRenderer.Render(_SpriteBatcher, *_Textures, _MainViewport);
+
+            // Standalone-game presentation: copy the viewport's color target
+            // into the back buffer. An editor wouldn't call this at all - it
+            // would sample _MainViewport.GetColorTarget() into an ImGui
+            // panel instead.
+            _RenderDevice->CopyToSwapChain(_MainViewport.GetColorTarget());
 
             _RenderDevice->EndFrame();
         }

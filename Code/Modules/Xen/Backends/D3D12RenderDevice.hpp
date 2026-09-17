@@ -37,6 +37,16 @@ namespace Xen::RHI::D3D12Backend {
         u32 MipLevels {1};
         TextureUsage Usage {TextureUsage::None};
         u32 SrvHeapIndex {UINT32_MAX};
+        u32 RtvHeapIndex {UINT32_MAX};
+        u32 DsvHeapIndex {UINT32_MAX};
+
+        // Tracked so a texture reused across passes/frames (a render target
+        // that's later sampled, then rendered into again next frame) gets the
+        // right transition instead of assuming a fixed resting state the way
+        // the swap chain's PRESENT<->RENDER_TARGET back buffers can. Sprite
+        // textures - created once, uploaded once, sampled forever - never
+        // revisit this after their initial transition in UploadTexture.
+        D3D12_RESOURCE_STATES CurrentState {D3D12_RESOURCE_STATE_COMMON};
     };
 
     struct D3DSampler {
@@ -143,6 +153,7 @@ namespace Xen::RHI::D3D12Backend {
         void SetSwapChainSize(u32 Width, u32 Height) override;
         NODISCARD u32 GetSwapChainWidth() const override { return _SwapWidth; }
         NODISCARD u32 GetSwapChainHeight() const override { return _SwapHeight; }
+        void CopyToSwapChain(TextureHandle Source) override;
 
         TransientAllocation AllocateTransient(u32 Size, BufferUsage Usage) override;
 
@@ -161,10 +172,20 @@ namespace Xen::RHI::D3D12Backend {
         void ProcessDeferredDeletes();
 
         void ExecuteBeginRenderPass(const RenderPassDesc& Desc);
+        void ExecuteOffscreenBeginRenderPass(const RenderPassDesc& Desc);
         void ExecuteEndRenderPass();
+
+        /// @brief Records a transition barrier only if Tex isn't already in
+        /// NewState, and updates its tracked state either way. Every consumer
+        /// of an offscreen texture (render pass attachment, SRV bind) goes
+        /// through this instead of assuming a state, so usage order between
+        /// passes doesn't matter.
+        void TransitionTexture(D3DTexture& Tex, D3D12_RESOURCE_STATES NewState);
 
         u32 AllocateSrvSlot();
         u32 AllocateSamplerSlot();
+        u32 AllocateOffscreenRtvSlot();
+        u32 AllocateOffscreenDsvSlot();
 
         HWND _Hwnd {nullptr};
         DeviceDescriptor _Desc {};
@@ -210,6 +231,32 @@ namespace Xen::RHI::D3D12Backend {
         u32 _NextSrvSlot {0};
         u32 _NextSamplerSlot {0};
 
+        // Populated only once ProcessDeferredDeletes proves the GPU is done
+        // with the texture/sampler that owned a slot - a heap slot is a view
+        // the GPU can still be reading via an already-recorded command list,
+        // exactly like the resource itself, so it can't be recycled any
+        // sooner than the resource is (see RetiredResource).
+        std::vector<u32> _FreeSrvSlots;
+        std::vector<u32> _FreeSamplerSlots;
+
+        // Separate, non-shader-visible heaps for offscreen render-target/
+        // depth-stencil views (a Viewport's color target, a post-process
+        // scratch texture, ...). Kept apart from _RtvHeap, which is sized
+        // exactly to the swap chain's back buffer count and shader-invisible
+        // RTV/DSV descriptors don't need to live in a shader-visible heap
+        // anyway (only SRV/UAV/sampler descriptors bound via a root
+        // descriptor table do).
+        static constexpr u32 OffscreenRtvHeapCapacity = 32;
+        static constexpr u32 OffscreenDsvHeapCapacity = 8;
+        ComPtr<ID3D12DescriptorHeap> _OffscreenRtvHeap;
+        ComPtr<ID3D12DescriptorHeap> _OffscreenDsvHeap;
+        u32 _OffscreenRtvDescriptorSize {0};
+        u32 _OffscreenDsvDescriptorSize {0};
+        u32 _NextOffscreenRtvSlot {0};
+        u32 _NextOffscreenDsvSlot {0};
+        std::vector<u32> _FreeOffscreenRtvSlots;
+        std::vector<u32> _FreeOffscreenDsvSlots;
+
         ComPtr<ID3D12RootSignature> _RootSignature;
 
         Pool<D3DBuffer, BufferHandle> _Buffers;
@@ -240,11 +287,18 @@ namespace Xen::RHI::D3D12Backend {
         bool _InRenderPass {false};
         bool _SwapChainTargetThisPass {false};
 
+        // Remembered from BeginRenderPass so EndRenderPass can transition an
+        // offscreen pass's attachments to a sampling-ready resting state
+        // without RenderPassDesc having to be threaded through as well.
+        TextureHandle _CurrentColorAttachments[MAX_COLOR_ATTACHMENTS] {};
+        u8 _CurrentColorAttachmentCount {0};
+        TextureHandle _CurrentDepthAttachment {};
+        bool _CurrentHasDepthAttachment {false};
+
         FrameStats _Stats {};
         FrameStats _LastStats {};
 
         bool _Initialized {false};
 
-        void Log(bool Error, const char* Fmt, ...) const;
     };
 }  // namespace Xen::RHI::D3D12Backend

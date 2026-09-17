@@ -588,6 +588,22 @@ namespace Xen::RHI {
             D.ColorAttachments[0].Clear = ClearValue {{R, G, B, A}, 1.0f, 0};
             return D;
         }
+
+        /// @brief A single-color-attachment pass targeting an offscreen
+        /// texture (a Viewport's color target, a post-process scratch
+        /// texture, ...) instead of the swap chain.
+        static RenderPassDesc ColorTarget(const TextureHandle Target,
+                                          const f32 R = 0.0f,
+                                          const f32 G = 0.0f,
+                                          const f32 B = 0.0f,
+                                          const f32 A = 1.0f) {
+            RenderPassDesc D;
+            D.ColorAttachmentCount        = 1;
+            D.ColorAttachments[0].Texture = Target;
+            D.ColorAttachments[0].Load    = LoadOp::Clear;
+            D.ColorAttachments[0].Clear   = ClearValue {{R, G, B, A}, 1.0f, 0};
+            return D;
+        }
     };
 
     // --- Misc -------------------------------------------------------------

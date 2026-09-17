@@ -114,6 +114,18 @@ namespace Xen::RHI {
         /// this from Window::ConsumeResized, and call it once at startup.
         virtual void SetSwapChainSize(u32 Width, u32 Height) = 0;
 
+        /// @brief Copies Source into this frame's swap chain back buffer.
+        ///
+        /// This is the "no shader system yet" way to land a Viewport on
+        /// screen: a plain GPU copy rather than a shader blit, which is why
+        /// it requires Source to already be in the back buffer's own pixel
+        /// format (BGRA8_UNORM) and exactly its size - a raw copy can't
+        /// convert either. Once a fullscreen-blit/post-process pipeline
+        /// exists this becomes one option for presenting a Viewport, not the
+        /// only one (an editor would instead sample it via ImGui::Image and
+        /// never call this at all).
+        virtual void CopyToSwapChain(TextureHandle Source) = 0;
+
         NODISCARD virtual u32 GetSwapChainWidth() const  = 0;
         NODISCARD virtual u32 GetSwapChainHeight() const = 0;
 

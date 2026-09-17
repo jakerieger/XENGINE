@@ -46,6 +46,8 @@ add_library(Xen STATIC
         TextureCache.cpp
         TextureCache.hpp
         Transform.hpp
+        Viewport.cpp
+        Viewport.hpp
         Window.cpp
         Window.hpp
         # Engine/Backends - Windows + D3D12 only, per DetectPlatform.cmake's PLATFORM_WINDOWS.

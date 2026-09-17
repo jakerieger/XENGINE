@@ -75,4 +75,6 @@ namespace Xen {
 
         std::abort();
     }
+
+    inline constexpr std::_Ignore NoValue {};
 }  // namespace Xen

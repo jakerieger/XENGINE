@@ -30,7 +30,21 @@ namespace Xen::RHI::D3D12Backend {
         // tag is enough - no need to scan the whole deque.
         template<typename Deque>
         void ReleaseCompleted(Deque& Q, const u64 CompletedValue) {
-            while (!Q.empty() && Q.front().FenceValue <= CompletedValue) Q.pop_front();
+            while (!Q.empty() && Q.front().FenceValue <= CompletedValue)
+                Q.pop_front();
+        }
+
+        // FIFO recycling, matching Pool<T,H>'s own free-slot convention (see
+        // RHI.hpp) - a freed index isn't immediately reissued, so a
+        // stale-descriptor bug surfaces promptly instead of intermittently.
+        u32 AllocateSlot(std::vector<u32>& FreeList, u32& NextSlot, const u32 Capacity) {
+            if (!FreeList.empty()) {
+                const u32 Slot = FreeList.front();
+                FreeList.erase(FreeList.begin());
+                return Slot;
+            }
+            if (NextSlot >= Capacity) return UINT32_MAX;
+            return NextSlot++;
         }
     }  // namespace
 
@@ -113,15 +127,6 @@ namespace Xen::RHI::D3D12Backend {
         Shutdown();
     }
 
-    void D3D12RenderDevice::Log(const bool Error, const char* Fmt, ...) const {
-        va_list Args;
-        va_start(Args, Fmt);
-        char Buf[1024];
-        vsnprintf(Buf, sizeof(Buf), Fmt, Args);
-        va_end(Args);
-        std::fprintf(Error ? stderr : stdout, "[Xen::D3D12RenderDevice] %s\n", Buf);
-    }
-
     bool D3D12RenderDevice::Initialize(const DeviceDescriptor& Desc) {
         _Desc           = Desc;
         _Hwnd           = RCAST<HWND>(Desc.NativeWindowHandle);
@@ -137,7 +142,7 @@ namespace Xen::RHI::D3D12Backend {
         }
 
         if (FAILED(CreateDXGIFactory2(FactoryFlags, IID_PPV_ARGS(&_Factory)))) {
-            Log(true, "CreateDXGIFactory2 failed");
+            LOG_ERR("CreateDXGIFactory2 failed");
             return false;
         }
 
@@ -150,7 +155,7 @@ namespace Xen::RHI::D3D12Backend {
             Adapter.Reset();
         }
         if (!_Device) {
-            Log(true, "no D3D12-capable hardware adapter found");
+            LOG_ERR("no D3D12-capable hardware adapter found");
             return false;
         }
 
@@ -164,7 +169,8 @@ namespace Xen::RHI::D3D12Backend {
         if (FAILED(D3D12MA::CreateAllocator(&AllocatorDesc, &_Allocator))) return false;
 
         for (u32 i = 0; i < _FramesInFlight; ++i) {
-            if (FAILED(_Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_CmdAllocators[i]))))
+            if (FAILED(
+                  _Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_CmdAllocators[i]))))
                 return false;
         }
         if (FAILED(_Device->CreateCommandList(0,
@@ -177,8 +183,11 @@ namespace Xen::RHI::D3D12Backend {
 
         if (FAILED(_Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_UploadAllocator))))
             return false;
-        if (FAILED(_Device->CreateCommandList(
-              0, D3D12_COMMAND_LIST_TYPE_DIRECT, _UploadAllocator.Get(), nullptr, IID_PPV_ARGS(&_UploadCmdList))))
+        if (FAILED(_Device->CreateCommandList(0,
+                                              D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                              _UploadAllocator.Get(),
+                                              nullptr,
+                                              IID_PPV_ARGS(&_UploadCmdList))))
             return false;
         _UploadCmdList->Close();
 
@@ -206,6 +215,20 @@ namespace Xen::RHI::D3D12Backend {
         if (FAILED(_Device->CreateDescriptorHeap(&SamplerHeapDesc, IID_PPV_ARGS(&_SamplerHeap)))) return false;
         _SamplerDescriptorSize = _Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
 
+        D3D12_DESCRIPTOR_HEAP_DESC OffscreenRtvHeapDesc {};
+        OffscreenRtvHeapDesc.NumDescriptors = OffscreenRtvHeapCapacity;
+        OffscreenRtvHeapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+        if (FAILED(_Device->CreateDescriptorHeap(&OffscreenRtvHeapDesc, IID_PPV_ARGS(&_OffscreenRtvHeap))))
+            return false;
+        _OffscreenRtvDescriptorSize = _Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+        D3D12_DESCRIPTOR_HEAP_DESC OffscreenDsvHeapDesc {};
+        OffscreenDsvHeapDesc.NumDescriptors = OffscreenDsvHeapCapacity;
+        OffscreenDsvHeapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+        if (FAILED(_Device->CreateDescriptorHeap(&OffscreenDsvHeapDesc, IID_PPV_ARGS(&_OffscreenDsvHeap))))
+            return false;
+        _OffscreenDsvDescriptorSize = _Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+
         // Root signature: b0 root CBV (per-frame uniforms), t0 SRV table (albedo), s0
         // sampler table. Shared by every graphics pipeline - Stage 1 has exactly one
         // binding shape (the sprite pipeline), so one fixed layout covers it.
@@ -213,28 +236,28 @@ namespace Xen::RHI::D3D12Backend {
         SrvRange.RangeType                         = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
         SrvRange.NumDescriptors                    = 1;
         SrvRange.BaseShaderRegister                = 0;
-        SrvRange.OffsetInDescriptorsFromTableStart  = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+        SrvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
         D3D12_DESCRIPTOR_RANGE SamplerRange {};
-        SamplerRange.RangeType                        = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
-        SamplerRange.NumDescriptors                   = 1;
-        SamplerRange.BaseShaderRegister               = 0;
+        SamplerRange.RangeType                         = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+        SamplerRange.NumDescriptors                    = 1;
+        SamplerRange.BaseShaderRegister                = 0;
         SamplerRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
         D3D12_ROOT_PARAMETER RootParams[3] {};
         RootParams[0].ParameterType             = D3D12_ROOT_PARAMETER_TYPE_CBV;
-        RootParams[0].Descriptor.ShaderRegister  = 0;
-        RootParams[0].ShaderVisibility           = D3D12_SHADER_VISIBILITY_ALL;
+        RootParams[0].Descriptor.ShaderRegister = 0;
+        RootParams[0].ShaderVisibility          = D3D12_SHADER_VISIBILITY_ALL;
 
-        RootParams[1].ParameterType                        = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        RootParams[1].DescriptorTable.NumDescriptorRanges   = 1;
-        RootParams[1].DescriptorTable.pDescriptorRanges     = &SrvRange;
-        RootParams[1].ShaderVisibility                      = D3D12_SHADER_VISIBILITY_PIXEL;
+        RootParams[1].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        RootParams[1].DescriptorTable.NumDescriptorRanges = 1;
+        RootParams[1].DescriptorTable.pDescriptorRanges   = &SrvRange;
+        RootParams[1].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_PIXEL;
 
         RootParams[2].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        RootParams[2].DescriptorTable.NumDescriptorRanges  = 1;
-        RootParams[2].DescriptorTable.pDescriptorRanges    = &SamplerRange;
-        RootParams[2].ShaderVisibility                     = D3D12_SHADER_VISIBILITY_PIXEL;
+        RootParams[2].DescriptorTable.NumDescriptorRanges = 1;
+        RootParams[2].DescriptorTable.pDescriptorRanges   = &SamplerRange;
+        RootParams[2].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_PIXEL;
 
         D3D12_ROOT_SIGNATURE_DESC RootDesc {};
         RootDesc.NumParameters = 3;
@@ -243,15 +266,17 @@ namespace Xen::RHI::D3D12Backend {
 
         ComPtr<ID3DBlob> SigBlob, ErrBlob;
         if (FAILED(D3D12SerializeRootSignature(&RootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &SigBlob, &ErrBlob))) {
-            if (ErrBlob) Log(true, "root signature serialize failed: %s", CAST<const char*>(ErrBlob->GetBufferPointer()));
+            if (ErrBlob) LOG_ERR("root signature serialize failed: %s", CAST<const char*>(ErrBlob->GetBufferPointer()));
             return false;
         }
-        if (FAILED(_Device->CreateRootSignature(
-              0, SigBlob->GetBufferPointer(), SigBlob->GetBufferSize(), IID_PPV_ARGS(&_RootSignature))))
+        if (FAILED(_Device->CreateRootSignature(0,
+                                                SigBlob->GetBufferPointer(),
+                                                SigBlob->GetBufferSize(),
+                                                IID_PPV_ARGS(&_RootSignature))))
             return false;
 
         if (!_Transient.Initialize(_Device.Get(), _Allocator.Get(), Desc.TransientBufferSize, _FramesInFlight)) {
-            Log(true, "transient ring initialization failed");
+            LOG_ERR("transient ring initialization failed");
             return false;
         }
         // Wrap each frame's transient upload arena as a poolable D3DBuffer, exactly the
@@ -259,10 +284,10 @@ namespace Xen::RHI::D3D12Backend {
         // transient allocation's handle through the same lookup as any other buffer.
         for (u32 i = 0; i < _FramesInFlight; ++i) {
             D3DBuffer Buf;
-            Buf.Resource  = _Transient.GetResource(i);
-            Buf.Size      = Desc.TransientBufferSize;
-            Buf.Memory    = MemoryUsage::CpuToGpu;
-            Buf.Transient = true;
+            Buf.Resource         = _Transient.GetResource(i);
+            Buf.Size             = Desc.TransientBufferSize;
+            Buf.Memory           = MemoryUsage::CpuToGpu;
+            Buf.Transient        = true;
             const BufferHandle H = _Buffers.Allocate(std::move(Buf));
             _Transient.SetHandle(i, H);
         }
@@ -324,9 +349,9 @@ namespace Xen::RHI::D3D12Backend {
         SwapDesc.SampleDesc.Count = 1;
 
         ComPtr<IDXGISwapChain1> SwapChain1;
-        _Factory->CreateSwapChainForHwnd(_Queue.Get(), _Hwnd, &SwapDesc, nullptr, nullptr, &SwapChain1);
-        _Factory->MakeWindowAssociation(_Hwnd, DXGI_MWA_NO_ALT_ENTER);
-        SwapChain1.As(&_SwapChain);
+        Xen::NoValue = _Factory->CreateSwapChainForHwnd(_Queue.Get(), _Hwnd, &SwapDesc, nullptr, nullptr, &SwapChain1);
+        Xen::NoValue = _Factory->MakeWindowAssociation(_Hwnd, DXGI_MWA_NO_ALT_ENTER);
+        Xen::NoValue = SwapChain1.As(&_SwapChain);
 
         D3D12_CPU_DESCRIPTOR_HANDLE RtvHandle = _RtvHeap->GetCPUDescriptorHandleForHeapStart();
         for (u32 i = 0; i < _FramesInFlight; ++i) {
@@ -344,7 +369,8 @@ namespace Xen::RHI::D3D12Backend {
 
         WaitForGPUIdle();
 
-        for (auto& BB : _BackBuffers) BB.Reset();
+        for (auto& BB : _BackBuffers)
+            BB.Reset();
 
         DXGI_SWAP_CHAIN_DESC Desc;
         _SwapChain->GetDesc(&Desc);
@@ -371,6 +397,44 @@ namespace Xen::RHI::D3D12Backend {
         }
         if (Width == _SwapWidth && Height == _SwapHeight) return;
         ResizeSwapChain(Width, Height);
+    }
+
+    void D3D12RenderDevice::CopyToSwapChain(const TextureHandle Source) {
+        if (!_SwapChain) return;
+
+        D3DTexture* Tex = _Textures.Get(Source);
+        if (!Tex) {
+            LOG_ERR("CopyToSwapChain: invalid source texture");
+            return;
+        }
+
+        // Tracked independently of TransitionTexture (which only knows about
+        // pooled textures): the back buffer isn't one, so its state has to be
+        // read from the same bookkeeping ExecuteBeginRenderPass/EndRenderPass
+        // use for the swap-chain-target path.
+        const D3D12_RESOURCE_STATES BackBufferStateBefore =
+          _BackBufferIsRenderTarget[_FrameIndex] ? D3D12_RESOURCE_STATE_RENDER_TARGET : D3D12_RESOURCE_STATE_PRESENT;
+
+        D3D12_RESOURCE_BARRIER ToCopyDest {};
+        ToCopyDest.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        ToCopyDest.Transition.pResource   = _BackBuffers[_FrameIndex].Get();
+        ToCopyDest.Transition.StateBefore = BackBufferStateBefore;
+        ToCopyDest.Transition.StateAfter  = D3D12_RESOURCE_STATE_COPY_DEST;
+        ToCopyDest.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        _CmdList->ResourceBarrier(1, &ToCopyDest);
+        _BackBufferIsRenderTarget[_FrameIndex] = false;
+
+        TransitionTexture(*Tex, D3D12_RESOURCE_STATE_COPY_SOURCE);
+
+        _CmdList->CopyResource(_BackBuffers[_FrameIndex].Get(), Tex->Resource.Get());
+
+        D3D12_RESOURCE_BARRIER ToPresent {};
+        ToPresent.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        ToPresent.Transition.pResource   = _BackBuffers[_FrameIndex].Get();
+        ToPresent.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+        ToPresent.Transition.StateAfter  = D3D12_RESOURCE_STATE_PRESENT;
+        ToPresent.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        _CmdList->ResourceBarrier(1, &ToPresent);
     }
 
     // --- Sync ----------------------------------------------------------------
@@ -409,9 +473,27 @@ namespace Xen::RHI::D3D12Backend {
     void D3D12RenderDevice::ProcessDeferredDeletes() {
         if (!_Fence) return;
         const u64 Completed = _Fence->GetCompletedValue();
+
         ReleaseCompleted(_RetiredBuffers, Completed);
-        ReleaseCompleted(_RetiredTextures, Completed);
-        ReleaseCompleted(_RetiredSamplers, Completed);
+
+        // A heap slot is a view the GPU can still be reading via an
+        // already-recorded command list, exactly like the resource it views -
+        // it only goes back on its free list here, once the fence proves the
+        // GPU is done with the resource that owned it (see RetiredResource).
+        while (!_RetiredTextures.empty() && _RetiredTextures.front().FenceValue <= Completed) {
+            const D3DTexture& Tex = _RetiredTextures.front().Item;
+            if (Tex.SrvHeapIndex != UINT32_MAX) _FreeSrvSlots.push_back(Tex.SrvHeapIndex);
+            if (Tex.RtvHeapIndex != UINT32_MAX) _FreeOffscreenRtvSlots.push_back(Tex.RtvHeapIndex);
+            if (Tex.DsvHeapIndex != UINT32_MAX) _FreeOffscreenDsvSlots.push_back(Tex.DsvHeapIndex);
+            _RetiredTextures.pop_front();
+        }
+
+        while (!_RetiredSamplers.empty() && _RetiredSamplers.front().FenceValue <= Completed) {
+            const D3DSampler& Samp = _RetiredSamplers.front().Item;
+            if (Samp.HeapIndex != UINT32_MAX) _FreeSamplerSlots.push_back(Samp.HeapIndex);
+            _RetiredSamplers.pop_front();
+        }
+
         ReleaseCompleted(_RetiredShaders, Completed);
         ReleaseCompleted(_RetiredPipelines, Completed);
     }
@@ -444,13 +526,21 @@ namespace Xen::RHI::D3D12Backend {
             const CmdHeader& Header = It.Next();
 
             switch (Header.Type) {
-                case CmdType::BeginRenderPass: ExecuteBeginRenderPass(It.Payload<Cmd::BeginRenderPass>().Desc); break;
-                case CmdType::EndRenderPass: ExecuteEndRenderPass(); break;
+                case CmdType::BeginRenderPass:
+                    ExecuteBeginRenderPass(It.Payload<Cmd::BeginRenderPass>().Desc);
+                    break;
+                case CmdType::EndRenderPass:
+                    ExecuteEndRenderPass();
+                    break;
 
                 case CmdType::SetViewport: {
                     const auto& P = It.Payload<Cmd::SetViewport>();
-                    const D3D12_VIEWPORT VP {
-                      P.View.X, P.View.Y, P.View.Width, P.View.Height, P.View.MinDepth, P.View.MaxDepth};
+                    const D3D12_VIEWPORT VP {P.View.X,
+                                             P.View.Y,
+                                             P.View.Width,
+                                             P.View.Height,
+                                             P.View.MinDepth,
+                                             P.View.MaxDepth};
                     _CmdList->RSSetViewports(1, &VP);
                     break;
                 }
@@ -481,8 +571,8 @@ namespace Xen::RHI::D3D12Backend {
                     break;
 
                 case CmdType::BindPipeline: {
-                    const auto& P     = It.Payload<Cmd::BindPipeline>();
-                    _CurrentPipeline  = _Pipelines.Get(P.Pipeline);
+                    const auto& P    = It.Payload<Cmd::BindPipeline>();
+                    _CurrentPipeline = _Pipelines.Get(P.Pipeline);
                     if (_CurrentPipeline) {
                         _CmdList->SetPipelineState(_CurrentPipeline->PSO.Get());
                         if (!_CurrentPipeline->IsCompute) _CmdList->IASetPrimitiveTopology(_CurrentPipeline->Topology);
@@ -492,7 +582,7 @@ namespace Xen::RHI::D3D12Backend {
                 }
 
                 case CmdType::BindVertexBuffer: {
-                    const auto& P     = It.Payload<Cmd::BindVertexBuffer>();
+                    const auto& P      = It.Payload<Cmd::BindVertexBuffer>();
                     const D3DBuffer* B = _Buffers.Get(P.Buffer);
                     if (B && _CurrentPipeline) {
                         D3D12_VERTEX_BUFFER_VIEW View {};
@@ -505,7 +595,7 @@ namespace Xen::RHI::D3D12Backend {
                 }
 
                 case CmdType::BindIndexBuffer: {
-                    const auto& P     = It.Payload<Cmd::BindIndexBuffer>();
+                    const auto& P      = It.Payload<Cmd::BindIndexBuffer>();
                     const D3DBuffer* B = _Buffers.Get(P.Buffer);
                     if (B) {
                         D3D12_INDEX_BUFFER_VIEW View {};
@@ -518,9 +608,10 @@ namespace Xen::RHI::D3D12Backend {
                 }
 
                 case CmdType::BindUniformBuffer: {
-                    const auto& P     = It.Payload<Cmd::BindUniformBuffer>();
+                    const auto& P      = It.Payload<Cmd::BindUniformBuffer>();
                     const D3DBuffer* B = _Buffers.Get(P.Buffer);
-                    if (B) _CmdList->SetGraphicsRootConstantBufferView(0, B->Resource->GetGPUVirtualAddress() + P.Offset);
+                    if (B)
+                        _CmdList->SetGraphicsRootConstantBufferView(0, B->Resource->GetGPUVirtualAddress() + P.Offset);
                     break;
                 }
 
@@ -531,7 +622,13 @@ namespace Xen::RHI::D3D12Backend {
 
                 case CmdType::BindTexture: {
                     const auto& P = It.Payload<Cmd::BindTexture>();
-                    if (const D3DTexture* Tex = _Textures.Get(P.Texture); Tex && Tex->SrvHeapIndex != UINT32_MAX) {
+                    if (D3DTexture* Tex = _Textures.Get(P.Texture); Tex && Tex->SrvHeapIndex != UINT32_MAX) {
+                        // Self-transitioning: a texture that was just an
+                        // offscreen render target (or was never rendered into
+                        // at all yet) may not be SRV-readable already.
+                        TransitionTexture(
+                          *Tex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
                         D3D12_GPU_DESCRIPTOR_HANDLE Handle = _SrvHeap->GetGPUDescriptorHandleForHeapStart();
                         Handle.ptr += CAST<UINT64>(Tex->SrvHeapIndex) * _SrvDescriptorSize;
                         _CmdList->SetGraphicsRootDescriptorTable(1, Handle);
@@ -553,8 +650,11 @@ namespace Xen::RHI::D3D12Backend {
 
                 case CmdType::DrawIndexed: {
                     const auto& P = It.Payload<Cmd::DrawIndexed>();
-                    _CmdList->DrawIndexedInstanced(
-                      P.IndexCount, P.InstanceCount, P.FirstIndex, P.VertexOffset, P.FirstInstance);
+                    _CmdList->DrawIndexedInstanced(P.IndexCount,
+                                                   P.InstanceCount,
+                                                   P.FirstIndex,
+                                                   P.VertexOffset,
+                                                   P.FirstInstance);
                     ++_Stats.DrawCalls;
                     break;
                 }
@@ -578,7 +678,8 @@ namespace Xen::RHI::D3D12Backend {
                 case CmdType::PushDebugGroup:
                 case CmdType::PopDebugGroup:
                 case CmdType::InsertDebugMarker:
-                default: break;
+                default:
+                    break;
             }
 
             ++_Stats.CommandsExecuted;
@@ -592,7 +693,7 @@ namespace Xen::RHI::D3D12Backend {
 
         if (_SwapChain) _SwapChain->Present(1, 0);
 
-        const u64 Value              = _NextFenceValue++;
+        const u64 Value                = _NextFenceValue++;
         _FrameFenceValues[_FrameIndex] = Value;
         _Queue->Signal(_Fence.Get(), Value);
 
@@ -600,13 +701,11 @@ namespace Xen::RHI::D3D12Backend {
     }
 
     void D3D12RenderDevice::ExecuteBeginRenderPass(const RenderPassDesc& Desc) {
-        _InRenderPass             = true;
-        _SwapChainTargetThisPass  = Desc.IsSwapChainTarget;
+        _InRenderPass            = true;
+        _SwapChainTargetThisPass = Desc.IsSwapChainTarget;
 
         if (!Desc.IsSwapChainTarget) {
-            // Attachment-texture render passes aren't exercised by the sprite
-            // pipeline (it only ever draws to the swap chain) - not implemented.
-            Log(true, "render pass targeting an offscreen texture is not implemented yet");
+            ExecuteOffscreenBeginRenderPass(Desc);
             return;
         }
 
@@ -640,7 +739,112 @@ namespace Xen::RHI::D3D12Backend {
         ++_Stats.RenderPasses;
     }
 
+    void D3D12RenderDevice::ExecuteOffscreenBeginRenderPass(const RenderPassDesc& Desc) {
+        D3D12_CPU_DESCRIPTOR_HANDLE RtvHandles[MAX_COLOR_ATTACHMENTS] {};
+        u32 Width = 0, Height = 0;
+
+        _CurrentColorAttachmentCount = 0;
+        _CurrentHasDepthAttachment   = false;
+
+        for (u8 i = 0; i < Desc.ColorAttachmentCount; ++i) {
+            D3DTexture* Tex = _Textures.Get(Desc.ColorAttachments[i].Texture);
+            if (!Tex || Tex->RtvHeapIndex == UINT32_MAX) {
+                LOG_ERR("offscreen render pass: color attachment %u is not a valid render-target texture", i);
+                continue;
+            }
+
+            TransitionTexture(*Tex, D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+            D3D12_CPU_DESCRIPTOR_HANDLE Handle = _OffscreenRtvHeap->GetCPUDescriptorHandleForHeapStart();
+            Handle.ptr += CAST<UINT64>(Tex->RtvHeapIndex) * _OffscreenRtvDescriptorSize;
+            RtvHandles[i] = Handle;
+
+            if (Desc.ColorAttachments[i].Load == LoadOp::Clear) {
+                _CmdList->ClearRenderTargetView(Handle, Desc.ColorAttachments[i].Clear.Color, 0, nullptr);
+            }
+
+            Width  = Tex->Width;
+            Height = Tex->Height;
+
+            _CurrentColorAttachments[_CurrentColorAttachmentCount++] = Desc.ColorAttachments[i].Texture;
+        }
+
+        D3D12_CPU_DESCRIPTOR_HANDLE DsvHandle {};
+        bool HasDsv = false;
+
+        if (Desc.HasDepthStencil) {
+            D3DTexture* DepthTex = _Textures.Get(Desc.DepthStencil.Texture);
+            if (DepthTex && DepthTex->DsvHeapIndex != UINT32_MAX) {
+                TransitionTexture(*DepthTex, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+                DsvHandle = _OffscreenDsvHeap->GetCPUDescriptorHandleForHeapStart();
+                DsvHandle.ptr += CAST<UINT64>(DepthTex->DsvHeapIndex) * _OffscreenDsvDescriptorSize;
+                HasDsv = true;
+
+                u32 ClearFlagsRaw = 0;
+                if (Desc.DepthStencil.DepthLoad == LoadOp::Clear) ClearFlagsRaw |= D3D12_CLEAR_FLAG_DEPTH;
+                if (Desc.DepthStencil.StencilLoad == LoadOp::Clear) ClearFlagsRaw |= D3D12_CLEAR_FLAG_STENCIL;
+                if (ClearFlagsRaw != 0) {
+                    _CmdList->ClearDepthStencilView(DsvHandle,
+                                                    CAST<D3D12_CLEAR_FLAGS>(ClearFlagsRaw),
+                                                    Desc.DepthStencil.Clear.Depth,
+                                                    CAST<UINT8>(Desc.DepthStencil.Clear.Stencil),
+                                                    0,
+                                                    nullptr);
+                }
+
+                if (Width == 0) {
+                    Width  = DepthTex->Width;
+                    Height = DepthTex->Height;
+                }
+
+                _CurrentDepthAttachment    = Desc.DepthStencil.Texture;
+                _CurrentHasDepthAttachment = true;
+            } else {
+                LOG_ERR("offscreen render pass: depth attachment is not a valid depth-target texture");
+            }
+        }
+
+        _CmdList->OMSetRenderTargets(Desc.ColorAttachmentCount, RtvHandles, FALSE, HasDsv ? &DsvHandle : nullptr);
+
+        const D3D12_VIEWPORT VP {0.0f, 0.0f, CAST<f32>(Width), CAST<f32>(Height), 0.0f, 1.0f};
+        _CmdList->RSSetViewports(1, &VP);
+        const D3D12_RECT Scissor {0, 0, CAST<LONG>(Width), CAST<LONG>(Height)};
+        _CmdList->RSSetScissorRects(1, &Scissor);
+
+        ++_Stats.RenderPasses;
+    }
+
     void D3D12RenderDevice::ExecuteEndRenderPass() {
+        if (!_SwapChainTargetThisPass) {
+            // Left sampling-ready (both pixel- and compute-shader-readable) so
+            // whatever consumes this pass's output next - a post-process
+            // dispatch, a fullscreen blit, ImGui::Image - needs no barrier of
+            // its own.
+            constexpr D3D12_RESOURCE_STATES ShaderReadable =
+              D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+
+            for (u8 i = 0; i < _CurrentColorAttachmentCount; ++i) {
+                if (D3DTexture* Tex = _Textures.Get(_CurrentColorAttachments[i])) TransitionTexture(*Tex, ShaderReadable);
+            }
+
+            if (_CurrentHasDepthAttachment) {
+                if (D3DTexture* DepthTex = _Textures.Get(_CurrentDepthAttachment)) {
+                    // Only a depth texture created with Sampled usage has an
+                    // SRV over its typeless resource (see CreateTexture) - one
+                    // that's render-only has nothing valid to read it as, so
+                    // it stays DEPTH_WRITE, ready for the next pass to write
+                    // into again.
+                    if (Any(DepthTex->Usage & TextureUsage::Sampled)) TransitionTexture(*DepthTex, ShaderReadable);
+                }
+            }
+
+            _CurrentColorAttachmentCount = 0;
+            _CurrentHasDepthAttachment   = false;
+            _InRenderPass                = false;
+            return;
+        }
+
         if (_SwapChainTargetThisPass && _BackBufferIsRenderTarget[_FrameIndex]) {
             D3D12_RESOURCE_BARRIER Barrier {};
             Barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -665,7 +869,7 @@ namespace Xen::RHI::D3D12Backend {
 
         D3D12MA::ALLOCATION_DESC AllocDesc {};
         AllocDesc.HeapType = Desc.Memory == MemoryUsage::CpuToGpu   ? D3D12_HEAP_TYPE_UPLOAD
-                            : Desc.Memory == MemoryUsage::GpuToCpu  ? D3D12_HEAP_TYPE_READBACK
+                             : Desc.Memory == MemoryUsage::GpuToCpu ? D3D12_HEAP_TYPE_READBACK
                                                                     : D3D12_HEAP_TYPE_DEFAULT;
 
         D3D12_RESOURCE_DESC ResDesc {};
@@ -677,7 +881,7 @@ namespace Xen::RHI::D3D12Backend {
         ResDesc.SampleDesc.Count = 1;
         ResDesc.Layout           = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 
-        const bool HasInitial       = Desc.InitialData != nullptr && Desc.Size > 0;
+        const bool HasInitial                 = Desc.InitialData != nullptr && Desc.Size > 0;
         const D3D12_RESOURCE_STATES RestState = RestingBufferState(Desc.Usage);
 
         D3D12_RESOURCE_STATES InitialState = RestState;
@@ -685,8 +889,12 @@ namespace Xen::RHI::D3D12Backend {
         else if (AllocDesc.HeapType == D3D12_HEAP_TYPE_READBACK) InitialState = D3D12_RESOURCE_STATE_COPY_DEST;
         else if (HasInitial) InitialState = D3D12_RESOURCE_STATE_COPY_DEST;
 
-        const HRESULT Hr = _Allocator->CreateResource(
-          &AllocDesc, &ResDesc, InitialState, nullptr, &Buf.Allocation, IID_PPV_ARGS(&Buf.Resource));
+        const HRESULT Hr = _Allocator->CreateResource(&AllocDesc,
+                                                      &ResDesc,
+                                                      InitialState,
+                                                      nullptr,
+                                                      &Buf.Allocation,
+                                                      IID_PPV_ARGS(&Buf.Resource));
         if (FAILED(Hr)) return {};
 
         if (AllocDesc.HeapType == D3D12_HEAP_TYPE_UPLOAD) {
@@ -738,7 +946,7 @@ namespace Xen::RHI::D3D12Backend {
     }
 
     void D3D12RenderDevice::UpdateBuffer(BufferHandle, u64, const void*, u64) {
-        Log(true, "UpdateBuffer is not implemented - not exercised by the sprite pipeline");
+        LOG_ERR("UpdateBuffer is not implemented - not exercised by the sprite pipeline");
     }
 
     void* D3D12RenderDevice::MapBuffer(const BufferHandle Handle, const u64 Offset, u64) {
@@ -755,13 +963,33 @@ namespace Xen::RHI::D3D12Backend {
     // --- Resources: textures -------------------------------------------------
 
     u32 D3D12RenderDevice::AllocateSrvSlot() {
-        if (_NextSrvSlot >= SrvHeapCapacity) return UINT32_MAX;
-        return _NextSrvSlot++;
+        return AllocateSlot(_FreeSrvSlots, _NextSrvSlot, SrvHeapCapacity);
     }
 
     u32 D3D12RenderDevice::AllocateSamplerSlot() {
-        if (_NextSamplerSlot >= SamplerHeapCapacity) return UINT32_MAX;
-        return _NextSamplerSlot++;
+        return AllocateSlot(_FreeSamplerSlots, _NextSamplerSlot, SamplerHeapCapacity);
+    }
+
+    u32 D3D12RenderDevice::AllocateOffscreenRtvSlot() {
+        return AllocateSlot(_FreeOffscreenRtvSlots, _NextOffscreenRtvSlot, OffscreenRtvHeapCapacity);
+    }
+
+    u32 D3D12RenderDevice::AllocateOffscreenDsvSlot() {
+        return AllocateSlot(_FreeOffscreenDsvSlots, _NextOffscreenDsvSlot, OffscreenDsvHeapCapacity);
+    }
+
+    void D3D12RenderDevice::TransitionTexture(D3DTexture& Tex, const D3D12_RESOURCE_STATES NewState) {
+        if (Tex.CurrentState == NewState) return;
+
+        D3D12_RESOURCE_BARRIER Barrier {};
+        Barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        Barrier.Transition.pResource   = Tex.Resource.Get();
+        Barrier.Transition.StateBefore = Tex.CurrentState;
+        Barrier.Transition.StateAfter  = NewState;
+        Barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        _CmdList->ResourceBarrier(1, &Barrier);
+
+        Tex.CurrentState = NewState;
     }
 
     TextureHandle D3D12RenderDevice::CreateTexture(const TextureDesc& Desc) {
@@ -775,34 +1003,84 @@ namespace Xen::RHI::D3D12Backend {
         D3D12MA::ALLOCATION_DESC AllocDesc {};
         AllocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
 
+        const bool WantsColorTarget = Any(Desc.Usage & TextureUsage::ColorTarget);
+        const bool WantsDepthTarget = Any(Desc.Usage & TextureUsage::DepthTarget);
+        const bool WantsSampled     = Any(Desc.Usage & TextureUsage::Sampled);
+
+        // A depth texture that's only ever a render target can be created
+        // directly in its DSV format. One that's also sampled (a Viewport's
+        // depth buffer read back for soft particles, SSAO, ...) can't: a DSV
+        // and an SRV over the same memory can't both use a depth-typed
+        // format, so the resource itself must be typeless, with the DSV and
+        // SRV each applying their own compatible format over it.
+        const DXGI_FORMAT ResourceFormat = (WantsDepthTarget && WantsSampled) ? ToTypelessDepthFormat(Desc.Fmt)
+                                                                               : Tex.Format;
+
         D3D12_RESOURCE_DESC ResDesc {};
         ResDesc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-        ResDesc.Width             = Desc.Width;
-        ResDesc.Height            = Desc.Height;
-        ResDesc.DepthOrArraySize  = CAST<UINT16>(std::max<u32>(Desc.ArrayLayers, 1));
-        ResDesc.MipLevels         = CAST<UINT16>(Tex.MipLevels == 0 ? 1 : Tex.MipLevels);
-        ResDesc.Format            = Tex.Format;
-        ResDesc.SampleDesc.Count  = std::max<u32>(Desc.SampleCount, 1);
-        ResDesc.Flags = Any(Desc.Usage & TextureUsage::ColorTarget)   ? D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
-                       : Any(Desc.Usage & TextureUsage::DepthTarget)  ? D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
-                                                                      : D3D12_RESOURCE_FLAG_NONE;
+        ResDesc.Width            = Desc.Width;
+        ResDesc.Height           = Desc.Height;
+        ResDesc.DepthOrArraySize = CAST<UINT16>(std::max<u32>(Desc.ArrayLayers, 1));
+        ResDesc.MipLevels        = CAST<UINT16>(Tex.MipLevels == 0 ? 1 : Tex.MipLevels);
+        ResDesc.Format           = ResourceFormat;
+        ResDesc.SampleDesc.Count = std::max<u32>(Desc.SampleCount, 1);
+        ResDesc.Flags            = WantsColorTarget   ? D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
+                                    : WantsDepthTarget ? D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+                                                        : D3D12_RESOURCE_FLAG_NONE;
+
+        // A plain sampled-only texture (e.g. a sprite) is created COMMON and
+        // transitioned explicitly by UploadTexture; a render/depth target is
+        // created directly in the state it'll actually be used in, since
+        // nothing else transitions it before the first render pass that
+        // targets it.
+        const D3D12_RESOURCE_STATES InitialState = WantsColorTarget   ? D3D12_RESOURCE_STATE_RENDER_TARGET
+                                                    : WantsDepthTarget ? D3D12_RESOURCE_STATE_DEPTH_WRITE
+                                                                       : D3D12_RESOURCE_STATE_COMMON;
 
         const HRESULT Hr = _Allocator->CreateResource(
-          &AllocDesc, &ResDesc, D3D12_RESOURCE_STATE_COMMON, nullptr, &Tex.Allocation, IID_PPV_ARGS(&Tex.Resource));
+          &AllocDesc, &ResDesc, InitialState, nullptr, &Tex.Allocation, IID_PPV_ARGS(&Tex.Resource));
         if (FAILED(Hr)) return {};
 
-        if (Any(Desc.Usage & TextureUsage::Sampled)) {
+        Tex.CurrentState = InitialState;
+
+        if (WantsSampled) {
             Tex.SrvHeapIndex = AllocateSrvSlot();
             if (Tex.SrvHeapIndex != UINT32_MAX) {
                 D3D12_CPU_DESCRIPTOR_HANDLE Handle = _SrvHeap->GetCPUDescriptorHandleForHeapStart();
                 Handle.ptr += CAST<UINT64>(Tex.SrvHeapIndex) * _SrvDescriptorSize;
 
                 D3D12_SHADER_RESOURCE_VIEW_DESC SrvDesc {};
-                SrvDesc.Format                    = Tex.Format;
-                SrvDesc.ViewDimension              = D3D12_SRV_DIMENSION_TEXTURE2D;
-                SrvDesc.Shader4ComponentMapping    = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-                SrvDesc.Texture2D.MipLevels        = ResDesc.MipLevels;
+                SrvDesc.Format = WantsDepthTarget ? ToDepthSrvFormat(Desc.Fmt) : Tex.Format;
+                SrvDesc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
+                SrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+                SrvDesc.Texture2D.MipLevels     = ResDesc.MipLevels;
                 _Device->CreateShaderResourceView(Tex.Resource.Get(), &SrvDesc, Handle);
+            }
+        }
+
+        if (WantsColorTarget) {
+            Tex.RtvHeapIndex = AllocateOffscreenRtvSlot();
+            if (Tex.RtvHeapIndex != UINT32_MAX) {
+                D3D12_CPU_DESCRIPTOR_HANDLE Handle = _OffscreenRtvHeap->GetCPUDescriptorHandleForHeapStart();
+                Handle.ptr += CAST<UINT64>(Tex.RtvHeapIndex) * _OffscreenRtvDescriptorSize;
+                _Device->CreateRenderTargetView(Tex.Resource.Get(), nullptr, Handle);
+            } else {
+                LOG_ERR("offscreen RTV heap exhausted (capacity %u)", OffscreenRtvHeapCapacity);
+            }
+        }
+
+        if (WantsDepthTarget) {
+            Tex.DsvHeapIndex = AllocateOffscreenDsvSlot();
+            if (Tex.DsvHeapIndex != UINT32_MAX) {
+                D3D12_CPU_DESCRIPTOR_HANDLE Handle = _OffscreenDsvHeap->GetCPUDescriptorHandleForHeapStart();
+                Handle.ptr += CAST<UINT64>(Tex.DsvHeapIndex) * _OffscreenDsvDescriptorSize;
+
+                D3D12_DEPTH_STENCIL_VIEW_DESC DsvDesc {};
+                DsvDesc.Format        = Tex.Format;
+                DsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+                _Device->CreateDepthStencilView(Tex.Resource.Get(), &DsvDesc, Handle);
+            } else {
+                LOG_ERR("offscreen DSV heap exhausted (capacity %u)", OffscreenDsvHeapCapacity);
             }
         }
 
@@ -816,10 +1094,10 @@ namespace Xen::RHI::D3D12Backend {
         D3D12_RESOURCE_DESC ResDesc = Tex->Resource->GetDesc();
 
         D3D12_PLACED_SUBRESOURCE_FOOTPRINT Footprint {};
-        UINT NumRows                = 0;
-        UINT64 RowSizeInBytes       = 0;
-        UINT64 TotalBytes           = 0;
-        const UINT Subresource      = Upload.MipLevel + Upload.ArrayLayer * ResDesc.MipLevels;
+        UINT NumRows           = 0;
+        UINT64 RowSizeInBytes  = 0;
+        UINT64 TotalBytes      = 0;
+        const UINT Subresource = Upload.MipLevel + Upload.ArrayLayer * ResDesc.MipLevels;
 
         _Device->GetCopyableFootprints(&ResDesc, Subresource, 1, 0, &Footprint, &NumRows, &RowSizeInBytes, &TotalBytes);
 
@@ -848,11 +1126,12 @@ namespace Xen::RHI::D3D12Backend {
         u8* Mapped = nullptr;
         UploadRes->Map(0, nullptr, RCAST<void**>(&Mapped));
 
-        const auto* Src   = CAST<const u8*>(Upload.Data);
+        const auto* Src    = CAST<const u8*>(Upload.Data);
         const u64 SrcPitch = Upload.Width * 4;  // RGBA8 - the only format the texture cache uploads today
         for (UINT Row = 0; Row < NumRows; ++Row) {
-            std::memcpy(
-              Mapped + Footprint.Offset + CAST<u64>(Row) * Footprint.Footprint.RowPitch, Src + Row * SrcPitch, SrcPitch);
+            std::memcpy(Mapped + Footprint.Offset + CAST<u64>(Row) * Footprint.Footprint.RowPitch,
+                        Src + Row * SrcPitch,
+                        SrcPitch);
         }
         UploadRes->Unmap(0, nullptr);
 
@@ -877,14 +1156,25 @@ namespace Xen::RHI::D3D12Backend {
 
             List->CopyTextureRegion(&Dst, 0, 0, 0, &SrcLoc, nullptr);
 
+            // Combined so a compute pass (post-process reading a texture) can
+            // sample it too, not just a pixel shader.
+            constexpr D3D12_RESOURCE_STATES ShaderReadable =
+              D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+
             D3D12_RESOURCE_BARRIER ToShaderResource {};
             ToShaderResource.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
             ToShaderResource.Transition.pResource   = Tex->Resource.Get();
             ToShaderResource.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-            ToShaderResource.Transition.StateAfter  = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+            ToShaderResource.Transition.StateAfter  = ShaderReadable;
             ToShaderResource.Transition.Subresource = Subresource;
             List->ResourceBarrier(1, &ToShaderResource);
         });
+
+        // ExecuteUploadAndWait runs and waits synchronously above, so the GPU
+        // has already executed the barrier by the time we get here - safe to
+        // update the tracked state on this thread with no race.
+        Tex->CurrentState =
+          D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
     }
 
     void D3D12RenderDevice::DestroyTexture(const TextureHandle Handle) {
@@ -900,10 +1190,10 @@ namespace Xen::RHI::D3D12Backend {
         if (Samp.HeapIndex == UINT32_MAX) return {};
 
         D3D12_SAMPLER_DESC SamplerDesc_ {};
-        SamplerDesc_.Filter         = ToD3DFilter(Desc.MinFilter, Desc.MagFilter, Desc.MipFilter, Desc.MaxAnisotropy > 1);
-        SamplerDesc_.AddressU       = ToD3DAddressMode(Desc.AddressU);
-        SamplerDesc_.AddressV       = ToD3DAddressMode(Desc.AddressV);
-        SamplerDesc_.AddressW       = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        SamplerDesc_.Filter   = ToD3DFilter(Desc.MinFilter, Desc.MagFilter, Desc.MipFilter, Desc.MaxAnisotropy > 1);
+        SamplerDesc_.AddressU = ToD3DAddressMode(Desc.AddressU);
+        SamplerDesc_.AddressV = ToD3DAddressMode(Desc.AddressV);
+        SamplerDesc_.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
         SamplerDesc_.MaxAnisotropy  = std::max<UINT>(Desc.MaxAnisotropy, 1);
         SamplerDesc_.MinLOD         = Desc.MinLod;
         SamplerDesc_.MaxLOD         = Desc.MaxLod;
@@ -925,10 +1215,17 @@ namespace Xen::RHI::D3D12Backend {
     ShaderHandle D3D12RenderDevice::CreateShader(const ShaderDesc& Desc) {
         const char* Target = nullptr;
         switch (Desc.Stage) {
-            case ShaderStage::Vertex: Target = "vs_5_1"; break;
-            case ShaderStage::Fragment: Target = "ps_5_1"; break;
-            case ShaderStage::Compute: Target = "cs_5_1"; break;
-            default: return {};
+            case ShaderStage::Vertex:
+                Target = "vs_5_1";
+                break;
+            case ShaderStage::Fragment:
+                Target = "ps_5_1";
+                break;
+            case ShaderStage::Compute:
+                Target = "cs_5_1";
+                break;
+            default:
+                return {};
         }
 
         UINT Flags = 0;
@@ -949,10 +1246,9 @@ namespace Xen::RHI::D3D12Backend {
                                       &Code,
                                       &Errors);
         if (FAILED(Hr)) {
-            Log(true,
-               "shader compile failed (%s): %s",
-               Desc.DebugName ? Desc.DebugName : "?",
-               Errors ? CAST<const char*>(Errors->GetBufferPointer()) : "unknown error");
+            LOG_ERR("shader compile failed (%s): %s",
+                    Desc.DebugName ? Desc.DebugName : "?",
+                    Errors ? CAST<const char*>(Errors->GetBufferPointer()) : "unknown error");
             return {};
         }
 
@@ -987,21 +1283,21 @@ namespace Xen::RHI::D3D12Backend {
             const bool PerInstance = Binding && Binding->InputRate == VertexInputRate::Instance;
 
             D3D12_INPUT_ELEMENT_DESC Elem {};
-            Elem.SemanticName         = "TEXCOORD";
-            Elem.SemanticIndex        = Attr.Location;
-            Elem.Format               = ToDXGIFormat(Attr.Fmt);
-            Elem.InputSlot            = Attr.Binding;
-            Elem.AlignedByteOffset    = Attr.Offset;
-            Elem.InputSlotClass  = PerInstance ? D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA
-                                               : D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
+            Elem.SemanticName      = "TEXCOORD";
+            Elem.SemanticIndex     = Attr.Location;
+            Elem.Format            = ToDXGIFormat(Attr.Fmt);
+            Elem.InputSlot         = Attr.Binding;
+            Elem.AlignedByteOffset = Attr.Offset;
+            Elem.InputSlotClass =
+              PerInstance ? D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA : D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
             Elem.InstanceDataStepRate = PerInstance ? std::max<u32>(Binding->Divisor, 1) : 0;
             InputElements.push_back(Elem);
         }
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC PsoDesc {};
         PsoDesc.pRootSignature        = _RootSignature.Get();
-        PsoDesc.VS                   = {VS->Bytecode->GetBufferPointer(), VS->Bytecode->GetBufferSize()};
-        PsoDesc.PS                   = {PS->Bytecode->GetBufferPointer(), PS->Bytecode->GetBufferSize()};
+        PsoDesc.VS                    = {VS->Bytecode->GetBufferPointer(), VS->Bytecode->GetBufferSize()};
+        PsoDesc.PS                    = {PS->Bytecode->GetBufferPointer(), PS->Bytecode->GetBufferSize()};
         PsoDesc.InputLayout           = {InputElements.data(), CAST<UINT>(InputElements.size())};
         PsoDesc.PrimitiveTopologyType = ToD3DTopologyType(Desc.Topology);
         PsoDesc.SampleMask            = UINT_MAX;
@@ -1009,46 +1305,47 @@ namespace Xen::RHI::D3D12Backend {
 
         PsoDesc.RasterizerState.FillMode              = ToD3DFillMode(Desc.Rasterizer.Fill);
         PsoDesc.RasterizerState.CullMode              = ToD3DCullMode(Desc.Rasterizer.Cull);
-        PsoDesc.RasterizerState.FrontCounterClockwise  = Desc.Rasterizer.Front == FrontFace::CounterClockwise;
-        PsoDesc.RasterizerState.DepthClipEnable        = TRUE;
+        PsoDesc.RasterizerState.FrontCounterClockwise = Desc.Rasterizer.Front == FrontFace::CounterClockwise;
+        PsoDesc.RasterizerState.DepthClipEnable       = TRUE;
 
-        PsoDesc.DepthStencilState.DepthEnable    = Desc.DepthStencil.DepthTestEnable;
+        PsoDesc.DepthStencilState.DepthEnable = Desc.DepthStencil.DepthTestEnable;
         PsoDesc.DepthStencilState.DepthWriteMask =
           Desc.DepthStencil.DepthWriteEnable ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
-        PsoDesc.DepthStencilState.DepthFunc     = ToD3DCompareOp(Desc.DepthStencil.DepthCompare);
-        PsoDesc.DepthStencilState.StencilEnable = Desc.DepthStencil.StencilEnable;
+        PsoDesc.DepthStencilState.DepthFunc        = ToD3DCompareOp(Desc.DepthStencil.DepthCompare);
+        PsoDesc.DepthStencilState.StencilEnable    = Desc.DepthStencil.StencilEnable;
         PsoDesc.DepthStencilState.StencilReadMask  = Desc.DepthStencil.StencilReadMask;
         PsoDesc.DepthStencilState.StencilWriteMask = Desc.DepthStencil.StencilWriteMask;
-        PsoDesc.DepthStencilState.FrontFace         = {ToD3DStencilOp(Desc.DepthStencil.Front.FailOp),
-                                                       ToD3DStencilOp(Desc.DepthStencil.Front.DepthFailOp),
-                                                       ToD3DStencilOp(Desc.DepthStencil.Front.PassOp),
-                                                       ToD3DCompareOp(Desc.DepthStencil.Front.Compare)};
-        PsoDesc.DepthStencilState.BackFace = {ToD3DStencilOp(Desc.DepthStencil.Back.FailOp),
-                                              ToD3DStencilOp(Desc.DepthStencil.Back.DepthFailOp),
-                                              ToD3DStencilOp(Desc.DepthStencil.Back.PassOp),
-                                              ToD3DCompareOp(Desc.DepthStencil.Back.Compare)};
+        PsoDesc.DepthStencilState.FrontFace        = {ToD3DStencilOp(Desc.DepthStencil.Front.FailOp),
+                                                      ToD3DStencilOp(Desc.DepthStencil.Front.DepthFailOp),
+                                                      ToD3DStencilOp(Desc.DepthStencil.Front.PassOp),
+                                                      ToD3DCompareOp(Desc.DepthStencil.Front.Compare)};
+        PsoDesc.DepthStencilState.BackFace         = {ToD3DStencilOp(Desc.DepthStencil.Back.FailOp),
+                                                      ToD3DStencilOp(Desc.DepthStencil.Back.DepthFailOp),
+                                                      ToD3DStencilOp(Desc.DepthStencil.Back.PassOp),
+                                                      ToD3DCompareOp(Desc.DepthStencil.Back.Compare)};
 
         PsoDesc.BlendState.IndependentBlendEnable = Desc.Blend.IndependentBlend;
-        const u32 BlendTargets = Desc.Blend.IndependentBlend ? MAX_COLOR_ATTACHMENTS : 1;
+        const u32 BlendTargets                    = Desc.Blend.IndependentBlend ? MAX_COLOR_ATTACHMENTS : 1;
         for (u32 i = 0; i < BlendTargets; ++i) {
-            const BlendAttachmentState& Src = Desc.Blend.Attachments[i];
-            D3D12_RENDER_TARGET_BLEND_DESC& Dst =
-              PsoDesc.BlendState.RenderTarget[Desc.Blend.IndependentBlend ? i : 0];
-            Dst.BlendEnable           = Src.BlendEnable;
-            Dst.SrcBlend              = ToD3DBlendFactor(Src.SrcColor);
-            Dst.DestBlend             = ToD3DBlendFactor(Src.DstColor);
-            Dst.BlendOp               = ToD3DBlendOp(Src.ColorOp);
-            Dst.SrcBlendAlpha         = ToD3DBlendFactor(Src.SrcAlpha);
-            Dst.DestBlendAlpha        = ToD3DBlendFactor(Src.DstAlpha);
-            Dst.BlendOpAlpha          = ToD3DBlendOp(Src.AlphaOp);
-            Dst.RenderTargetWriteMask = CAST<UINT8>(Src.WriteMask);
+            const BlendAttachmentState& Src     = Desc.Blend.Attachments[i];
+            D3D12_RENDER_TARGET_BLEND_DESC& Dst = PsoDesc.BlendState.RenderTarget[Desc.Blend.IndependentBlend ? i : 0];
+            Dst.BlendEnable                     = Src.BlendEnable;
+            Dst.SrcBlend                        = ToD3DBlendFactor(Src.SrcColor);
+            Dst.DestBlend                       = ToD3DBlendFactor(Src.DstColor);
+            Dst.BlendOp                         = ToD3DBlendOp(Src.ColorOp);
+            Dst.SrcBlendAlpha                   = ToD3DBlendFactor(Src.SrcAlpha);
+            Dst.DestBlendAlpha                  = ToD3DBlendFactor(Src.DstAlpha);
+            Dst.BlendOpAlpha                    = ToD3DBlendOp(Src.AlphaOp);
+            Dst.RenderTargetWriteMask           = CAST<UINT8>(Src.WriteMask);
         }
         if (!Desc.Blend.IndependentBlend) {
-            for (u32 i = 1; i < Desc.ColorAttachmentCount; ++i) PsoDesc.BlendState.RenderTarget[i] = PsoDesc.BlendState.RenderTarget[0];
+            for (u32 i = 1; i < Desc.ColorAttachmentCount; ++i)
+                PsoDesc.BlendState.RenderTarget[i] = PsoDesc.BlendState.RenderTarget[0];
         }
 
         PsoDesc.NumRenderTargets = Desc.ColorAttachmentCount;
-        for (u32 i = 0; i < Desc.ColorAttachmentCount; ++i) PsoDesc.RTVFormats[i] = ToDXGIFormat(Desc.ColorFormats[i]);
+        for (u32 i = 0; i < Desc.ColorAttachmentCount; ++i)
+            PsoDesc.RTVFormats[i] = ToDXGIFormat(Desc.ColorFormats[i]);
         PsoDesc.DSVFormat = Desc.DepthFormat == Format::Unknown ? DXGI_FORMAT_UNKNOWN : ToDXGIFormat(Desc.DepthFormat);
 
         ComPtr<ID3D12PipelineState> PSO;
@@ -1076,13 +1373,14 @@ namespace Xen::RHI::D3D12Backend {
         if (FAILED(_Device->CreateComputePipelineState(&PsoDesc, IID_PPV_ARGS(&PSO)))) return {};
 
         D3DPipeline Pipe;
-        Pipe.PSO      = PSO;
+        Pipe.PSO       = PSO;
         Pipe.IsCompute = true;
         return _Pipelines.Allocate(std::move(Pipe));
     }
 
     void D3D12RenderDevice::DestroyPipeline(const PipelineHandle Handle) {
-        if (D3DPipeline* Pipe = _Pipelines.Get(Handle)) _RetiredPipelines.push_back({_NextFenceValue, std::move(*Pipe)});
+        if (D3DPipeline* Pipe = _Pipelines.Get(Handle))
+            _RetiredPipelines.push_back({_NextFenceValue, std::move(*Pipe)});
         _Pipelines.Free(Handle);
     }
 
@@ -1094,8 +1392,10 @@ namespace Xen::RHI::D3D12Backend {
 
     std::unique_ptr<IRenderDevice> CreateRenderDevice(const Backend API) {
         switch (API) {
-            case Backend::D3D12: return std::make_unique<D3D12RenderDevice>();
-            default: return nullptr;
+            case Backend::D3D12:
+                return std::make_unique<D3D12RenderDevice>();
+            default:
+                return nullptr;
         }
     }
 }  // namespace Xen::RHI::D3D12Backend
