@@ -87,6 +87,12 @@ namespace {
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
+    // Must run before BuildMountConfig: the .exe lives in Bin64/ now, one
+    // level below Config/Data1.xpak/Engine/, and every relative path in the
+    // engine is still written as if the .exe were where it used to be. See
+    // FixContentWorkingDirectory's own comment for the full explanation.
+    Xen::FixContentWorkingDirectory();
+
     try {
         XenPBRDemo Game("XenPBRDemo", BuildMountConfig(Generated::GameSettings(), __argc, __argv));
 
