@@ -40,7 +40,9 @@ namespace Xen {
         Shutdown();
     }
 
-    bool MeshRenderer::Initialize(RHI::IRenderDevice& Device, PAK::AssetRegistry& Assets, const Viewport& TargetFormats) {
+    bool MeshRenderer::Initialize(RHI::IRenderDevice& Device,
+                                  const PAK::AssetRegistry& Assets,
+                                  const Viewport& TargetFormats) {
         _Device = &Device;
 
         // Precompiled DXIL only - never HLSL source from a game's own
@@ -48,8 +50,8 @@ namespace Xen {
         // Scripts/compile_engine_shaders.py compiles it offline (dxc.exe) to
         // Engine/Shaders/pbr.vs + pbr.ps, and those get packed into
         // Engine/XEN.Shaders.xpak, the only place this ever loads them from.
-        const AssetID VertexAsset   = ASSET("pbr.vs");
-        const AssetID FragmentAsset = ASSET("pbr.ps");
+        constexpr AssetID VertexAsset   = ASSET("xen.shader.pbr.vs");
+        constexpr AssetID FragmentAsset = ASSET("xen.shader.pbr.ps");
         if (!Assets.Contains(VertexAsset) || !Assets.Contains(FragmentAsset)) {
             _Device = nullptr;
             return false;
@@ -62,14 +64,14 @@ namespace Xen {
         VertexDesc.SourceType = RHI::ShaderSourceType::DXIL;
         VertexDesc.Code       = VertexSource.Data();
         VertexDesc.CodeSize   = VertexSource.Size();
-        VertexDesc.DebugName  = "PBR.vs";
+        VertexDesc.DebugName  = "XEN.Shaders.PBR.vs";
 
         RHI::ShaderDesc FragmentDesc;
         FragmentDesc.Stage      = RHI::ShaderStage::Fragment;
         FragmentDesc.SourceType = RHI::ShaderSourceType::DXIL;
         FragmentDesc.Code       = FragmentSource.Data();
         FragmentDesc.CodeSize   = FragmentSource.Size();
-        FragmentDesc.DebugName  = "PBR.ps";
+        FragmentDesc.DebugName  = "XEN.Shaders.PBR.ps";
 
         const RHI::ShaderHandle Vertex   = Device.CreateShader(VertexDesc);
         const RHI::ShaderHandle Fragment = Device.CreateShader(FragmentDesc);
@@ -86,7 +88,7 @@ namespace Xen {
         LayoutDesc.Binding(0, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All)
           .Binding(1, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All)
           .Binding(2, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::Fragment);
-        LayoutDesc.DebugName = "PBR";
+        LayoutDesc.DebugName = "XEN.Shaders.PBR";
 
         _Layout = Device.CreatePipelineLayout(LayoutDesc);
         if (!_Layout.IsValid()) {
@@ -110,14 +112,14 @@ namespace Xen {
           .Attribute(2, 0, RHI::Format::RGB32_FLOAT, offsetof(MeshAssetVertex, Tangent))
           .Attribute(3, 0, RHI::Format::RG32_FLOAT, offsetof(MeshAssetVertex, UV));
 
-        PipelineDesc.Rasterizer.Cull              = RHI::CullMode::Back;
+        PipelineDesc.Rasterizer.Cull               = RHI::CullMode::Back;
         PipelineDesc.DepthStencil.DepthTestEnable  = true;
         PipelineDesc.DepthStencil.DepthWriteEnable = true;
-        PipelineDesc.DepthStencil.DepthCompare      = RHI::CompareOp::Less;
+        PipelineDesc.DepthStencil.DepthCompare     = RHI::CompareOp::Less;
         PipelineDesc.ColorAttachmentCount          = 1;
-        PipelineDesc.ColorFormats[0]                = TargetFormats.GetColorFormat();
-        PipelineDesc.DepthFormat                    = TargetFormats.GetDepthFormat();
-        PipelineDesc.DebugName                      = "PBR";
+        PipelineDesc.ColorFormats[0]               = TargetFormats.GetColorFormat();
+        PipelineDesc.DepthFormat                   = TargetFormats.GetDepthFormat();
+        PipelineDesc.DebugName                     = "XEN.Shaders.PBR";
 
         _Pipeline = Device.CreateGraphicsPipeline(PipelineDesc);
 
@@ -152,9 +154,13 @@ namespace Xen {
         _Commands.Reset();
         _Commands.PushDebugGroup("Meshes");
 
-        RHI::RenderPassDesc Pass =
-          RHI::RenderPassDesc::ColorAndDepthTarget(Target.GetColorTarget(), Target.GetDepthTarget(), 0.02f, 0.02f, 0.03f, 1.0f);
-        Pass.DebugName = "Meshes";
+        RHI::RenderPassDesc Pass = RHI::RenderPassDesc::ColorAndDepthTarget(Target.GetColorTarget(),
+                                                                            Target.GetDepthTarget(),
+                                                                            0.02f,
+                                                                            0.02f,
+                                                                            0.03f,
+                                                                            1.0f);
+        Pass.DebugName           = "Meshes";
         // Color is Load, not this factory's default Clear: Game::TickFrame
         // runs SpriteRenderer::Render() first, unconditionally, every frame
         // regardless of sprite count, and that pass already cleared this
@@ -215,9 +221,12 @@ namespace Xen {
                 Object.Model = A.GetWorldTransform().ToMatrix();
 
                 MaterialConstants Material {};
-                const Float3& Albedo = MaterialComp->GetAlbedo();
+                const Float3& Albedo       = MaterialComp->GetAlbedo();
                 Material.AlbedoAndMetallic = {Albedo.x, Albedo.y, Albedo.z, MaterialComp->GetMetallic()};
-                Material.RoughnessAOAndPad = {MaterialComp->GetRoughness(), MaterialComp->GetAmbientOcclusion(), 0.0f, 0.0f};
+                Material.RoughnessAOAndPad = {MaterialComp->GetRoughness(),
+                                              MaterialComp->GetAmbientOcclusion(),
+                                              0.0f,
+                                              0.0f};
                 const Float3& Emissive     = MaterialComp->GetEmissive();
                 Material.EmissiveAndPad    = {Emissive.x, Emissive.y, Emissive.z, 0.0f};
 
