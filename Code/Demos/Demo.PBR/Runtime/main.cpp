@@ -14,6 +14,8 @@
 #include <Xen/DirectionalLightComponent.hpp>
 #include <Xen/XenGameSettings.h>
 
+#include <imgui.h>
+
 namespace {
     using namespace Xen;
 
@@ -25,6 +27,30 @@ namespace {
 
         void OnUpdate(f32 DeltaTime) override {
             if (GetInputManager().GetKeyDown(Input::KeyCode::Escape)) { Quit(); }
+        }
+
+        // Example DebugUI usage: any ordinary ImGui:: call works here, since
+        // Game already brackets this with DebugUI::BeginFrame/EndFrame. Must
+        // still be guarded by IsInitialized() - a release build never
+        // creates an ImGui context at all (see DebugUI.hpp's
+        // XEN_WITH_DEBUG_UI), so calling ImGui:: unconditionally would crash.
+        void OnRender() override {
+            if (!GetDebugUI().IsInitialized()) return;
+
+            ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+            if (ImGui::Begin("Frame Stats")) {
+                const RHI::FrameStats& Stats = GetRenderDevice().GetLastFrameStats();
+                const f32 Delta               = GetLastFrameDelta();
+
+                ImGui::Text("Frame:  %llu", GetFrameCount());
+                ImGui::Text("Delta:  %.2f ms (%.0f FPS)", Delta * 1000.0f, Delta > 0.0f ? 1.0f / Delta : 0.0f);
+                ImGui::Separator();
+                ImGui::Text("Draw calls:      %u", Stats.DrawCalls);
+                ImGui::Text("Render passes:   %u", Stats.RenderPasses);
+                ImGui::Text("Pipeline binds:  %u (%u redundant skipped)", Stats.PipelineBinds, Stats.RedundantBindsSkipped);
+                ImGui::Text("Transient bytes: %u", Stats.TransientBytesUsed);
+            }
+            ImGui::End();
         }
 
         void OnSceneLoaded(Scene& S) override {

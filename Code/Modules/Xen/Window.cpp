@@ -6,6 +6,7 @@
 #include <Common/Exception.hpp>
 
 #include "Window.hpp"
+#include "DebugUI.hpp"
 
 #include <vector>
 
@@ -141,6 +142,16 @@ namespace Xen {
     }
 
     LRESULT Window::HandleMessage(const HWND Handle, const UINT Msg, const WPARAM WParam, const LPARAM LParam) {
+        // Forwarded first (when DebugUI is active) for Dear ImGui's own
+        // input/IME handling - except WM_SETCURSOR, whose "handled" return
+        // value doesn't mean "the mouse is over a Dear ImGui window"
+        // (ImGui_ImplWin32_UpdateMouseCursor sets a cursor unconditionally
+        // whenever it isn't explicitly told not to), so that one is decided
+        // below by WantsCaptureMouse() instead.
+        if (_DebugUI && Msg != WM_SETCURSOR && _DebugUI->ProcessMessage(Handle, Msg, WParam, LParam)) {
+            return TRUE;
+        }
+
         switch (Msg) {
             case WM_CLOSE:
                 // Deliberately not calling DestroyWindow/DefWindowProc: the game
@@ -161,9 +172,17 @@ namespace Xen {
             }
 
             // Hide the cursor only while it's over the client area, matching
-            // GLFW_CURSOR_HIDDEN (still moves, just invisible - never captured).
+            // GLFW_CURSOR_HIDDEN (still moves, just invisible - never
+            // captured) - unless Dear ImGui wants the mouse (hovering/
+            // dragging a debug window), in which case let it manage the
+            // cursor (resize arrows, text-input beam, ...) instead of
+            // forcing it hidden, or every debug window becomes unusable blind.
             case WM_SETCURSOR:
                 if (LOWORD(LParam) == HTCLIENT) {
+                    if (_DebugUI && _DebugUI->WantsCaptureMouse()) {
+                        _DebugUI->ProcessMessage(Handle, Msg, WParam, LParam);
+                        return TRUE;
+                    }
                     SetCursor(nullptr);
                     return TRUE;
                 }
@@ -251,6 +270,11 @@ namespace Xen {
         // one half of an escaped multi-byte sequence) - not a real key press.
         if (KB.VKey == 0xFF) return;
 
+        // Raw input bypasses Dear ImGui's own WM_KEYDOWN/WM_CHAR-based
+        // keyboard handling entirely, so without this a debug console text
+        // field and the game would both react to every keystroke.
+        if (_DebugUI && _DebugUI->WantsCaptureKeyboard()) return;
+
         const bool Pressed = (KB.Flags & RI_KEY_BREAK) == 0;
         const i16 Key      = DisambiguateModifierKey(CAST<i16>(KB.VKey), KB.MakeCode);
 
@@ -258,6 +282,11 @@ namespace Xen {
     }
 
     void Window::HandleRawMouse(const RAWMOUSE& Mouse) {
+        // Same reasoning as HandleRawKeyboard: raw input bypasses Dear
+        // ImGui's own mouse handling, so dragging a debug window would also
+        // orbit the game camera without this.
+        if (_DebugUI && _DebugUI->WantsCaptureMouse()) return;
+
         // Absolute-mode devices (pen tablets, some VM/RDP setups) aren't handled
         // here - they're rare enough for a desktop game not to special-case, and
         // WM_MOUSEMOVE already covers absolute position for the normal case.

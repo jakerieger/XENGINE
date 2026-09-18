@@ -1,6 +1,9 @@
 project(Xen2D)
 
-file(GLOB SHADER_INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/Shaders/Include/*.h)
+file(GLOB_RECURSE IMGUI_SOURCES
+        ${VENDOR_ROOT}/imgui/*.h
+        ${VENDOR_ROOT}/imgui/*.cpp
+)
 
 add_library(Xen STATIC
         # Vendor
@@ -10,8 +13,8 @@ add_library(Xen STATIC
         ${VENDOR_ROOT}/ini.h
         ${VENDOR_ROOT}/cgltf.cpp
         ${VENDOR_ROOT}/cgltf.h
+        ${IMGUI_SOURCES}
         # Engine
-        ${SHADER_INCLUDES}
         Actor.cpp
         Actor.hpp
         ActorHandle.hpp
@@ -26,6 +29,8 @@ add_library(Xen STATIC
         Component.hpp
         ComponentRegistry.cpp
         ComponentRegistry.hpp
+        DebugUI.cpp
+        DebugUI.hpp
         DirectionalLightComponent.cpp
         DirectionalLightComponent.hpp
         EngineConfig.hpp
@@ -71,6 +76,8 @@ add_library(Xen::Xen ALIAS Xen)
 
 target_include_directories(Xen PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${VENDOR_ROOT}>/imgui
+        $<BUILD_INTERFACE:${VENDOR_ROOT}>/imgui/backends
 )
 
 target_compile_definitions(Xen PUBLIC

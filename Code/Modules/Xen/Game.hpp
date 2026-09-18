@@ -7,6 +7,7 @@
 #include <Common/XenCommon.hpp>
 
 #include "AssetSettings.hpp"
+#include "DebugUI.hpp"
 #include "EngineConfig.hpp"
 #include "MeshCache.hpp"
 #include "MeshRenderer.hpp"
@@ -73,6 +74,13 @@ namespace Xen {
         NODISCARD RHI::IRenderDevice& GetRenderDevice() const { return *_RenderDevice; }
         NODISCARD Window& GetWindow() const { return *_Window; }
         NODISCARD InputManager& GetInputManager() const { return _Window->GetInputManager(); }
+
+        /// @brief Dear ImGui layer - draw debug windows (frame stats, dev
+        /// tools, a console, ...) from OnRender with ordinary ImGui:: calls;
+        /// BeginFrame/EndFrame already bracket it for you. Compiled out
+        /// (IsInitialized() always false) in a release build - see
+        /// DebugUI.hpp's XEN_WITH_DEBUG_UI.
+        NODISCARD DebugUI& GetDebugUI() { return _DebugUI; }
 
         NODISCARD u64 GetFrameCount() const { return _FrameCount; }
         NODISCARD f32 GetLastFrameDelta() const { return _LastDelta; }
@@ -158,6 +166,12 @@ namespace Xen {
         // 2D-only game's content is not an error) and Render() no-ops while
         // uninitialized, so a game with no 3D content pays nothing for this.
         MeshRenderer _MeshRenderer;
+
+        // Declared after _RenderDevice (destroyed before it, in reverse
+        // declaration order) so DebugUI::~DebugUI's WaitIdle() call still
+        // has a live device to call it on - a backstop, since ~Game()
+        // shuts it down explicitly anyway (see there).
+        DebugUI _DebugUI;
 
         std::unique_ptr<Scene> _ActiveScene;
 

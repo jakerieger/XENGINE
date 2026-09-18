@@ -391,6 +391,38 @@ namespace Xen::RHI::D3D12Backend {
         _CmdList->ResourceBarrier(1, &ToPresent);
     }
 
+    void D3D12RenderDevice::BindSwapChainOverlayTarget() {
+        if (!_SwapChain) return;
+
+        if (!_BackBufferIsRenderTarget[_FrameIndex]) {
+            D3D12_RESOURCE_BARRIER Barrier {};
+            Barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            Barrier.Transition.pResource   = _BackBuffers[_FrameIndex].Get();
+            Barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+            Barrier.Transition.StateAfter  = D3D12_RESOURCE_STATE_RENDER_TARGET;
+            Barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            _CmdList->ResourceBarrier(1, &Barrier);
+            _BackBufferIsRenderTarget[_FrameIndex] = true;
+        }
+
+        D3D12_CPU_DESCRIPTOR_HANDLE Rtv = _RtvHeap->GetCPUDescriptorHandleForHeapStart();
+        Rtv.ptr += CAST<UINT64>(_FrameIndex) * _RtvDescriptorSize;
+        _CmdList->OMSetRenderTargets(1, &Rtv, FALSE, nullptr);
+    }
+
+    void D3D12RenderDevice::UnbindSwapChainOverlayTarget() {
+        if (!_SwapChain || !_BackBufferIsRenderTarget[_FrameIndex]) return;
+
+        D3D12_RESOURCE_BARRIER Barrier {};
+        Barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        Barrier.Transition.pResource   = _BackBuffers[_FrameIndex].Get();
+        Barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+        Barrier.Transition.StateAfter  = D3D12_RESOURCE_STATE_PRESENT;
+        Barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        _CmdList->ResourceBarrier(1, &Barrier);
+        _BackBufferIsRenderTarget[_FrameIndex] = false;
+    }
+
     // --- Sync ----------------------------------------------------------------
 
     void D3D12RenderDevice::WaitForFrame(const u32 FrameIndex) {
