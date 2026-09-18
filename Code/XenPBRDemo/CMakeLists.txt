@@ -1,10 +1,10 @@
-project(Xen2D)
+project(XenPBRDemo)
 
 include(XenGame)
 xen_add_game_executable(XenPBRDemo
-        main.cpp
-        RotatingComponent.cpp
-        RotatingComponent.hpp
+        Runtime/main.cpp
+        Runtime/Source/RotatingComponent.cpp
+        Runtime/Source/RotatingComponent.hpp
 )
 
 xen_configure_game(XenPBRDemo
@@ -12,17 +12,61 @@ xen_configure_game(XenPBRDemo
         CONTENT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Content"
 )
 
-target_include_directories(XenPBRDemo PRIVATE ${MODULES_ROOT} ${VENDOR_ROOT})
+target_include_directories(XenPBRDemo PRIVATE Runtime Runtime/Source ${MODULES_ROOT} ${VENDOR_ROOT})
 
-# Copy `Config` directory to build directory since it's needed at runtime.
-# $<TARGET_FILE_DIR:XenPBRDemo> (not CMAKE_RUNTIME_OUTPUT_DIRECTORY) because
-# the per-config output dirs the top-level CMakeLists.txt sets take
-# precedence over the generic variable this file reassigned above, on a
-# multi-config generator - using the variable directly copied Config next to
-# a folder the .exe was never actually placed in.
+# Compile engine shaders.
+#file(GLOB ENGINE_SHADERS "${CODE_ROOT}/Shaders/*.hlsl")
+#
+#foreach (SHADER_PATH ${ENGINE_SHADERS})
+#    get_filename_component(SHADER_NAME ${SHADER_PATH} NAME)
+#    message(STATUS "Compiling shader: ${SHADER_NAME}")
+#
+#
+#endforeach ()
+
 add_custom_command(
-        TARGET XenPBRDemo POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/Config"
-        "$<TARGET_FILE_DIR:XenPBRDemo>/Config"
+        TARGET XenPBRDemo
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/Config" "$<TARGET_FILE_DIR:XenPBRDemo>/../Config"
+        COMMENT "Copying Config directory..."
+)
+
+# Copy Config directory to build output
+add_custom_command(
+        TARGET XenPBRDemo
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/Config" "$<TARGET_FILE_DIR:XenPBRDemo>/../Config"
+        COMMENT "Copying Config directory..."
+)
+
+# Create the 'Engine' directory in the build root
+add_custom_command(
+        TARGET XenPBRDemo
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:XenPBRDemo>/../Engine"
+        COMMENT "Create engine content directory..."
+)
+
+# Pack and output shaders pak to build directory
+add_custom_command(
+        TARGET XenPBRDemo
+        POST_BUILD
+        COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" "pack" "${CMAKE_SOURCE_DIR}/Engine/shaders" "-o" "$<TARGET_FILE_DIR:XenPBRDemo>/../Engine/XEN.Shaders.xpak"
+        COMMENT "Packing engine content..."
+)
+
+# Pack and output engine environment assets pak to build directory
+add_custom_command(
+        TARGET XenPBRDemo
+        POST_BUILD
+        COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" "pack" "${CMAKE_SOURCE_DIR}/Engine/environment" "-o" "$<TARGET_FILE_DIR:XenPBRDemo>/../Engine/XEN.Environment.xpak"
+        COMMENT "Packing engine content..."
+)
+
+# Pack and output game content to Data1.xpak
+add_custom_command(
+        TARGET XenPBRDemo
+        POST_BUILD
+        COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" "pack" "${CMAKE_CURRENT_SOURCE_DIR}/Content" "-o" "$<TARGET_FILE_DIR:XenPBRDemo>/../Data1.xpak"
+        COMMENT "Packing game content..."
 )
