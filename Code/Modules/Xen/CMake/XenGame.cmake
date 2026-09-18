@@ -160,9 +160,9 @@ function(xen_package_game_content TARGET)
             TARGET ${TARGET} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory "${ARG_CONFIG_DIR}" "${out_dir}/Config"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${out_dir}/Engine"
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/Engine/Shaders" -o "${out_dir}/Engine/XEN.Shaders.xpak"
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/Engine/Environment" -o "${out_dir}/Engine/XEN.Environment.xpak"
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${ARG_CONTENT_DIR}" -o "${out_dir}/${ARG_PAK_FILENAME}"
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/Engine/Shaders" -o "${out_dir}/Engine/XEN.Shaders.xpak" -i "${CMAKE_SOURCE_DIR}/.pakignore"
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/Engine/Environment" -o "${out_dir}/Engine/XEN.Environment.xpak" -i "${CMAKE_SOURCE_DIR}/.pakignore"
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${ARG_CONTENT_DIR}" -o "${out_dir}/${ARG_PAK_FILENAME}" -i "${CMAKE_SOURCE_DIR}/.pakignore"
             COMMENT "Packaging ${TARGET} content (Config, Engine shaders/environment, ${ARG_PAK_FILENAME})..."
             VERBATIM
     )

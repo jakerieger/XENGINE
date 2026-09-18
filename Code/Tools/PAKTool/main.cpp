@@ -1,6 +1,7 @@
 #include <Common/Log.hpp>
 
 #include <XenPAK/AssetID.hpp>
+#include <XenPAK/Canonicalize.hpp>
 #include <XenPAK/Codec.hpp>
 #include <XenPAK/ContentScanner.hpp>
 #include <XenPAK/PakFileSource.hpp>
@@ -35,6 +36,102 @@ namespace {
         }
 
         return Data;
+    }
+
+    /// @brief Matches Text against Pattern, where '*' matches any run of
+    /// characters (including none, and including '/' - patterns here aren't
+    /// segment-aware the way a real .gitignore's '*' is, so "temp/*" already
+    /// matches everything under temp/ at any depth; there's no separate '**'
+    /// syntax) and '?' matches exactly one character. Classic two-pointer
+    /// greedy wildcard match - backtracks to the most recent '*' on a
+    /// mismatch rather than exploring every split, which is what keeps it
+    /// linear instead of exponential.
+    bool GlobMatch(const std::string_view Text, const std::string_view Pattern) {
+        size_t TextIdx = 0, PatternIdx = 0;
+        size_t StarIdx = std::string_view::npos, MatchIdx = 0;
+
+        while (TextIdx < Text.size()) {
+            if (PatternIdx < Pattern.size() && (Pattern[PatternIdx] == '?' || Pattern[PatternIdx] == Text[TextIdx])) {
+                ++TextIdx;
+                ++PatternIdx;
+            } else if (PatternIdx < Pattern.size() && Pattern[PatternIdx] == '*') {
+                StarIdx  = PatternIdx;
+                MatchIdx = TextIdx;
+                ++PatternIdx;
+            } else if (StarIdx != std::string_view::npos) {
+                PatternIdx = StarIdx + 1;
+                MatchIdx += 1;
+                TextIdx = MatchIdx;
+            } else {
+                return false;
+            }
+        }
+
+        while (PatternIdx < Pattern.size() && Pattern[PatternIdx] == '*') ++PatternIdx;
+
+        return PatternIdx == Pattern.size();
+    }
+
+    /// @brief One parsed line from a .pakignore file.
+    struct IgnorePattern {
+        std::string Text;         ///< Canonicalized (lowercase, '/'-separated) pattern text.
+        std::string Raw;          ///< Original line, for diagnostics/printing.
+        bool MatchBasenameOnly;   ///< True if the raw pattern had no '/' - matches the filename at any depth.
+    };
+
+    /// @brief Parses raw .pakignore lines into IgnorePatterns: blank lines
+    /// and lines starting with '#' are skipped, trailing '\r' is trimmed (a
+    /// .pakignore authored on Windows and read with std::getline(..., '\n')
+    /// would otherwise leave one on every line), and each pattern is run
+    /// through the same Canonicalize() used for asset paths so casing and
+    /// slash direction can't cause a pattern to silently fail to match.
+    std::vector<IgnorePattern> ParseIgnorePatterns(const std::vector<std::string>& RawLines) {
+        std::vector<IgnorePattern> Patterns;
+        Patterns.reserve(RawLines.size());
+
+        for (const std::string& RawLine : RawLines) {
+            std::string Line = RawLine;
+            while (!Line.empty() && (Line.back() == '\r' || Line.back() == ' ' || Line.back() == '\t')) {
+                Line.pop_back();
+            }
+            size_t FirstNonSpace = Line.find_first_not_of(" \t");
+            if (FirstNonSpace == std::string::npos || Line[FirstNonSpace] == '#') continue;
+            if (FirstNonSpace > 0) Line.erase(0, FirstNonSpace);
+
+            const bool HasSlash = Line.find('/') != std::string::npos;
+
+            Patterns.push_back(IgnorePattern {
+              .Text              = Canonicalize(Line),
+              .Raw               = Line,
+              .MatchBasenameOnly = !HasSlash,
+            });
+        }
+
+        return Patterns;
+    }
+
+    /// @brief True if CanonicalPath matches any ignore pattern - a
+    /// no-'/' pattern (e.g. "*.psd", "thumbs.db") is checked against just
+    /// the filename so it applies at any depth; any other pattern is
+    /// checked against the full path, root-anchored (there's no per-
+    /// directory .pakignore, so "anchored" just means "relative to the
+    /// content root" here).
+    bool IsIgnored(const std::string& CanonicalPath, const std::vector<IgnorePattern>& Patterns, std::string* OutMatchedRaw) {
+        std::string_view Basename = CanonicalPath;
+        if (const size_t Slash = CanonicalPath.find_last_of('/'); Slash != std::string::npos) {
+            Basename = std::string_view(CanonicalPath).substr(Slash + 1);
+        }
+
+        for (const IgnorePattern& Pattern : Patterns) {
+            const bool Matched =
+              Pattern.MatchBasenameOnly ? GlobMatch(Basename, Pattern.Text) : GlobMatch(CanonicalPath, Pattern.Text);
+            if (Matched) {
+                if (OutMatchedRaw) *OutMatchedRaw = Pattern.Raw;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     const char* CodecName(const PakCodec Codec) {
@@ -77,11 +174,65 @@ namespace {
                     CAST<u64>(SourceAssets.size()));
     }
 
-    int RunPack(const fs::path& ContentDir, const fs::path& OutputPath) {
+    int RunPack(const fs::path& ContentDir, const fs::path& OutputPath, const std::optional<fs::path>& PakIgnore) {
+        std::vector<std::string> IgnorePatterns;
+        if (PakIgnore.has_value()) {
+            std::ifstream IgnoreFile(*PakIgnore);
+            if (!IgnoreFile) {
+                std::fprintf(stderr,
+                             "[PAKTool] error: failed to open provided .pakignore (%s)\n",
+                             PakIgnore->string().c_str());
+                return EXIT_FAILURE;
+            }
+
+            std::ostringstream IgnoreStream;
+            IgnoreStream << IgnoreFile.rdbuf();
+
+            std::stringstream LineStream(IgnoreStream.str());
+            std::string Line;
+
+            while (std::getline(LineStream, Line, '\n')) {
+                IgnorePatterns.push_back(Line);
+            }
+        }
+
+        const std::vector<IgnorePattern> ParsedIgnorePatterns = ParseIgnorePatterns(IgnorePatterns);
+        if (!ParsedIgnorePatterns.empty()) {
+            std::printf("[PAKTool] Using ignore patterns: [");
+            for (const auto& Pattern : ParsedIgnorePatterns) {
+                std::printf("'%s'", Pattern.Raw.c_str());
+                if (&Pattern != &ParsedIgnorePatterns.back()) { std::printf(", "); }
+            }
+            std::printf("]\n");
+        }
+
         std::vector<ScannedAsset> Assets = ScanContentDirectory(ContentDir, CollisionPolicy::Throw);
         if (Assets.empty()) {
             std::fprintf(stderr, "[PAKTool] error: no assets found\n");
             return EXIT_FAILURE;
+        }
+
+        // Collision detection above runs over every file on disk, ignored
+        // ones included - filtering first would avoid hashing/ID work for
+        // files that'll just be dropped, but ContentScanner has no ignore
+        // hook of its own, and this tool is the only thing that needs one.
+        //
+        // Deliberately not re-checking Assets.empty() after this: a content
+        // directory that's non-empty before filtering but ends up with
+        // nothing left after it (e.g. a placeholder-only directory whose
+        // only files are .pakignore'd .keep markers) is a legitimate,
+        // expected outcome, not a foot-gun - it produces a valid pak with a
+        // 0-entry table. Only an empty scan (the check above) means the
+        // caller likely pointed this at the wrong/an empty directory.
+        if (!ParsedIgnorePatterns.empty()) {
+            std::erase_if(Assets, [&](const ScannedAsset& Asset) {
+                std::string MatchedPattern;
+                if (!IsIgnored(Asset.CanonicalPath, ParsedIgnorePatterns, &MatchedPattern)) return false;
+                std::printf("[PAKTool] ignored '%s' (matched pattern '%s')\n",
+                            Asset.CanonicalPath.c_str(),
+                            MatchedPattern.c_str());
+                return true;
+            });
         }
 
         std::ofstream Out(OutputPath, std::ios::binary | std::ios::trunc);
@@ -217,7 +368,7 @@ namespace {
             const AssetID ID(Asset.ID);
             if (!Source.Contains(ID)) {
                 THROW_ENGINE_EXCEPTION(EngineException,
-                                      "manifest references asset not present in pak: " + Asset.CanonicalPath);
+                                       "manifest references asset not present in pak: " + Asset.CanonicalPath);
             }
 
             AssetBuffer Buffer = Source.LoadFull(ID);
@@ -226,7 +377,9 @@ namespace {
             fs::create_directories(OutPath.parent_path());
 
             std::ofstream OutFile(OutPath, std::ios::binary | std::ios::trunc);
-            if (!OutFile) { THROW_ENGINE_EXCEPTION(EngineException, "failed to open output file: " + OutPath.string()); }
+            if (!OutFile) {
+                THROW_ENGINE_EXCEPTION(EngineException, "failed to open output file: " + OutPath.string());
+            }
             if (Buffer.Size() > 0) {
                 OutFile.write(RCAST<const char*>(Buffer.Data()), CAST<std::streamsize>(Buffer.Size()));
             }
@@ -318,13 +471,22 @@ int main(int argc, char** argv) {
 
     fs::path PackContentDir;
     fs::path PackOutput = "Data1.xpak";
-    CLI::App* PackCmd   = App.add_subcommand("pack", "Pack a content directory into a .xpak file");
+    std::optional<fs::path> PakIgnore;
+    CLI::App* PackCmd = App.add_subcommand("pack", "Pack a content directory into a .xpak file");
     PackCmd->add_option("content-dir", PackContentDir, "Root content directory to pack")
       ->required()
       ->check(CLI::ExistingDirectory);
     PackCmd->add_option("-o,--output",
                         PackOutput,
                         "Output .xpak filename (default: Data1.xpak). Must use .xpak extension.");
+    PackCmd
+      ->add_option("-i,--ignore",
+                   PakIgnore,
+                   "Optional .pakignore file used to filter which files get packed. One glob pattern per "
+                   "line ('*' = any run of characters, '?' = exactly one); '#' starts a comment. A pattern "
+                   "with no '/' matches by filename at any depth (e.g. '*.psd', 'thumbs.db'); a pattern "
+                   "with a '/' matches the full path from the content root (e.g. 'textures/temp/*').")
+      ->check(CLI::ExistingFile);
 
     fs::path UnpackPak;
     fs::path UnpackOutputDir;
@@ -339,7 +501,7 @@ int main(int argc, char** argv) {
     CLI11_PARSE(App, argc, argv);
 
     try {
-        if (*PackCmd) return RunPack(PackContentDir, PackOutput);
+        if (*PackCmd) return RunPack(PackContentDir, PackOutput, PakIgnore);
         if (*UnpackCmd) return RunUnpack(UnpackPak, UnpackOutputDir);
         if (*InfoCmd) return RunInfo(InfoPak);
     } catch (const EngineException& Ex) {
