@@ -84,7 +84,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     Xen::FixContentWorkingDirectory();
 
     try {
-        XenPong Game("XenPong", BuildMountConfig(Generated::GameSettings(), __argc, __argv));
+        XenPong Game("Demo.Pong", BuildMountConfig(Generated::GameSettings(), __argc, __argv));
 
 #ifndef NDEBUG
         BuildScene(Game.GetContext());

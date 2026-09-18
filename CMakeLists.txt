@@ -15,6 +15,8 @@ foreach (OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
     set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_BINARY_DIR}/lib)
 endforeach ()
 
+option(BUILD_DEMOS "Build XENGINE demo projects" ON)
+
 # 3rd party dependencies
 include(CMake/FetchDeps.cmake)
 
@@ -36,5 +38,9 @@ add_subdirectory(${MODULES_ROOT}/CrashHandler)
 add_subdirectory(${TOOLS_ROOT})
 
 # Demo projects
-add_subdirectory(${CODE_ROOT}/XenPong)
-add_subdirectory(${CODE_ROOT}/XenPBRDemo)
+if (BUILD_DEMOS)
+    add_subdirectory(${CODE_ROOT}/Demos)
+
+    add_custom_target(Demos)
+    add_dependencies(Demos Demo.Pong Demo.PBR)
+endif ()

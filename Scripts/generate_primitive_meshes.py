@@ -285,5 +285,5 @@ def generate_primitive_meshes(output_dir: Path):
 
 if __name__ == "__main__":
     print("---[ generate_primitive_meshes.py ]---")
-    out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("Code") / "XenPBRDemo" / "Content" / "meshes"
+    out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("Code") / "Demos" / "Demo.PBR" / "Content" / "meshes"
     generate_primitive_meshes(out_dir)
