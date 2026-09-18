@@ -98,7 +98,7 @@ namespace Xen {
         // Debug window layout persists across launches like any other engine
         // config, rather than littering the working directory with a stray
         // imgui.ini next to the exe.
-        IO.IniFilename = "Config/imgui.ini";
+        IO.IniFilename = "Config/DebugUI.ini";
 
         ImGui::StyleColorsDark();
 

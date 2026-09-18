@@ -77,7 +77,7 @@ namespace {
 
         const ActorHandle CubeHandle = MainScene.Spawn("Cube");
         Actor* CubeActor             = MainScene.Get(CubeHandle);
-        CubeActor->AddComponent<MeshComponent>(ASSET("meshes/cube.gltf"));
+        CubeActor->AddComponent<MeshComponent>(ASSET("meshes/suzanne.glb"));
         auto* Material = CubeActor->AddComponent<PBRMaterialComponent>();
         Material->SetAlbedo({0.7f, 0.15f, 0.15f});
         Material->SetMetallic(0.2f);
