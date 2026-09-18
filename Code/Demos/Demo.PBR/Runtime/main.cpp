@@ -94,7 +94,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     Xen::FixContentWorkingDirectory();
 
     try {
-        XenPBRDemo Game("XenPBRDemo", BuildMountConfig(Generated::GameSettings(), __argc, __argv));
+        XenPBRDemo Game("Demo.PBR", BuildMountConfig(Generated::GameSettings(), __argc, __argv));
 
 #ifndef NDEBUG
         BuildScene(Game.GetContext());

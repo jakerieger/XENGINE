@@ -1,7 +1,7 @@
 project(Xen2D)
 
 include(XenGame)
-xen_add_game_executable(XenPong
+xen_add_game_executable(Demo.Pong
         Runtime/main.cpp
         Runtime/Source/BallComponent.cpp
         Runtime/Source/BallComponent.hpp
@@ -12,11 +12,11 @@ xen_add_game_executable(XenPong
         Runtime/Source/PlayerComponent.cpp
         Runtime/Source/PlayerComponent.hpp
 )
-xen_configure_game(XenPong
+xen_configure_game(Demo.Pong
         PAK_FILENAME "Data1.xpak"
         CONTENT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Content"
 )
-xen_compile_shaders(XenPong)
-xen_package_game_content(XenPong)
+xen_compile_shaders(Demo.Pong)
+xen_package_game_content(Demo.Pong)
 
-target_include_directories(XenPong PRIVATE Runtime Runtime/Source ${MODULES_ROOT} ${VENDOR_ROOT})
+target_include_directories(Demo.Pong PRIVATE Runtime Runtime/Source ${MODULES_ROOT} ${VENDOR_ROOT})
