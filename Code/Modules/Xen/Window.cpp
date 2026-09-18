@@ -17,8 +17,7 @@ namespace Xen {
 
         std::wstring Utf8ToWide(const std::string& Str) {
             if (Str.empty()) return {};
-            const int Needed =
-              MultiByteToWideChar(CP_UTF8, 0, Str.data(), CAST<int>(Str.size()), nullptr, 0);
+            const int Needed = MultiByteToWideChar(CP_UTF8, 0, Str.data(), CAST<int>(Str.size()), nullptr, 0);
             std::wstring Out(CAST<size_t>(Needed), L'\0');
             MultiByteToWideChar(CP_UTF8, 0, Str.data(), CAST<int>(Str.size()), Out.data(), Needed);
             return Out;
@@ -37,15 +36,13 @@ namespace Xen {
             WndClass.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
             WndClass.lpszClassName = WINDOW_CLASS_NAME;
 
-            if (!RegisterClassExW(&WndClass)) {
-                THROW_ENGINE_EXCEPTION(EngineException, "RegisterClassExW failed");
-            }
+            if (!RegisterClassExW(&WndClass)) { THROW_ENGINE_EXCEPTION(EngineException, "RegisterClassExW failed"); }
         }
 
-        DWORD Style       = WS_OVERLAPPEDWINDOW;
+        DWORD Style             = WS_OVERLAPPEDWINDOW;
         constexpr DWORD ExStyle = 0;
-        u32 CreateWidth   = Width;
-        u32 CreateHeight  = Height;
+        u32 CreateWidth         = Width;
+        u32 CreateHeight        = Height;
 
         if (Mode != EngineConfig::WindowMode::Windowed) {
             // Borderless and (borderless-)fullscreen both cover the whole monitor
@@ -131,7 +128,7 @@ namespace Xen {
         Window* Self;
         if (Msg == WM_NCCREATE) {
             const auto* Create = RCAST<const CREATESTRUCTW*>(LParam);
-            Self                = CAST<Window*>(Create->lpCreateParams);
+            Self               = CAST<Window*>(Create->lpCreateParams);
             SetWindowLongPtrW(Handle, GWLP_USERDATA, RCAST<LONG_PTR>(Self));
         } else {
             Self = RCAST<Window*>(GetWindowLongPtrW(Handle, GWLP_USERDATA));
@@ -143,14 +140,12 @@ namespace Xen {
 
     LRESULT Window::HandleMessage(const HWND Handle, const UINT Msg, const WPARAM WParam, const LPARAM LParam) {
         // Forwarded first (when DebugUI is active) for Dear ImGui's own
-        // input/IME handling - except WM_SETCURSOR, whose "handled" return
+        // input/IME handling - except WM_SETCURSOR, whose "handled" return n
         // value doesn't mean "the mouse is over a Dear ImGui window"
         // (ImGui_ImplWin32_UpdateMouseCursor sets a cursor unconditionally
         // whenever it isn't explicitly told not to), so that one is decided
         // below by WantsCaptureMouse() instead.
-        if (_DebugUI && Msg != WM_SETCURSOR && _DebugUI->ProcessMessage(Handle, Msg, WParam, LParam)) {
-            return TRUE;
-        }
+        if (_DebugUI && Msg != WM_SETCURSOR && _DebugUI->ProcessMessage(Handle, Msg, WParam, LParam)) { return TRUE; }
 
         switch (Msg) {
             case WM_CLOSE:
@@ -300,11 +295,11 @@ namespace Xen {
             i16 Button;
         };
         static constexpr ButtonMapping Mappings[] = {
-          {RI_MOUSE_LEFT_BUTTON_DOWN,   RI_MOUSE_LEFT_BUTTON_UP,   Input::MouseButton::Left  },
-          {RI_MOUSE_RIGHT_BUTTON_DOWN,  RI_MOUSE_RIGHT_BUTTON_UP,  Input::MouseButton::Right },
+          {RI_MOUSE_LEFT_BUTTON_DOWN, RI_MOUSE_LEFT_BUTTON_UP, Input::MouseButton::Left},
+          {RI_MOUSE_RIGHT_BUTTON_DOWN, RI_MOUSE_RIGHT_BUTTON_UP, Input::MouseButton::Right},
           {RI_MOUSE_MIDDLE_BUTTON_DOWN, RI_MOUSE_MIDDLE_BUTTON_UP, Input::MouseButton::Middle},
-          {RI_MOUSE_BUTTON_4_DOWN,      RI_MOUSE_BUTTON_4_UP,      Input::MouseButton::Button4},
-          {RI_MOUSE_BUTTON_5_DOWN,      RI_MOUSE_BUTTON_5_UP,      Input::MouseButton::Button5},
+          {RI_MOUSE_BUTTON_4_DOWN, RI_MOUSE_BUTTON_4_UP, Input::MouseButton::Button4},
+          {RI_MOUSE_BUTTON_5_DOWN, RI_MOUSE_BUTTON_5_UP, Input::MouseButton::Button5},
         };
 
         for (const auto& [DownFlag, UpFlag, Button] : Mappings) {
