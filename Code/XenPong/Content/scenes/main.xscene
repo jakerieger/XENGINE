@@ -191,8 +191,12 @@
         {
           "Type": "CameraComponent",
           "Properties": {
+            "ProjectionMode": 0,
             "Zoom": 1.0,
             "PixelsPerUnit": 100.0,
+            "FieldOfView": 60.0,
+            "NearPlane": 0.10000000149011612,
+            "FarPlane": 1000.0,
             "Priority": 0
           }
         }

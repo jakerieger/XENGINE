@@ -51,7 +51,7 @@ namespace {
 
         const ActorHandle CubeHandle = MainScene.Spawn("Cube");
         Actor* CubeActor             = MainScene.Get(CubeHandle);
-        CubeActor->AddComponent<MeshComponent>(ASSET("meshes/cube.xmesh"));
+        CubeActor->AddComponent<MeshComponent>(ASSET("meshes/cube.gltf"));
         auto* Material = CubeActor->AddComponent<PBRMaterialComponent>();
         Material->SetAlbedo({0.7f, 0.15f, 0.15f});
         Material->SetMetallic(0.2f);
@@ -63,10 +63,10 @@ namespace {
         auto* Camera                   = CameraActor->AddComponent<CameraComponent>();
         Camera->SetProjectionMode(ProjectionMode::Perspective);
         Camera->SetFieldOfView(60.0f);
-        // Behind the origin along -Z, looking down +Z (this engine's
-        // canonical forward) at an unrotated Transform - the cube at the
-        // origin ends up straight ahead.
-        CameraActor->SetPosition(Float3 {0.0f, 1.0f, -4.0f});
+        // In front of the origin along +Z, looking down -Z (this engine's
+        // canonical forward, matching glTF's convention) at an unrotated
+        // Transform - the cube at the origin ends up straight ahead.
+        CameraActor->SetPosition(Float3 {0.0f, 1.0f, 4.0f});
 
         const ActorHandle LightHandle = MainScene.Spawn("Light");
         Actor* LightActor             = MainScene.Get(LightHandle);

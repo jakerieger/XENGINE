@@ -16,8 +16,9 @@ namespace Xen {
     /// from the owning actor's rotation, not a separately-stored vector -
     /// the same reason a directional light is usually authored as a rotated
     /// empty rather than a raw direction: it composes with parenting,
-    /// gizmos, and animation for free. Unrotated, it points down +Z (this
-    /// engine's canonical forward - see CameraComponent).
+    /// gizmos, and animation for free. Unrotated, it points down -Z (this
+    /// engine's canonical forward, matching glTF's convention - see
+    /// CameraComponent).
     class DirectionalLightComponent final : public IComponent {
     public:
         XEN_COMPONENT_TYPE(DirectionalLightComponent)
@@ -32,8 +33,8 @@ namespace Xen {
         void SetIntensity(const f32 Intensity) { _Intensity = Intensity; }
 
         /// @brief World-space direction the light travels, derived from the
-        /// owning actor's world rotation applied to the canonical +Z
-        /// "forward" - falls back to {0,0,1} if called with no owner, which
+        /// owning actor's world rotation applied to the canonical -Z
+        /// "forward" - falls back to {0,0,-1} if called with no owner, which
         /// should only happen before an actor adopts it.
         NODISCARD Float3 GetDirection() const;
 

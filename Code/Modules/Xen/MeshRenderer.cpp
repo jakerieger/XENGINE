@@ -3,7 +3,6 @@
 //
 
 #include "MeshRenderer.hpp"
-#include "MeshAsset.hpp"
 #include "MeshComponent.hpp"
 #include "PBRMaterialComponent.hpp"
 #include "DirectionalLightComponent.hpp"
@@ -104,13 +103,13 @@ namespace Xen {
         PipelineDesc.PipelineLayout = _Layout;
         PipelineDesc.Topology       = RHI::PrimitiveTopology::TriangleList;
 
-        // Matches MeshAssetVertex exactly (see MeshAsset.hpp): Position,
-        // Normal, Tangent, UV, one per-vertex (not instanced) binding.
-        PipelineDesc.Layout.Binding(0, sizeof(MeshAssetVertex), RHI::VertexInputRate::Vertex)
-          .Attribute(0, 0, RHI::Format::RGB32_FLOAT, offsetof(MeshAssetVertex, Position))
-          .Attribute(1, 0, RHI::Format::RGB32_FLOAT, offsetof(MeshAssetVertex, Normal))
-          .Attribute(2, 0, RHI::Format::RGB32_FLOAT, offsetof(MeshAssetVertex, Tangent))
-          .Attribute(3, 0, RHI::Format::RG32_FLOAT, offsetof(MeshAssetVertex, UV));
+        // Matches MeshVertex exactly (see MeshCache.hpp): Position, Normal,
+        // Tangent, UV, one per-vertex (not instanced) binding.
+        PipelineDesc.Layout.Binding(0, sizeof(MeshVertex), RHI::VertexInputRate::Vertex)
+          .Attribute(0, 0, RHI::Format::RGB32_FLOAT, offsetof(MeshVertex, Position))
+          .Attribute(1, 0, RHI::Format::RGB32_FLOAT, offsetof(MeshVertex, Normal))
+          .Attribute(2, 0, RHI::Format::RGB32_FLOAT, offsetof(MeshVertex, Tangent))
+          .Attribute(3, 0, RHI::Format::RG32_FLOAT, offsetof(MeshVertex, UV));
 
         PipelineDesc.Rasterizer.Cull               = RHI::CullMode::Back;
         PipelineDesc.DepthStencil.DepthTestEnable  = true;

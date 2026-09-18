@@ -8,6 +8,8 @@ add_library(Xen STATIC
         ${VENDOR_ROOT}/stb_image.cpp
         ${VENDOR_ROOT}/stb_image.h
         ${VENDOR_ROOT}/ini.h
+        ${VENDOR_ROOT}/cgltf.cpp
+        ${VENDOR_ROOT}/cgltf.h
         # Engine
         ${SHADER_INCLUDES}
         Actor.cpp
@@ -31,7 +33,6 @@ add_library(Xen STATIC
         Game.cpp
         Game.hpp
         Input.hpp
-        MeshAsset.hpp
         MeshCache.cpp
         MeshCache.hpp
         MeshComponent.cpp
@@ -77,6 +78,7 @@ target_compile_definitions(Xen PUBLIC
         _UNICODE
         WIN32_LEAN_AND_MEAN
         NOMINMAX
+        _CRT_SECURE_NO_WARNINGS
 )
 
 target_link_libraries(Xen PUBLIC

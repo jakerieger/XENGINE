@@ -7,8 +7,12 @@ out/
 vcpkg/
 vcpkg_installed/
 packages/
-Engine/Shaders/Compiled
 imgui.ini
+
+*.ps
+*.vs
+*.cs
+*.gltf
 
 # claude build caches
 build*/

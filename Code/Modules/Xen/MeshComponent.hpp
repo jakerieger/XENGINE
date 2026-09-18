@@ -13,9 +13,9 @@
 namespace Xen {
     REGISTER_COMPONENT(MeshComponent)
 
-    /// @brief References a .xmesh asset, resolving it to GPU buffers via the
-    /// scene's MeshCache - the 3D analogue of SpriteComponent's texture
-    /// reference.
+    /// @brief References a mesh asset (glTF/GLB - see MeshCache.cpp),
+    /// resolving it to GPU buffers via the scene's MeshCache - the 3D
+    /// analogue of SpriteComponent's texture reference.
     class MeshComponent final : public IComponent {
     public:
         XEN_COMPONENT_TYPE(MeshComponent)

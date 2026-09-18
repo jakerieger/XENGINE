@@ -78,7 +78,7 @@ class ShaderCompiler:
     def _compile_shader(self, shader_file: Path, shader_type: ShaderType) -> None:
         for stage in self.STAGES[shader_type]:
             self._invoke_dxc(shader_file, stage)
-        print(f"✔ Compiled '{shader_file.stem}' ({shader_type})")
+        print(f"Compiled '{shader_file.stem}' ({shader_type})")
 
     def compile_shaders(self) -> None:
         print("---[ compile_engine_shaders.py ]---")

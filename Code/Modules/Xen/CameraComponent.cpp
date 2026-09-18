@@ -12,13 +12,16 @@ namespace Xen {
 
         if (_ProjectionMode == ProjectionMode::Perspective) {
             // Full 3D view: the camera's complete orientation, not just a Z
-            // angle - a perspective camera can pitch/yaw/roll. +Z/+Y are this
-            // engine's canonical forward/up (see DirectionalLightComponent).
+            // angle - a perspective camera can pitch/yaw/roll. -Z/+Y are this
+            // engine's canonical forward/up (see DirectionalLightComponent),
+            // matching glTF's own right-handed, +Y-up, -Z-forward convention
+            // so meshes and cameras authored in a glTF-producing DCC tool
+            // need no coordinate conversion on import.
             const XMVECTOR Pos     = XMLoadFloat3(&T.Position);
             const XMVECTOR Rot     = XMLoadFloat4(&T.Rotation);
-            const XMVECTOR Forward = XMVector3Rotate(XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f), Rot);
+            const XMVECTOR Forward = XMVector3Rotate(XMVectorSet(0.0f, 0.0f, -1.0f, 0.0f), Rot);
             const XMVECTOR Up      = XMVector3Rotate(XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f), Rot);
-            const XMMATRIX View    = XMMatrixLookToLH(Pos, Forward, Up);
+            const XMMATRIX View    = XMMatrixLookToRH(Pos, Forward, Up);
 
             Float4x4 Out;
             XMStoreFloat4x4(&Out, View);
@@ -45,7 +48,7 @@ namespace Xen {
 
         if (_ProjectionMode == ProjectionMode::Perspective) {
             const XMMATRIX Proj =
-              XMMatrixPerspectiveFovLH(XMConvertToRadians(_FieldOfViewDegrees), GetAspectRatio(), _NearPlane, _FarPlane);
+              XMMatrixPerspectiveFovRH(XMConvertToRadians(_FieldOfViewDegrees), GetAspectRatio(), _NearPlane, _FarPlane);
 
             Float4x4 Out;
             XMStoreFloat4x4(&Out, Proj);
