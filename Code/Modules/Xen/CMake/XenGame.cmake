@@ -8,6 +8,8 @@ include_guard(GLOBAL)
 # visible everywhere regardless of which scope first ran this file.
 set(_XEN_GAME_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
 
+set(XEN_DEFAULT_PAK "Data1.xpak")
+
 # Creates the game's executable target. Windows-only (WIN32 subsystem, so
 # the game doesn't get a console window) - the engine dropped cross-platform
 # support in the D3D12 migration, so there's no other subsystem to pick.

@@ -10,6 +10,9 @@ packages/
 Engine/Shaders/Compiled
 imgui.ini
 
+# claude build caches
+build*/
+
 # Engine-specific log files
 *.log
 
