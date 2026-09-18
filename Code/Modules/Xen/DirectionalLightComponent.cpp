@@ -12,15 +12,16 @@ namespace Xen {
     }
 
     Float3 DirectionalLightComponent::GetDirection() const {
-        if (!GetOwner()) return {0.0f, 0.0f, 1.0f};
+        if (!GetOwner()) return {0.0f, 0.0f, -1.0f};
 
         using namespace DirectX;
         const Transform T = GetOwner()->GetWorldTransform();
-        // +Z is this engine's canonical "forward" (matching the left-handed
-        // convention XMMatrixLookToLH/XMMatrixPerspectiveFovLH expect - see
+        // -Z is this engine's canonical "forward" (matching the right-handed
+        // convention XMMatrixLookToRH/XMMatrixPerspectiveFovRH expect, and
+        // glTF's own +Y-up/-Z-forward convention - see
         // CameraComponent::GetViewMatrix's perspective branch), so an
         // unrotated light points the same way an unrotated camera looks.
-        const XMVECTOR Forward        = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+        const XMVECTOR Forward        = XMVectorSet(0.0f, 0.0f, -1.0f, 0.0f);
         const XMVECTOR RotatedForward = XMVector3Rotate(Forward, XMLoadFloat4(&T.Rotation));
 
         Float3 Out;

@@ -1397,17 +1397,17 @@ namespace Xen::RHI::D3D12Backend {
 
         PsoDesc.RasterizerState.FillMode = ToD3DFillMode(Desc.Rasterizer.Fill);
         PsoDesc.RasterizerState.CullMode = ToD3DCullMode(Desc.Rasterizer.Cull);
-        // Inverted, not a direct CCW->TRUE mapping: D3D12's front-face test
-        // happens on screen-space winding, after the NDC->viewport transform
-        // flips Y (NDC is Y-up, pixel/screen space is Y-down) - a triangle
-        // authored CCW in the standard Y-up math convention (how every mesh
-        // this engine generates is wound, e.g. Scripts/generate_primitive_
-        // meshes.py) comes out CW once that flip happens, so it has to map
-        // to FrontCounterClockwise=FALSE to still be treated as front.
-        // Confirmed empirically: a straight (non-inverted) mapping rendered
-        // a cube's far faces instead of its near ones (depth-tested visible
-        // geometry using the far face's own normal).
-        PsoDesc.RasterizerState.FrontCounterClockwise = Desc.Rasterizer.Front != FrontFace::CounterClockwise;
+        // A direct CCW->TRUE mapping: whether a CCW-in-object-space triangle
+        // (how every mesh this engine uses is wound, e.g. Scripts/generate_
+        // primitive_meshes.py and glTF's own convention) still reads as CCW
+        // in screen space depends on the view/projection pipeline's
+        // handedness, not just the NDC->viewport Y flip - switching
+        // CameraComponent from XMMatrixLookToLH/PerspectiveFovLH to the RH
+        // variants (to adopt glTF's right-handed convention) flipped the
+        // sign of this mapping too. Confirmed empirically both times: the
+        // wrong mapping renders a mesh's far faces instead of its near ones
+        // (depth-tested visible geometry using the far face's own normal).
+        PsoDesc.RasterizerState.FrontCounterClockwise = Desc.Rasterizer.Front == FrontFace::CounterClockwise;
         PsoDesc.RasterizerState.DepthClipEnable       = TRUE;
 
         PsoDesc.DepthStencilState.DepthEnable = Desc.DepthStencil.DepthTestEnable;

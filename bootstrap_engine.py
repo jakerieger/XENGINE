@@ -18,9 +18,6 @@ def main():
         print(result.stderr)
         return result.returncode
 
-    print(
-        "==============================================================================================================")
-
     gen_meshes_script = root / "Scripts" / "generate_primitive_meshes.py"
     result = subprocess.run([sys.executable, str(gen_meshes_script)])
 

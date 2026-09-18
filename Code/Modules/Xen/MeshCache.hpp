@@ -37,10 +37,22 @@ namespace Xen {
         RHI::IndexType IndexType {RHI::IndexType::U32};
     };
 
-    /// @brief Loads .xmesh assets (see MeshAsset.hpp) onto the GPU and caches
-    /// them by AssetID, ref-counted - the same acquire/release/preload shape
-    /// as TextureCache, so a mesh shared by many actors (a cube instanced a
-    /// hundred times) uploads once.
+    /// @brief The fixed GPU vertex layout every mesh is uploaded as,
+    /// regardless of source format - MeshRenderer's pipeline vertex layout
+    /// (see MeshRenderer.cpp) binds attributes at these exact offsets. Not
+    /// tied to any particular on-disk asset format; MeshCache::CreateGpuMesh
+    /// fills this in from whatever glTF accessors a mesh asset provides.
+    struct MeshVertex {
+        f32 Position[3];  ///< Position, in the mesh's local (glTF "object") space.
+        f32 Normal[3];    ///< Unit normal, in the same space as Position.
+        f32 Tangent[3];   ///< Tangent, in the same space as Position; glTF's 4th (bitangent-handedness) component is dropped - nothing consumes tangents for normal mapping yet.
+        f32 UV[2];        ///< Texture coordinates (glTF's TEXCOORD_0); zero-filled if the source mesh has none.
+    };
+
+    /// @brief Loads mesh assets (glTF/GLB - see MeshCache.cpp) onto the GPU
+    /// and caches them by AssetID, ref-counted - the same acquire/release/
+    /// preload shape as TextureCache, so a mesh shared by many actors (a
+    /// cube instanced a hundred times) uploads once.
     class MeshCache {
     public:
         explicit MeshCache(PAK::AssetRegistry& Assets, RHI::IRenderDevice& Device) : _Assets(&Assets), _Device(&Device) {}
