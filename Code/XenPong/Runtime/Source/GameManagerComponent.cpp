@@ -6,7 +6,7 @@
 #include "PlayerComponent.hpp"
 #include "OpponentComponent.hpp"
 #include "BallComponent.hpp"
-#include "Scene.hpp"
+#include <Xen/Scene.hpp>
 
 namespace Xen {
     void GameManagerComponent::Reflect(IReflector& R) {

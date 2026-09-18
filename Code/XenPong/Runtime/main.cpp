@@ -2,10 +2,10 @@
 // Created by Jake Rieger on 9/8/2026.
 //
 
-#include "BallComponent.hpp"
-#include "GameManagerComponent.hpp"
-#include "OpponentComponent.hpp"
-#include "PlayerComponent.hpp"
+#include "Source/BallComponent.hpp"
+#include "Source/GameManagerComponent.hpp"
+#include "Source/OpponentComponent.hpp"
+#include "Source/PlayerComponent.hpp"
 
 #include <Xen/Window.hpp>
 #include <Xen/AssetPreloader.hpp>
@@ -77,6 +77,12 @@ namespace {
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
+    // Must run before BuildMountConfig: the .exe lives in Bin64/ now, one
+    // level below Config/Data1.xpak/Engine/, and every relative path in the
+    // engine is still written as if the .exe were where it used to be. See
+    // FixContentWorkingDirectory's own comment for the full explanation.
+    Xen::FixContentWorkingDirectory();
+
     try {
         XenPong Game("XenPong", BuildMountConfig(Generated::GameSettings(), __argc, __argv));
 

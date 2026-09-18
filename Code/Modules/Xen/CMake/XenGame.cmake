@@ -8,16 +8,11 @@ include_guard(GLOBAL)
 # visible everywhere regardless of which scope first ran this file.
 set(_XEN_GAME_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
 
-# Creates the game's executable target, picking the right per-platform
-# entry point subsystem (e.g. WIN32 on Windows so the game doesn't get a
-# console window) so individual game CMakeLists don't have to branch on
-# PLATFORM_WINDOWS/MACOS/LINUX themselves.
+# Creates the game's executable target. Windows-only (WIN32 subsystem, so
+# the game doesn't get a console window) - the engine dropped cross-platform
+# support in the D3D12 migration, so there's no other subsystem to pick.
 function(xen_add_game_executable TARGET)
-    if (PLATFORM_WINDOWS)
-        add_executable(${TARGET} WIN32 ${ARGN})
-    else ()
-        add_executable(${TARGET} ${ARGN})
-    endif ()
+    add_executable(${TARGET} WIN32 ${ARGN})
 
     # Each game gets its own output subdirectory. The top-level CMakeLists.txt
     # sets CMAKE_RUNTIME_OUTPUT_DIRECTORY_<CONFIG> once, project-wide, for
@@ -33,7 +28,7 @@ function(xen_add_game_executable TARGET)
     foreach (config ${CMAKE_CONFIGURATION_TYPES})
         string(TOUPPER ${config} config_upper)
         set_target_properties(${TARGET} PROPERTIES
-                RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TARGET}")
+                RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TARGET}/Bin64")
     endforeach ()
 endfunction()
 
@@ -51,6 +46,13 @@ function(xen_configure_game TARGET)
     endif ()
     if (NOT ARG_CONTENT_DIRS)
         message(FATAL_ERROR "xen_configure_game(${TARGET}): CONTENT_DIRS is required for development builds.")
+    endif ()
+
+    # Recorded as a target property so xen_package_game_content can pick it
+    # back up without every game having to repeat the same filename at both
+    # call sites.
+    if (ARG_PAK_FILENAME)
+        set_target_properties(${TARGET} PROPERTIES XEN_PAK_FILENAME "${ARG_PAK_FILENAME}")
     endif ()
 
     # Quote as raw string literals so Windows paths survive intact.
@@ -87,4 +89,81 @@ function(xen_configure_game TARGET)
 
     target_include_directories(${TARGET} PRIVATE "${gen_dir}")
     target_link_libraries(${TARGET} PRIVATE Xen::Xen)
+endfunction()
+
+# Compiles the engine's shared HLSL (Code/Shaders/*.hlsl) to DXIL once per
+# build, then makes TARGET depend on that output. Every game shares the same
+# compiled Engine/Shaders output, so the underlying custom target is created
+# only once, guarded by `if (NOT TARGET ...)`: without the guard, a second
+# game calling this in the same CMake configure re-declares the same global
+# target name and CMake hard-errors with "another target with the same name
+# already exists".
+function(xen_compile_shaders TARGET)
+    if (NOT TARGET compile_engine_shaders)
+        find_package(Python3 COMPONENTS Interpreter REQUIRED)
+        add_custom_target(compile_engine_shaders ALL
+                COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/Scripts/compile_engine_shaders.py"
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                COMMENT "Compiling engine shaders..."
+        )
+    endif ()
+
+    add_dependencies(${TARGET} compile_engine_shaders)
+endfunction()
+
+# Packages a configured game's runtime content into the distribution layout
+# every game shares (see README.md's Game Distribution Output layout):
+# Config/ copied loose next to the exe, the engine's shared shader/environment
+# paks built from Code/Shaders and Engine/Environment, and the game's own
+# CONTENT_DIR packed into PAK_FILENAME. This used to be five separate
+# add_custom_command blocks pasted into every game's CMakeLists.txt - one
+# call here instead of five copy-pasted ones means they can't drift out of
+# sync (order, missing PAKTool dependency, etc.) between games.
+#
+# Depends on PAKTool directly, since this is the step that actually invokes
+# PAKTool.exe as a POST_BUILD command - call this (or otherwise depend on
+# PAKTool) before building a game, or its POST_BUILD pack steps will fail
+# with "the system cannot find the path specified" against a PAKTool.exe that
+# was never built.
+#
+# PAK_FILENAME can be omitted if xen_configure_game(TARGET PAK_FILENAME ...)
+# was already called for this target - it reads back the XEN_PAK_FILENAME
+# property that call recorded, so the filename isn't repeated at both call
+# sites.
+function(xen_package_game_content TARGET)
+    cmake_parse_arguments(ARG
+            ""
+            "PAK_FILENAME;CONTENT_DIR;CONFIG_DIR"
+            ""
+            ${ARGN})
+
+    if (NOT ARG_PAK_FILENAME)
+        get_target_property(ARG_PAK_FILENAME ${TARGET} XEN_PAK_FILENAME)
+    endif ()
+    if (NOT ARG_PAK_FILENAME OR ARG_PAK_FILENAME STREQUAL "ARG_PAK_FILENAME-NOTFOUND")
+        message(FATAL_ERROR
+                "xen_package_game_content(${TARGET}): PAK_FILENAME is required, either "
+                "passed here or via a prior xen_configure_game(${TARGET} PAK_FILENAME ...).")
+    endif ()
+    if (NOT ARG_CONTENT_DIR)
+        set(ARG_CONTENT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Content")
+    endif ()
+    if (NOT ARG_CONFIG_DIR)
+        set(ARG_CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Config")
+    endif ()
+
+    set(out_dir "$<TARGET_FILE_DIR:${TARGET}>/..")
+
+    add_custom_command(
+            TARGET ${TARGET} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${ARG_CONFIG_DIR}" "${out_dir}/Config"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${out_dir}/Engine"
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/Engine/Shaders" -o "${out_dir}/Engine/XEN.Shaders.xpak"
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/Engine/Environment" -o "${out_dir}/Engine/XEN.Environment.xpak"
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${ARG_CONTENT_DIR}" -o "${out_dir}/${ARG_PAK_FILENAME}"
+            COMMENT "Packaging ${TARGET} content (Config, Engine shaders/environment, ${ARG_PAK_FILENAME})..."
+            VERBATIM
+    )
+
+    add_dependencies(${TARGET} PAKTool)
 endfunction()

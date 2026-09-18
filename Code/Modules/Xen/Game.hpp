@@ -22,10 +22,8 @@
 
 #include <filesystem>
 
-#ifdef PLATFORM_WINDOWS
-    #ifndef _WINDOWS_
-        #include <Windows.h>
-    #endif
+#ifndef _WINDOWS_
+    #include <Windows.h>
 #endif
 
 namespace Xen {
@@ -177,14 +175,43 @@ namespace Xen {
         f32 _MaxFrameDelta {0.25f};
     };
 
+    /// @brief Sets the process's working directory to the parent of the
+    /// executable's own directory.
+    ///
+    /// The game executable builds to <output>/Bin64/, one level below
+    /// Config/, Data1.xpak and Engine/ (see README.md's Game Distribution
+    /// Output layout) - every relative path in the engine
+    /// (EngineConfig::Read("Config/..."), InputMap::Load,
+    /// AssetMountConfig::PakFiles, and BuildMountConfig's own exists()
+    /// checks) is still written unprefixed, so the process's working
+    /// directory has to be the parent of wherever the .exe actually is, not
+    /// the .exe's own directory (which is what a normal launch defaults to).
+    ///
+    /// Call this before anything that resolves a relative path -
+    /// BuildMountConfig included, since its exists() filtering for dev-mode
+    /// paks would otherwise resolve against the wrong directory and
+    /// silently drop every pak. RunGame calls this already; a game whose
+    /// wWinMain doesn't go through RunGame (main.cpp in both XenPong and
+    /// XenPBRDemo hand-roll their own instead, at the moment) must call it
+    /// directly as the very first thing it does.
+    inline void FixContentWorkingDirectory() {
+        wchar_t ExePathBuf[MAX_PATH];
+        if (::GetModuleFileNameW(nullptr, ExePathBuf, MAX_PATH) > 0) {
+            const std::filesystem::path ContentRoot = std::filesystem::path(ExePathBuf).parent_path().parent_path();
+            ::SetCurrentDirectoryW(ContentRoot.c_str());
+        }
+    }
+
     template<typename GameClass>
     void RunGame(const std::string& Name, const AssetSettings& Settings, const int argc, char* argv[]) noexcept {
         ASSERT_BASE_OF(Game, GameClass);
+
+        FixContentWorkingDirectory();
+
         const auto MountConfig = BuildMountConfig(Settings, argc, argv);
 
         try {
 #ifndef NDEBUG
-    #ifdef PLATFORM_WINDOWS
             ::AllocConsole();
 
             FILE* FilePointer;
@@ -195,7 +222,6 @@ namespace Xen {
             std::ios::sync_with_stdio(true);
 
             ::SetConsoleTitleA(std::string(Name + " | Console").c_str());
-    #endif
 #endif
 
             GameClass {Name, MountConfig}.Run();

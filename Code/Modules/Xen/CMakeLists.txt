@@ -61,7 +61,7 @@ add_library(Xen STATIC
         Viewport.hpp
         Window.cpp
         Window.hpp
-        # Engine/Backends - Windows + D3D12 only, per DetectPlatform.cmake's PLATFORM_WINDOWS.
+        # Engine/Backends - Windows + D3D12 only; the engine has no other target platform.
         Backends/D3D12Translate.hpp
         Backends/D3D12RenderDevice.cpp
         Backends/D3D12RenderDevice.hpp

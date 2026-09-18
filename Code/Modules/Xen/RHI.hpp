@@ -306,18 +306,23 @@ namespace Xen::RHI {
     enum class ShaderStage : u8 { Vertex, Fragment, Geometry, Compute };
 
     /// @brief GLSL/SPIRV are retained from the pre-D3D12 GL backend for
-    /// reference; the only source type any current backend consumes is HLSL,
+    /// reference and unused by any current backend. HLSL is source text,
     /// compiled at shader-creation time via the legacy D3DCompile (SM 5.x) -
     /// no offline shader build step, matching the old GLSL runtime-compile
-    /// workflow.
-    enum class ShaderSourceType : u8 { GLSL, SPIRV, HLSL };
+    /// workflow (still what SpriteRenderer uses). DXIL is already-compiled
+    /// bytecode (Shader Model 6.0, produced offline by dxc.exe via
+    /// Scripts/compile_engine_shaders.py and loaded from a pak, never from a
+    /// game's own Content directory) - CreateShader wraps it directly with
+    /// no compilation step, and EntryPoint is unused since it's baked into
+    /// the compiled container.
+    enum class ShaderSourceType : u8 { GLSL, SPIRV, HLSL, DXIL };
 
     struct ShaderDesc {
         ShaderStage Stage {ShaderStage::Vertex};
         ShaderSourceType SourceType {ShaderSourceType::GLSL};
         const void* Code {nullptr};
         size_t CodeSize {0};  // bytes; for GLSL this excludes the terminator
-        const char* EntryPoint {"main"};
+        const char* EntryPoint {"main"};  // ignored for DXIL
         const char* DebugName {nullptr};
     };
 

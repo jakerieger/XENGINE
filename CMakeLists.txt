@@ -15,9 +15,6 @@ foreach (OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
     set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_BINARY_DIR}/lib)
 endforeach ()
 
-# Target platform detection (PLATFORM_NAME, PLATFORM_WINDOWS/MACOS/LINUX)
-include(CMake/DetectPlatform.cmake)
-
 # 3rd party dependencies
 include(CMake/FetchDeps.cmake)
 

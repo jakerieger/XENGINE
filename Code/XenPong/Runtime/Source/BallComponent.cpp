@@ -4,7 +4,7 @@
 
 #include "BallComponent.hpp"
 
-#include "Game.hpp"
+#include <Xen/Game.hpp>
 #include "GameManagerComponent.hpp"
 #include "OpponentComponent.hpp"
 #include "PlayerComponent.hpp"

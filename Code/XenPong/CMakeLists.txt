@@ -2,15 +2,15 @@ project(Xen2D)
 
 include(XenGame)
 xen_add_game_executable(XenPong
-        main.cpp
-        BallComponent.cpp
-        BallComponent.hpp
-        GameManagerComponent.cpp
-        GameManagerComponent.hpp
-        OpponentComponent.cpp
-        OpponentComponent.hpp
-        PlayerComponent.cpp
-        PlayerComponent.hpp
+        Runtime/main.cpp
+        Runtime/Source/BallComponent.cpp
+        Runtime/Source/BallComponent.hpp
+        Runtime/Source/GameManagerComponent.cpp
+        Runtime/Source/GameManagerComponent.hpp
+        Runtime/Source/OpponentComponent.cpp
+        Runtime/Source/OpponentComponent.hpp
+        Runtime/Source/PlayerComponent.cpp
+        Runtime/Source/PlayerComponent.hpp
 )
 
 xen_configure_game(XenPong
@@ -18,17 +18,8 @@ xen_configure_game(XenPong
         CONTENT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Content"
 )
 
-target_include_directories(XenPong PRIVATE ${MODULES_ROOT} ${VENDOR_ROOT})
+xen_compile_shaders(XenPong)
 
-# Copy `Config` directory to build directory since it's needed at runtime.
-# $<TARGET_FILE_DIR:XenPong> (not CMAKE_RUNTIME_OUTPUT_DIRECTORY) because the
-# per-config output dirs the top-level CMakeLists.txt sets take precedence
-# over the generic variable this file reassigned above, on a multi-config
-# generator - using the variable directly copied Config next to a folder the
-# .exe was never actually placed in.
-add_custom_command(
-        TARGET XenPong POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/Config"
-        "$<TARGET_FILE_DIR:XenPong>/Config"
-)
+target_include_directories(XenPong PRIVATE Runtime Runtime/Source ${MODULES_ROOT} ${VENDOR_ROOT})
+
+xen_package_game_content(XenPong)

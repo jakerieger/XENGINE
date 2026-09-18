@@ -43,27 +43,32 @@ namespace Xen {
     bool MeshRenderer::Initialize(RHI::IRenderDevice& Device, PAK::AssetRegistry& Assets, const Viewport& TargetFormats) {
         _Device = &Device;
 
-        const AssetID ShaderAsset = ASSET("shaders/pbr.hlsl");
-        if (!Assets.Contains(ShaderAsset)) {
+        // Precompiled DXIL only - never HLSL source from a game's own
+        // Content directory. Code/Shaders/PBR.hlsl is the authored source;
+        // Scripts/compile_engine_shaders.py compiles it offline (dxc.exe) to
+        // Engine/Shaders/pbr.vs + pbr.ps, and those get packed into
+        // Engine/XEN.Shaders.xpak, the only place this ever loads them from.
+        const AssetID VertexAsset   = ASSET("pbr.vs");
+        const AssetID FragmentAsset = ASSET("pbr.ps");
+        if (!Assets.Contains(VertexAsset) || !Assets.Contains(FragmentAsset)) {
             _Device = nullptr;
             return false;
         }
-        const PAK::AssetBuffer Source = Assets.Load(ShaderAsset);
+        const PAK::AssetBuffer VertexSource   = Assets.Load(VertexAsset);
+        const PAK::AssetBuffer FragmentSource = Assets.Load(FragmentAsset);
 
         RHI::ShaderDesc VertexDesc;
         VertexDesc.Stage      = RHI::ShaderStage::Vertex;
-        VertexDesc.SourceType = RHI::ShaderSourceType::HLSL;
-        VertexDesc.Code       = Source.Data();
-        VertexDesc.CodeSize   = Source.Size();
-        VertexDesc.EntryPoint = "VSMain";
+        VertexDesc.SourceType = RHI::ShaderSourceType::DXIL;
+        VertexDesc.Code       = VertexSource.Data();
+        VertexDesc.CodeSize   = VertexSource.Size();
         VertexDesc.DebugName  = "PBR.vs";
 
         RHI::ShaderDesc FragmentDesc;
         FragmentDesc.Stage      = RHI::ShaderStage::Fragment;
-        FragmentDesc.SourceType = RHI::ShaderSourceType::HLSL;
-        FragmentDesc.Code       = Source.Data();
-        FragmentDesc.CodeSize   = Source.Size();
-        FragmentDesc.EntryPoint = "PSMain";
+        FragmentDesc.SourceType = RHI::ShaderSourceType::DXIL;
+        FragmentDesc.Code       = FragmentSource.Data();
+        FragmentDesc.CodeSize   = FragmentSource.Size();
         FragmentDesc.DebugName  = "PBR.ps";
 
         const RHI::ShaderHandle Vertex   = Device.CreateShader(VertexDesc);
@@ -75,7 +80,7 @@ namespace Xen {
 
         // b0 per-frame (view-projection, camera, light), b1 per-object
         // (model matrix), b2 per-material (constant PBR factors - no
-        // textures yet). Matches Content/shaders/pbr.hlsl's register() decls
+        // textures yet). Matches Code/Shaders/PBR.hlsl's register() decls
         // exactly.
         RHI::PipelineLayoutDesc LayoutDesc;
         LayoutDesc.Binding(0, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All)

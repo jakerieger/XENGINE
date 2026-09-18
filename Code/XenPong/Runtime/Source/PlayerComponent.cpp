@@ -4,7 +4,7 @@
 
 #include "PlayerComponent.hpp"
 
-#include "Game.hpp"
+#include <Xen/Game.hpp>
 
 #include <Xen/Scene.hpp>
 #include <Xen/Actor.hpp>

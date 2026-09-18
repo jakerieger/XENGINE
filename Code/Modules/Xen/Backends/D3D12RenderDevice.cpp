@@ -1208,6 +1208,23 @@ namespace Xen::RHI::D3D12Backend {
     }
 
     ShaderHandle D3D12RenderDevice::CreateShader(const ShaderDesc& Desc) {
+        // Already-compiled DXIL (offline, via dxc.exe - see Scripts/
+        // compile_engine_shaders.py): wrap the bytes directly, no
+        // compilation step, no entry point (baked into the container).
+        if (Desc.SourceType == ShaderSourceType::DXIL) {
+            ComPtr<ID3DBlob> Blob;
+            if (FAILED(D3DCreateBlob(Desc.CodeSize, &Blob))) {
+                LOG_ERR("failed to allocate blob for precompiled shader (%s)", Desc.DebugName ? Desc.DebugName : "?");
+                return {};
+            }
+            std::memcpy(Blob->GetBufferPointer(), Desc.Code, Desc.CodeSize);
+
+            D3DShader Obj;
+            Obj.Bytecode = Blob;
+            Obj.Stage    = Desc.Stage;
+            return _Shaders.Allocate(std::move(Obj));
+        }
+
         const char* Target = nullptr;
         switch (Desc.Stage) {
             case ShaderStage::Vertex:
