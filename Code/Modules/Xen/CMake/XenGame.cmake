@@ -29,7 +29,7 @@ function(xen_add_game_executable TARGET)
     # folder and their POST_BUILD Config copies (and, in a shippable build,
     # their PAK_FILENAME) fight over the same files - invisible with one
     # game, a real collision the moment a second one exists.
-    set_target_properties(${TARGET} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TARGET}")
+    set_target_properties(${TARGET} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TARGET}/Bin64")
     foreach (config ${CMAKE_CONFIGURATION_TYPES})
         string(TOUPPER ${config} config_upper)
         set_target_properties(${TARGET} PROPERTIES
