@@ -109,7 +109,7 @@ def write_mesh(path: Path, vertices, indices):
         for index in indices:
             f.write(struct.pack(index_format, index))
 
-    print(f"wrote {path} ({len(vertices)} vertices, {len(indices)} indices, {index_stride}-byte indices)")
+    print(f"✔ Wrote '{path}' ({len(vertices)} vertices, {len(indices)} indices, {index_stride}-byte indices)")
 
 
 def generate_primitive_meshes(output_dir: Path):
@@ -118,5 +118,6 @@ def generate_primitive_meshes(output_dir: Path):
 
 
 if __name__ == "__main__":
+    print("---[ generate_primitive_meshes.py ]---")
     out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("Code") / "XenPBRDemo" / "Content" / "meshes"
     generate_primitive_meshes(out_dir)
