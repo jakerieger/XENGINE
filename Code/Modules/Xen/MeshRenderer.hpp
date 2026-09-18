@@ -32,7 +32,7 @@ namespace Xen {
         /// SpriteRenderer's shader still is. TargetFormats supplies the
         /// color/depth formats the PSO is built against; it must match
         /// whatever Viewport Render() is later called with.
-        bool Initialize(RHI::IRenderDevice& Device, PAK::AssetRegistry& Assets, const Viewport& TargetFormats);
+        bool Initialize(RHI::IRenderDevice& Device, const PAK::AssetRegistry& Assets, const Viewport& TargetFormats);
         void Shutdown();
 
         NODISCARD bool IsInitialized() const { return _Device != nullptr; }

@@ -51,7 +51,7 @@ class ShaderCompiler:
         self.shader_output = root / "Engine" / "Shaders"
 
     def _invoke_dxc(self, shader_file: Path, stage: str) -> None:
-        output = self.shader_output / (shader_file.stem.lower() + self.SUFFIXES[stage])
+        output = self.shader_output / ("xen.shader." + shader_file.stem.lower() + self.SUFFIXES[stage])
         cmd = [
             "dxc.exe",
             "-T", self.PROFILES[stage],
