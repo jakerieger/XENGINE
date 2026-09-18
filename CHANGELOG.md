@@ -7,6 +7,7 @@
 - Mesh loading via glTF/GLB (using the vendored `cgltf` single-header parser), replacing the old custom `.xmesh` binary format.
 - `plane`, `sphere`, and `cylinder` primitive generators in `generate_primitive_meshes.py` (previously cube-only), each emitting a self-contained `.gltf` with an embedded base64 buffer.
 - Working `.pakignore` filtering in PAKTool's `pack` command: glob patterns (`*`, `?`), `#` comments, and no-`/` patterns matching by filename at any depth. The patterns were previously parsed and printed but never actually applied to the scanned file list.
+- A `DebugUI` layer (Dear ImGui, docking branch) that any `Game` subclass can draw into from `OnRender` with ordinary `ImGui::` calls - `Game::BeginFrame`/`EndFrame` already bracket a frame, and Win32 input is forwarded/withheld correctly (dragging a debug window no longer also moves the game camera or spins the mouse-look). Compiled out entirely in release builds (`DebugUI.hpp`'s `XEN_WITH_DEBUG_UI`, on by default whenever `NDEBUG` isn't defined). `Demo.PBR` now shows a small "Frame Stats" window as a working example.
 
 ### Changed
 

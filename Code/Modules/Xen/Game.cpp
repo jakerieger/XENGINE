@@ -60,6 +60,11 @@ namespace Xen {
             THROW_ENGINE_EXCEPTION(EngineException, "failed to initialize render device");
         }
 
+        // Not fatal if this fails (or is compiled out - see DebugUI.hpp's
+        // XEN_WITH_DEBUG_UI): every call on an uninitialized DebugUI is a
+        // safe no-op, so a game just doesn't get debug windows.
+        if (_DebugUI.Initialize(*_RenderDevice, *_Window)) { _Window->SetDebugUI(&_DebugUI); }
+
         // WithDepth is always on: the cost (one extra texture) is trivial
         // next to the alternative of threading a "does this game want 3D"
         // flag through the constructor - a virtual hook wouldn't work here
@@ -106,6 +111,8 @@ namespace Xen {
         // while the device is unambiguously alive. The declaration order in
         // Game.hpp would get this right anyway; doing it here makes the
         // dependency visible instead of implicit.
+        _Window->SetDebugUI(nullptr);
+        _DebugUI.Shutdown();
         _SpriteRenderer.Shutdown();
         _MeshRenderer.Shutdown();
         _MainViewport.Shutdown();
@@ -240,6 +247,7 @@ namespace Xen {
             // AllocateTransient call made from OnRender lands in this frame's
             // arena rather than the one the GPU may still be reading.
             _RenderDevice->BeginFrame();
+            _DebugUI.BeginFrame();
 
             _SpriteBatcher.BuildDrawList(*_ActiveScene);
             OnRender();
@@ -257,6 +265,11 @@ namespace Xen {
             // would sample _MainViewport.GetColorTarget() into an ImGui
             // panel instead.
             _RenderDevice->CopyToSwapChain(_MainViewport.GetColorTarget());
+
+            // Overlay, drawn after everything else so debug windows are
+            // always on top - see DebugUI::EndFrame for the back-buffer
+            // hand-off with CopyToSwapChain above.
+            _DebugUI.EndFrame();
 
             _RenderDevice->EndFrame();
         }

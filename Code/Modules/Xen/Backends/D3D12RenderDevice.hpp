@@ -188,6 +188,34 @@ namespace Xen::RHI::D3D12Backend {
 
         NODISCARD const FrameStats& GetLastFrameStats() const override { return _LastStats; }
 
+        // --- Debug UI (Dear ImGui) integration -----------------------------
+        //
+        // Narrow, D3D12-specific escape hatch for DebugUI (see DebugUI.hpp) -
+        // Dear ImGui's DX12 backend needs the raw device/queue/command list,
+        // which the backend-agnostic IRenderDevice interface deliberately
+        // never exposes. Consistent with the rest of the engine treating
+        // D3D12 as the only target platform rather than pretending at a
+        // portability it doesn't have (see Window::GetHandle() returning a
+        // raw HWND for the same reason).
+        NODISCARD ID3D12Device* GetD3DDevice() const { return _Device.Get(); }
+        NODISCARD ID3D12CommandQueue* GetD3DCommandQueue() const { return _Queue.Get(); }
+        NODISCARD ID3D12GraphicsCommandList* GetD3DCommandList() const { return _CmdList.Get(); }
+        NODISCARD u32 GetFramesInFlight() const { return _FramesInFlight; }
+        NODISCARD DXGI_FORMAT GetSwapChainFormat() const { return DXGI_FORMAT_B8G8R8A8_UNORM; }
+
+        /// @brief Binds the current frame's back buffer as the render
+        /// target, transitioning PRESENT->RENDER_TARGET if it isn't already
+        /// (mirrors ExecuteBeginRenderPass's swap-chain-target path) without
+        /// clearing it - for drawing an overlay on top of whatever
+        /// CopyToSwapChain/EndRenderPass already put there. Pair with
+        /// UnbindSwapChainOverlayTarget, called between CopyToSwapChain and
+        /// EndFrame.
+        void BindSwapChainOverlayTarget();
+
+        /// @brief Transitions the back buffer RENDER_TARGET->PRESENT. Pairs
+        /// with BindSwapChainOverlayTarget.
+        void UnbindSwapChainOverlayTarget();
+
     private:
         void CreateSwapChain();
         void ResizeSwapChain(u32 Width, u32 Height);

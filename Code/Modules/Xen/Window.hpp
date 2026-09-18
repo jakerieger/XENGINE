@@ -11,6 +11,8 @@
 #include <string>
 
 namespace Xen {
+    class DebugUI;
+
     class Window {
     public:
         Window(const std::string& Title, EngineConfig::WindowMode Mode, u32 Width, u32 Height);
@@ -20,6 +22,14 @@ namespace Xen {
         Window& operator=(const Window&) = delete;
 
         void PollEvents() const;
+
+        /// @brief Optional - when set, Win32 messages are forwarded to UI
+        /// before the engine's own handling (see HandleMessage), and raw
+        /// keyboard/mouse input is withheld from InputManager while UI
+        /// reports it wants that input (WantsCaptureMouse/Keyboard), so
+        /// e.g. dragging a debug window doesn't also spin the game camera.
+        /// Pass nullptr to detach. Not owned.
+        void SetDebugUI(DebugUI* UI) { _DebugUI = UI; }
 
         NODISCARD bool ShouldClose() const { return _ShouldClose; }
 
@@ -72,5 +82,6 @@ namespace Xen {
         bool _Resized {false};
         bool _ShouldClose {false};
         InputManager _InputManager;
+        DebugUI* _DebugUI {nullptr};
     };
 }  // namespace Xen
