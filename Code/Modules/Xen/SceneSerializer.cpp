@@ -42,9 +42,9 @@ namespace Xen {
 
     void JsonSaveReflector::Visit(const char* N, Transform& V, const PropertyMeta&) {
         Json T        = Json::object();
-        T["Position"] = Json::array({V.Position.x, V.Position.y});
-        T["Rotation"] = V.Rotation;
-        T["Scale"]    = Json::array({V.Scale.x, V.Scale.y});
+        T["Position"] = Json::array({V.Position.x, V.Position.y, V.Position.z});
+        T["Rotation"] = Json::array({V.Rotation.x, V.Rotation.y, V.Rotation.z, V.Rotation.w});
+        T["Scale"]    = Json::array({V.Scale.x, V.Scale.y, V.Scale.z});
         _Out[N]       = std::move(T);
     }
 
@@ -113,14 +113,21 @@ namespace Xen {
 
         // Each field is optional independently, so a transform saved before
         // Scale existed still loads its position and rotation.
-        if (const auto It = J->find("Position"); It != J->end() && It->is_array() && It->size() >= 2) {
+        if (const auto It = J->find("Position"); It != J->end() && It->is_array() && It->size() >= 3) {
             V.Position.x = (*It)[0].get<f32>();
             V.Position.y = (*It)[1].get<f32>();
+            V.Position.z = (*It)[2].get<f32>();
         }
-        if (const auto It = J->find("Rotation"); It != J->end() && It->is_number()) { V.Rotation = It->get<f32>(); }
-        if (const auto It = J->find("Scale"); It != J->end() && It->is_array() && It->size() >= 2) {
+        if (const auto It = J->find("Rotation"); It != J->end() && It->is_array() && It->size() >= 4) {
+            V.Rotation.x = (*It)[0].get<f32>();
+            V.Rotation.y = (*It)[1].get<f32>();
+            V.Rotation.z = (*It)[2].get<f32>();
+            V.Rotation.w = (*It)[3].get<f32>();
+        }
+        if (const auto It = J->find("Scale"); It != J->end() && It->is_array() && It->size() >= 3) {
             V.Scale.x = (*It)[0].get<f32>();
             V.Scale.y = (*It)[1].get<f32>();
+            V.Scale.z = (*It)[2].get<f32>();
         }
     }
 

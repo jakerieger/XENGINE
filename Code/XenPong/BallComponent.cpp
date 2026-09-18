@@ -68,8 +68,9 @@ namespace Xen {
             }
         }
 
-        const Float2 Current = GetOwner()->GetPosition();
-        Float2 Next          = Current + _Velocity * _BallSpeed * FixedDelta;
+        const Float3 Pos3     = GetOwner()->GetPosition();
+        const Float2 Current {Pos3.x, Pos3.y};
+        Float2 Next = Current + _Velocity * _BallSpeed * FixedDelta;
 
         if (Next.y > _Bounds.y) {
             Next.y      = 2.0f * _Bounds.y - Next.y;

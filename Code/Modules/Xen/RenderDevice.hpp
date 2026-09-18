@@ -84,17 +84,19 @@ namespace Xen::RHI {
         virtual TextureHandle CreateTexture(const TextureDesc& Desc)                    = 0;
         virtual SamplerHandle CreateSampler(const SamplerDesc& Desc)                    = 0;
         virtual ShaderHandle CreateShader(const ShaderDesc& Desc)                       = 0;
+        virtual LayoutHandle CreatePipelineLayout(const PipelineLayoutDesc& Desc)       = 0;
         virtual PipelineHandle CreateGraphicsPipeline(const GraphicsPipelineDesc& Desc) = 0;
         virtual PipelineHandle CreateComputePipeline(const ComputePipelineDesc& Desc)   = 0;
 
         /// @brief Destruction frees the handle immediately but defers the real
         /// GPU delete until no in-flight frame can still reference it, so it is
         /// safe to destroy a resource the same frame it was drawn with.
-        virtual void DestroyBuffer(BufferHandle Handle)     = 0;
-        virtual void DestroyTexture(TextureHandle Handle)   = 0;
-        virtual void DestroySampler(SamplerHandle Handle)   = 0;
-        virtual void DestroyShader(ShaderHandle Handle)     = 0;
-        virtual void DestroyPipeline(PipelineHandle Handle) = 0;
+        virtual void DestroyBuffer(BufferHandle Handle)         = 0;
+        virtual void DestroyTexture(TextureHandle Handle)       = 0;
+        virtual void DestroySampler(SamplerHandle Handle)       = 0;
+        virtual void DestroyShader(ShaderHandle Handle)         = 0;
+        virtual void DestroyPipelineLayout(LayoutHandle Handle) = 0;
+        virtual void DestroyPipeline(PipelineHandle Handle)     = 0;
 
         // --- Immediate operations (outside the command stream) ------------
         virtual void UploadTexture(TextureHandle Handle, const TextureUploadDesc& Upload)      = 0;

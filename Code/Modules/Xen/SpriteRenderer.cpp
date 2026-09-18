@@ -101,9 +101,29 @@ float4 PSMain(PSInput In) : SV_Target {
             return false;
         }
 
+        // b0 uniform buffer (per-frame view-projection), t0/s0 sprite texture
+        // and its sampler - matches SpriteShaderSource's register() decls
+        // above exactly. Slot 0 is shared between the SampledTexture and
+        // Sampler bindings on purpose: BindTexture resolves both through one
+        // Slot value, the same way the HLSL pairs t0 with s0.
+        RHI::PipelineLayoutDesc LayoutDesc;
+        LayoutDesc.Binding(0, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All)
+          .Binding(0, RHI::BindingType::SampledTexture, RHI::ShaderVisibility::Fragment)
+          .Binding(0, RHI::BindingType::Sampler, RHI::ShaderVisibility::Fragment);
+        LayoutDesc.DebugName = "Sprite";
+
+        _Layout = Device.CreatePipelineLayout(LayoutDesc);
+        if (!_Layout.IsValid()) {
+            Device.DestroyShader(Vertex);
+            Device.DestroyShader(Fragment);
+            _Device = nullptr;
+            return false;
+        }
+
         RHI::GraphicsPipelineDesc PipelineDesc;
         PipelineDesc.VertexShader   = Vertex;
         PipelineDesc.FragmentShader = Fragment;
+        PipelineDesc.PipelineLayout = _Layout;
         PipelineDesc.Topology       = RHI::PrimitiveTopology::TriangleStrip;
 
         // A single instance-rate binding. No per-vertex data at all: the four
@@ -136,6 +156,8 @@ float4 PSMain(PSInput In) : SV_Target {
         Device.DestroyShader(Fragment);
 
         if (!_Pipeline.IsValid()) {
+            Device.DestroyPipelineLayout(_Layout);
+            _Layout = {};
             _Device = nullptr;
             return false;
         }
@@ -158,9 +180,11 @@ float4 PSMain(PSInput In) : SV_Target {
         if (!_Device) return;
 
         if (_Pipeline.IsValid()) _Device->DestroyPipeline(_Pipeline);
+        if (_Layout.IsValid()) _Device->DestroyPipelineLayout(_Layout);
         if (_Sampler.IsValid()) _Device->DestroySampler(_Sampler);
 
         _Pipeline = {};
+        _Layout   = {};
         _Sampler  = {};
         _Device   = nullptr;
     }
@@ -218,10 +242,12 @@ float4 PSMain(PSInput In) : SV_Target {
                     const f32 TexHeight = Height ? CAST<f32>(Height) : 1.0f;
 
                     auto& [Center, Size, Rotation, _Pad, UVRect, Tint] = Out[i];
-                    Center                                             = Item.WorldTransform.Position;
+                    // 2D-only: the GPU instance format is a flat Float2, so
+                    // Position.z/Scale.z never reach the sprite pipeline.
+                    Center   = Float2 {Item.WorldTransform.Position.x, Item.WorldTransform.Position.y};
                     Size     = Float2 {Item.SourceRect.Width / PixelsPerUnit * Item.WorldTransform.Scale.x,
                                     Item.SourceRect.Height / PixelsPerUnit * Item.WorldTransform.Scale.y};
-                    Rotation = Item.WorldTransform.Rotation;
+                    Rotation = Item.WorldTransform.GetRotationZ();
                     _Pad     = 0.0f;
                     UVRect   = Float4 {Item.SourceRect.X / TexWidth,
                                     Item.SourceRect.Y / TexHeight,

@@ -1,0 +1,143 @@
+{
+  "Version": 2,
+  "Name": "Main",
+  "Actors": [
+    {
+      "ID": 1,
+      "Parent": 0,
+      "Properties": {
+        "Name": "Cube",
+        "Transform": {
+          "Position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Enabled": true
+      },
+      "Components": [
+        {
+          "Type": "MeshComponent",
+          "Properties": {
+            "MeshAsset": 10801337327817586927
+          }
+        },
+        {
+          "Type": "PBRMaterialComponent",
+          "Properties": {
+            "Albedo": [
+              0.699999988079071,
+              0.15000000596046448,
+              0.15000000596046448
+            ],
+            "Metallic": 0.20000000298023224,
+            "Roughness": 0.3499999940395355,
+            "AmbientOcclusion": 1.0,
+            "Emissive": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        },
+        {
+          "Type": "RotatingComponent",
+          "Properties": {
+            "DegreesPerSecond": 45.0
+          }
+        }
+      ]
+    },
+    {
+      "ID": 2,
+      "Parent": 0,
+      "Properties": {
+        "Name": "MainCamera",
+        "Transform": {
+          "Position": [
+            0.0,
+            1.0,
+            -4.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Enabled": true
+      },
+      "Components": [
+        {
+          "Type": "CameraComponent",
+          "Properties": {
+            "ProjectionMode": 1,
+            "Zoom": 1.0,
+            "PixelsPerUnit": 100.0,
+            "FieldOfView": 60.0,
+            "NearPlane": 0.10000000149011612,
+            "FarPlane": 1000.0,
+            "Priority": 0
+          }
+        }
+      ]
+    },
+    {
+      "ID": 3,
+      "Parent": 0,
+      "Properties": {
+        "Name": "Light",
+        "Transform": {
+          "Position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Rotation": [
+            0.36964380741119385,
+            -0.2391176074743271,
+            0.0990457609295845,
+            0.8923990726470947
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Enabled": true
+      },
+      "Components": [
+        {
+          "Type": "DirectionalLightComponent",
+          "Properties": {
+            "Color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "Intensity": 1.0
+          }
+        }
+      ]
+    }
+  ]
+}

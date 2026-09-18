@@ -45,12 +45,14 @@ namespace Xen::RHI {
     struct SamplerTag;
     struct ShaderTag;
     struct PipelineTag;
+    struct LayoutTag;
 
     using BufferHandle   = Handle<BufferTag>;
     using TextureHandle  = Handle<TextureTag>;
     using SamplerHandle  = Handle<SamplerTag>;
     using ShaderHandle   = Handle<ShaderTag>;
     using PipelineHandle = Handle<PipelineTag>;
+    using LayoutHandle   = Handle<LayoutTag>;
 
     static_assert(sizeof(BufferHandle) == 4, "handles must stay 4 bytes");
 
@@ -319,6 +321,47 @@ namespace Xen::RHI {
         const char* DebugName {nullptr};
     };
 
+    // --- Pipeline layout ----------------------------------------------------
+    //
+    // What a pipeline binds, declared independently of any one pipeline so a
+    // material system can build its own binding shape instead of every
+    // pipeline sharing one hardcoded layout. A D3D12 backend turns this into
+    // a root signature; a future Vulkan backend would turn it into a
+    // descriptor set layout - callers only ever see slots and types.
+    enum class BindingType : u8 {
+        UniformBuffer,
+        StorageBuffer,
+        SampledTexture,
+        StorageTexture,
+        Sampler,
+    };
+
+    enum class ShaderVisibility : u8 { Vertex, Fragment, Compute, All };
+
+    struct BindingSlot {
+        u32 Slot {0};  // shader register: b# for UniformBuffer, t# for
+                        // SampledTexture, u# for Storage*, s# for Sampler
+        BindingType Type {BindingType::UniformBuffer};
+        ShaderVisibility Visibility {ShaderVisibility::All};
+        u32 Count {1};  // array size; 1 means a single descriptor, not a table
+    };
+
+    struct PipelineLayoutDesc {
+        static constexpr u32 MAX_BINDINGS = 16;
+
+        BindingSlot Bindings[MAX_BINDINGS] {};
+        u8 BindingCount {0};
+        const char* DebugName {nullptr};
+
+        PipelineLayoutDesc& Binding(const u32 Slot,
+                                    const BindingType Type,
+                                    const ShaderVisibility Visibility = ShaderVisibility::All,
+                                    const u32 Count                  = 1) {
+            Bindings[BindingCount++] = BindingSlot {Slot, Type, Visibility, Count};
+            return *this;
+        }
+    };
+
     // --- Pipeline state ---------------------------------------------------
     enum class PrimitiveTopology : u8 { PointList, LineList, LineStrip, TriangleList, TriangleStrip };
 
@@ -514,6 +557,10 @@ namespace Xen::RHI {
         ShaderHandle FragmentShader {};
         ShaderHandle GeometryShader {};  // optional
 
+        /// @brief What this pipeline binds - see PipelineLayoutDesc. Required;
+        /// create it first via IRenderDevice::CreatePipelineLayout.
+        LayoutHandle PipelineLayout {};
+
         VertexLayout Layout {};
         PrimitiveTopology Topology {PrimitiveTopology::TriangleList};
 
@@ -531,6 +578,11 @@ namespace Xen::RHI {
 
     struct ComputePipelineDesc {
         ShaderHandle ComputeShader {};
+
+        /// @brief What this pipeline binds - see PipelineLayoutDesc. Required;
+        /// create it first via IRenderDevice::CreatePipelineLayout.
+        LayoutHandle PipelineLayout {};
+
         const char* DebugName {nullptr};
     };
 
@@ -602,6 +654,25 @@ namespace Xen::RHI {
             D.ColorAttachments[0].Texture = Target;
             D.ColorAttachments[0].Load    = LoadOp::Clear;
             D.ColorAttachments[0].Clear   = ClearValue {{R, G, B, A}, 1.0f, 0};
+            return D;
+        }
+
+        /// @brief Same as ColorTarget, plus a depth attachment cleared to
+        /// DepthClear (1.0, the far plane, by convention) - what a
+        /// depth-tested 3D pass targeting a Viewport with a depth buffer
+        /// uses instead of ColorTarget.
+        static RenderPassDesc ColorAndDepthTarget(const TextureHandle Color,
+                                                  const TextureHandle Depth,
+                                                  const f32 R          = 0.0f,
+                                                  const f32 G          = 0.0f,
+                                                  const f32 B          = 0.0f,
+                                                  const f32 A          = 1.0f,
+                                                  const f32 DepthClear = 1.0f) {
+            RenderPassDesc D             = ColorTarget(Color, R, G, B, A);
+            D.HasDepthStencil            = true;
+            D.DepthStencil.Texture       = Depth;
+            D.DepthStencil.DepthLoad     = LoadOp::Clear;
+            D.DepthStencil.Clear.Depth   = DepthClear;
             return D;
         }
     };

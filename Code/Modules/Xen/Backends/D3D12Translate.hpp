@@ -180,6 +180,30 @@ namespace Xen::RHI::D3D12Backend {
         }
     }
 
+    inline D3D12_DESCRIPTOR_RANGE_TYPE ToD3DRangeType(const BindingType Type) {
+        switch (Type) {
+            case BindingType::UniformBuffer: return D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+            case BindingType::StorageBuffer:
+            case BindingType::StorageTexture: return D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+            case BindingType::SampledTexture: return D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+            case BindingType::Sampler: return D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+        }
+        return D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    }
+
+    inline D3D12_SHADER_VISIBILITY ToD3DVisibility(const ShaderVisibility Visibility) {
+        switch (Visibility) {
+            case ShaderVisibility::Vertex: return D3D12_SHADER_VISIBILITY_VERTEX;
+            case ShaderVisibility::Fragment: return D3D12_SHADER_VISIBILITY_PIXEL;
+            // A compute root signature only ever has one active stage, so ALL
+            // and "compute only" mean the same thing - D3D12 has no distinct
+            // compute visibility value.
+            case ShaderVisibility::Compute:
+            case ShaderVisibility::All: return D3D12_SHADER_VISIBILITY_ALL;
+        }
+        return D3D12_SHADER_VISIBILITY_ALL;
+    }
+
     inline D3D12_FILTER ToD3DFilter(const FilterMode Min, const FilterMode Mag, const MipMode Mip, const bool Aniso) {
         if (Aniso) return D3D12_FILTER_ANISOTROPIC;
 

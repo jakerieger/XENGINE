@@ -7,6 +7,7 @@ add_library(XenCommon STATIC
         Log.cpp
         Log.hpp
         Math.hpp
+        Platform.hpp
         PrettySignature.hpp
         XenCommon.hpp
 )

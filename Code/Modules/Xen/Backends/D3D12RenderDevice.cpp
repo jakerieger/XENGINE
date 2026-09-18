@@ -229,52 +229,6 @@ namespace Xen::RHI::D3D12Backend {
             return false;
         _OffscreenDsvDescriptorSize = _Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 
-        // Root signature: b0 root CBV (per-frame uniforms), t0 SRV table (albedo), s0
-        // sampler table. Shared by every graphics pipeline - Stage 1 has exactly one
-        // binding shape (the sprite pipeline), so one fixed layout covers it.
-        D3D12_DESCRIPTOR_RANGE SrvRange {};
-        SrvRange.RangeType                         = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-        SrvRange.NumDescriptors                    = 1;
-        SrvRange.BaseShaderRegister                = 0;
-        SrvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-        D3D12_DESCRIPTOR_RANGE SamplerRange {};
-        SamplerRange.RangeType                         = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
-        SamplerRange.NumDescriptors                    = 1;
-        SamplerRange.BaseShaderRegister                = 0;
-        SamplerRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-        D3D12_ROOT_PARAMETER RootParams[3] {};
-        RootParams[0].ParameterType             = D3D12_ROOT_PARAMETER_TYPE_CBV;
-        RootParams[0].Descriptor.ShaderRegister = 0;
-        RootParams[0].ShaderVisibility          = D3D12_SHADER_VISIBILITY_ALL;
-
-        RootParams[1].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        RootParams[1].DescriptorTable.NumDescriptorRanges = 1;
-        RootParams[1].DescriptorTable.pDescriptorRanges   = &SrvRange;
-        RootParams[1].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_PIXEL;
-
-        RootParams[2].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        RootParams[2].DescriptorTable.NumDescriptorRanges = 1;
-        RootParams[2].DescriptorTable.pDescriptorRanges   = &SamplerRange;
-        RootParams[2].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_PIXEL;
-
-        D3D12_ROOT_SIGNATURE_DESC RootDesc {};
-        RootDesc.NumParameters = 3;
-        RootDesc.pParameters   = RootParams;
-        RootDesc.Flags         = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-
-        ComPtr<ID3DBlob> SigBlob, ErrBlob;
-        if (FAILED(D3D12SerializeRootSignature(&RootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &SigBlob, &ErrBlob))) {
-            if (ErrBlob) LOG_ERR("root signature serialize failed: %s", CAST<const char*>(ErrBlob->GetBufferPointer()));
-            return false;
-        }
-        if (FAILED(_Device->CreateRootSignature(0,
-                                                SigBlob->GetBufferPointer(),
-                                                SigBlob->GetBufferSize(),
-                                                IID_PPV_ARGS(&_RootSignature))))
-            return false;
-
         if (!_Transient.Initialize(_Device.Get(), _Allocator.Get(), Desc.TransientBufferSize, _FramesInFlight)) {
             LOG_ERR("transient ring initialization failed");
             return false;
@@ -495,6 +449,7 @@ namespace Xen::RHI::D3D12Backend {
         }
 
         ReleaseCompleted(_RetiredShaders, Completed);
+        ReleaseCompleted(_RetiredLayouts, Completed);
         ReleaseCompleted(_RetiredPipelines, Completed);
     }
 
@@ -513,10 +468,10 @@ namespace Xen::RHI::D3D12Backend {
 
         ID3D12DescriptorHeap* Heaps[] = {_SrvHeap.Get(), _SamplerHeap.Get()};
         _CmdList->SetDescriptorHeaps(2, Heaps);
-        _CmdList->SetGraphicsRootSignature(_RootSignature.Get());
 
         _Transient.BeginFrame(_FrameIndex);
         _CurrentPipeline = nullptr;
+        _CurrentLayout   = nullptr;
     }
 
     void D3D12RenderDevice::Submit(const CommandBuffer& Commands) {
@@ -574,6 +529,20 @@ namespace Xen::RHI::D3D12Backend {
                     const auto& P    = It.Payload<Cmd::BindPipeline>();
                     _CurrentPipeline = _Pipelines.Get(P.Pipeline);
                     if (_CurrentPipeline) {
+                        // Compared by pointer, not handle: two pipelines that
+                        // share a layout (common - many material variants
+                        // reuse one binding shape) correctly skip the
+                        // redundant root signature set.
+                        if (const D3DPipelineLayout* NewLayout = _Layouts.Get(_CurrentPipeline->Layout);
+                            NewLayout != _CurrentLayout) {
+                            _CurrentLayout = NewLayout;
+                            if (_CurrentLayout) {
+                                if (_CurrentPipeline->IsCompute)
+                                    _CmdList->SetComputeRootSignature(_CurrentLayout->RootSignature.Get());
+                                else _CmdList->SetGraphicsRootSignature(_CurrentLayout->RootSignature.Get());
+                            }
+                        }
+
                         _CmdList->SetPipelineState(_CurrentPipeline->PSO.Get());
                         if (!_CurrentPipeline->IsCompute) _CmdList->IASetPrimitiveTopology(_CurrentPipeline->Topology);
                     }
@@ -610,18 +579,36 @@ namespace Xen::RHI::D3D12Backend {
                 case CmdType::BindUniformBuffer: {
                     const auto& P      = It.Payload<Cmd::BindUniformBuffer>();
                     const D3DBuffer* B = _Buffers.Get(P.Buffer);
-                    if (B)
-                        _CmdList->SetGraphicsRootConstantBufferView(0, B->Resource->GetGPUVirtualAddress() + P.Offset);
+                    if (B && _CurrentLayout && _CurrentPipeline) {
+                        // A table-bound (array) uniform buffer isn't exercised
+                        // yet - would need a CBV descriptor written into the
+                        // heap first, not just a GPU virtual address.
+                        if (const auto* Binding = _CurrentLayout->Find(P.Slot, BindingType::UniformBuffer);
+                            Binding && !Binding->IsTable) {
+                            const D3D12_GPU_VIRTUAL_ADDRESS Address = B->Resource->GetGPUVirtualAddress() + P.Offset;
+                            if (_CurrentPipeline->IsCompute)
+                                _CmdList->SetComputeRootConstantBufferView(Binding->RootParameterIndex, Address);
+                            else _CmdList->SetGraphicsRootConstantBufferView(Binding->RootParameterIndex, Address);
+                        }
+                    }
                     break;
                 }
 
                 case CmdType::BindStorageBuffer:
-                    // Not exercised by the sprite pipeline (no SRV/UAV buffer binding
-                    // path yet) - left unimplemented for Stage 1.
+                    // Not exercised by any pipeline yet (no UAV buffer view
+                    // creation path) - left unimplemented, same as before the
+                    // pipeline layout generalization.
                     break;
 
                 case CmdType::BindTexture: {
                     const auto& P = It.Payload<Cmd::BindTexture>();
+                    if (!_CurrentLayout || !_CurrentPipeline) break;
+
+                    // A texture and the sampler it's bound with share one
+                    // Slot value across their separate register spaces (t#
+                    // and s#) - the same convention the HLSL itself uses
+                    // (Texture2D : register(t0); SamplerState : register(s0)),
+                    // so one BindTexture call can resolve both.
                     if (D3DTexture* Tex = _Textures.Get(P.Texture); Tex && Tex->SrvHeapIndex != UINT32_MAX) {
                         // Self-transitioning: a texture that was just an
                         // offscreen render target (or was never rendered into
@@ -629,14 +616,22 @@ namespace Xen::RHI::D3D12Backend {
                         TransitionTexture(
                           *Tex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
-                        D3D12_GPU_DESCRIPTOR_HANDLE Handle = _SrvHeap->GetGPUDescriptorHandleForHeapStart();
-                        Handle.ptr += CAST<UINT64>(Tex->SrvHeapIndex) * _SrvDescriptorSize;
-                        _CmdList->SetGraphicsRootDescriptorTable(1, Handle);
+                        if (const auto* Binding = _CurrentLayout->Find(P.Slot, BindingType::SampledTexture)) {
+                            D3D12_GPU_DESCRIPTOR_HANDLE Handle = _SrvHeap->GetGPUDescriptorHandleForHeapStart();
+                            Handle.ptr += CAST<UINT64>(Tex->SrvHeapIndex) * _SrvDescriptorSize;
+                            if (_CurrentPipeline->IsCompute)
+                                _CmdList->SetComputeRootDescriptorTable(Binding->RootParameterIndex, Handle);
+                            else _CmdList->SetGraphicsRootDescriptorTable(Binding->RootParameterIndex, Handle);
+                        }
                     }
                     if (const D3DSampler* Samp = _Samplers.Get(P.Sampler); Samp && Samp->HeapIndex != UINT32_MAX) {
-                        D3D12_GPU_DESCRIPTOR_HANDLE Handle = _SamplerHeap->GetGPUDescriptorHandleForHeapStart();
-                        Handle.ptr += CAST<UINT64>(Samp->HeapIndex) * _SamplerDescriptorSize;
-                        _CmdList->SetGraphicsRootDescriptorTable(2, Handle);
+                        if (const auto* Binding = _CurrentLayout->Find(P.Slot, BindingType::Sampler)) {
+                            D3D12_GPU_DESCRIPTOR_HANDLE Handle = _SamplerHeap->GetGPUDescriptorHandleForHeapStart();
+                            Handle.ptr += CAST<UINT64>(Samp->HeapIndex) * _SamplerDescriptorSize;
+                            if (_CurrentPipeline->IsCompute)
+                                _CmdList->SetComputeRootDescriptorTable(Binding->RootParameterIndex, Handle);
+                            else _CmdList->SetGraphicsRootDescriptorTable(Binding->RootParameterIndex, Handle);
+                        }
                     }
                     break;
                 }
@@ -1263,10 +1258,90 @@ namespace Xen::RHI::D3D12Backend {
         _Shaders.Free(Handle);
     }
 
+    // --- Resources: pipeline layouts ----------------------------------------
+
+    LayoutHandle D3D12RenderDevice::CreatePipelineLayout(const PipelineLayoutDesc& Desc) {
+        D3DPipelineLayout Layout;
+
+        std::vector<D3D12_ROOT_PARAMETER> RootParams;
+        RootParams.reserve(Desc.BindingCount);
+
+        // Reserved up front and never reallocated after: root parameters
+        // below take pointers into this vector, and Desc.BindingCount is an
+        // exact upper bound on how many ranges get pushed (at most one per
+        // binding), so those pointers stay valid through CreateRootSignature.
+        std::vector<D3D12_DESCRIPTOR_RANGE> Ranges;
+        Ranges.reserve(Desc.BindingCount);
+
+        for (u8 i = 0; i < Desc.BindingCount; ++i) {
+            const BindingSlot& B = Desc.Bindings[i];
+
+            D3DPipelineLayout::ResolvedBinding Resolved;
+            Resolved.Slot               = B.Slot;
+            Resolved.Type               = B.Type;
+            Resolved.RootParameterIndex = CAST<u32>(RootParams.size());
+
+            // A lone uniform buffer gets a root CBV - no descriptor-heap
+            // indirection for the case every draw call touches (per-frame/
+            // per-object constants). Anything else (arrays, textures,
+            // samplers, UAVs) goes through a one-range descriptor table.
+            if (B.Type == BindingType::UniformBuffer && B.Count == 1) {
+                D3D12_ROOT_PARAMETER Param {};
+                Param.ParameterType             = D3D12_ROOT_PARAMETER_TYPE_CBV;
+                Param.Descriptor.ShaderRegister = B.Slot;
+                Param.ShaderVisibility          = ToD3DVisibility(B.Visibility);
+                RootParams.push_back(Param);
+                Resolved.IsTable = false;
+            } else {
+                D3D12_DESCRIPTOR_RANGE Range {};
+                Range.RangeType                         = ToD3DRangeType(B.Type);
+                Range.NumDescriptors                    = B.Count;
+                Range.BaseShaderRegister                = B.Slot;
+                Range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+                Ranges.push_back(Range);
+
+                D3D12_ROOT_PARAMETER Param {};
+                Param.ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+                Param.DescriptorTable.NumDescriptorRanges = 1;
+                Param.DescriptorTable.pDescriptorRanges   = &Ranges.back();
+                Param.ShaderVisibility                    = ToD3DVisibility(B.Visibility);
+                RootParams.push_back(Param);
+                Resolved.IsTable = true;
+            }
+
+            Layout.Bindings[Layout.BindingCount++] = Resolved;
+        }
+
+        D3D12_ROOT_SIGNATURE_DESC RootDesc {};
+        RootDesc.NumParameters = CAST<UINT>(RootParams.size());
+        RootDesc.pParameters   = RootParams.empty() ? nullptr : RootParams.data();
+        RootDesc.Flags         = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+        ComPtr<ID3DBlob> SigBlob, ErrBlob;
+        if (FAILED(D3D12SerializeRootSignature(&RootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &SigBlob, &ErrBlob))) {
+            LOG_ERR("pipeline layout root signature serialize failed (%s): %s",
+                    Desc.DebugName ? Desc.DebugName : "?",
+                    ErrBlob ? CAST<const char*>(ErrBlob->GetBufferPointer()) : "unknown error");
+            return {};
+        }
+        if (FAILED(_Device->CreateRootSignature(
+              0, SigBlob->GetBufferPointer(), SigBlob->GetBufferSize(), IID_PPV_ARGS(&Layout.RootSignature))))
+            return {};
+
+        return _Layouts.Allocate(std::move(Layout));
+    }
+
+    void D3D12RenderDevice::DestroyPipelineLayout(const LayoutHandle Handle) {
+        if (D3DPipelineLayout* Layout = _Layouts.Get(Handle))
+            _RetiredLayouts.push_back({_NextFenceValue, std::move(*Layout)});
+        _Layouts.Free(Handle);
+    }
+
     PipelineHandle D3D12RenderDevice::CreateGraphicsPipeline(const GraphicsPipelineDesc& Desc) {
-        const D3DShader* VS = _Shaders.Get(Desc.VertexShader);
-        const D3DShader* PS = _Shaders.Get(Desc.FragmentShader);
-        if (!VS || !PS) return {};
+        const D3DShader* VS               = _Shaders.Get(Desc.VertexShader);
+        const D3DShader* PS               = _Shaders.Get(Desc.FragmentShader);
+        const D3DPipelineLayout* LayoutPtr = _Layouts.Get(Desc.PipelineLayout);
+        if (!VS || !PS || !LayoutPtr) return {};
 
         std::vector<D3D12_INPUT_ELEMENT_DESC> InputElements;
         InputElements.reserve(Desc.Layout.AttributeCount);
@@ -1295,7 +1370,7 @@ namespace Xen::RHI::D3D12Backend {
         }
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC PsoDesc {};
-        PsoDesc.pRootSignature        = _RootSignature.Get();
+        PsoDesc.pRootSignature        = LayoutPtr->RootSignature.Get();
         PsoDesc.VS                    = {VS->Bytecode->GetBufferPointer(), VS->Bytecode->GetBufferSize()};
         PsoDesc.PS                    = {PS->Bytecode->GetBufferPointer(), PS->Bytecode->GetBufferSize()};
         PsoDesc.InputLayout           = {InputElements.data(), CAST<UINT>(InputElements.size())};
@@ -1303,9 +1378,19 @@ namespace Xen::RHI::D3D12Backend {
         PsoDesc.SampleMask            = UINT_MAX;
         PsoDesc.SampleDesc.Count      = std::max<u32>(Desc.SampleCount, 1);
 
-        PsoDesc.RasterizerState.FillMode              = ToD3DFillMode(Desc.Rasterizer.Fill);
-        PsoDesc.RasterizerState.CullMode              = ToD3DCullMode(Desc.Rasterizer.Cull);
-        PsoDesc.RasterizerState.FrontCounterClockwise = Desc.Rasterizer.Front == FrontFace::CounterClockwise;
+        PsoDesc.RasterizerState.FillMode = ToD3DFillMode(Desc.Rasterizer.Fill);
+        PsoDesc.RasterizerState.CullMode = ToD3DCullMode(Desc.Rasterizer.Cull);
+        // Inverted, not a direct CCW->TRUE mapping: D3D12's front-face test
+        // happens on screen-space winding, after the NDC->viewport transform
+        // flips Y (NDC is Y-up, pixel/screen space is Y-down) - a triangle
+        // authored CCW in the standard Y-up math convention (how every mesh
+        // this engine generates is wound, e.g. Scripts/generate_primitive_
+        // meshes.py) comes out CW once that flip happens, so it has to map
+        // to FrontCounterClockwise=FALSE to still be treated as front.
+        // Confirmed empirically: a straight (non-inverted) mapping rendered
+        // a cube's far faces instead of its near ones (depth-tested visible
+        // geometry using the far face's own normal).
+        PsoDesc.RasterizerState.FrontCounterClockwise = Desc.Rasterizer.Front != FrontFace::CounterClockwise;
         PsoDesc.RasterizerState.DepthClipEnable       = TRUE;
 
         PsoDesc.DepthStencilState.DepthEnable = Desc.DepthStencil.DepthTestEnable;
@@ -1353,6 +1438,7 @@ namespace Xen::RHI::D3D12Backend {
 
         D3DPipeline Pipe;
         Pipe.PSO      = PSO;
+        Pipe.Layout   = Desc.PipelineLayout;
         Pipe.Topology = ToD3DTopology(Desc.Topology);
         for (u8 b = 0; b < Desc.Layout.BindingCount; ++b) {
             Pipe.Strides[Desc.Layout.Bindings[b].Binding] = Desc.Layout.Bindings[b].Stride;
@@ -1362,11 +1448,12 @@ namespace Xen::RHI::D3D12Backend {
     }
 
     PipelineHandle D3D12RenderDevice::CreateComputePipeline(const ComputePipelineDesc& Desc) {
-        const D3DShader* CS = _Shaders.Get(Desc.ComputeShader);
-        if (!CS) return {};
+        const D3DShader* CS               = _Shaders.Get(Desc.ComputeShader);
+        const D3DPipelineLayout* LayoutPtr = _Layouts.Get(Desc.PipelineLayout);
+        if (!CS || !LayoutPtr) return {};
 
         D3D12_COMPUTE_PIPELINE_STATE_DESC PsoDesc {};
-        PsoDesc.pRootSignature = _RootSignature.Get();
+        PsoDesc.pRootSignature = LayoutPtr->RootSignature.Get();
         PsoDesc.CS             = {CS->Bytecode->GetBufferPointer(), CS->Bytecode->GetBufferSize()};
 
         ComPtr<ID3D12PipelineState> PSO;
@@ -1374,6 +1461,7 @@ namespace Xen::RHI::D3D12Backend {
 
         D3DPipeline Pipe;
         Pipe.PSO       = PSO;
+        Pipe.Layout    = Desc.PipelineLayout;
         Pipe.IsCompute = true;
         return _Pipelines.Allocate(std::move(Pipe));
     }

@@ -38,5 +38,6 @@ add_subdirectory(${MODULES_ROOT}/XenPAK)
 add_subdirectory(${MODULES_ROOT}/CrashHandler)
 add_subdirectory(${TOOLS_ROOT})
 
-# Demo project
+# Demo projects
 add_subdirectory(${CODE_ROOT}/XenPong)
+add_subdirectory(${CODE_ROOT}/XenPBRDemo)

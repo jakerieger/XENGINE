@@ -24,11 +24,22 @@ add_library(Xen STATIC
         Component.hpp
         ComponentRegistry.cpp
         ComponentRegistry.hpp
+        DirectionalLightComponent.cpp
+        DirectionalLightComponent.hpp
         EngineConfig.hpp
         EngineContext.hpp
         Game.cpp
         Game.hpp
         Input.hpp
+        MeshAsset.hpp
+        MeshCache.cpp
+        MeshCache.hpp
+        MeshComponent.cpp
+        MeshComponent.hpp
+        MeshRenderer.cpp
+        MeshRenderer.hpp
+        PBRMaterialComponent.cpp
+        PBRMaterialComponent.hpp
         Reflection.hpp
         RenderDevice.hpp
         RHI.cpp
@@ -61,10 +72,12 @@ target_include_directories(Xen PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 
-# Every Win32 call in Window.cpp/Input.hpp is the wide (W) variant - UNICODE/_UNICODE
-# make macros like IDC_ARROW resolve to their wide form too, instead of silently
-# defaulting to the ANSI one and producing an LPSTR/LPCWSTR mismatch.
-target_compile_definitions(Xen PUBLIC UNICODE _UNICODE)
+target_compile_definitions(Xen PUBLIC
+        UNICODE
+        _UNICODE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+)
 
 target_link_libraries(Xen PUBLIC
         Xen::Common

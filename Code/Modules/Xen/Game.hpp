@@ -8,6 +8,8 @@
 
 #include "AssetSettings.hpp"
 #include "EngineConfig.hpp"
+#include "MeshCache.hpp"
+#include "MeshRenderer.hpp"
 #include "Scene.hpp"
 #include "SpriteBatcher.hpp"
 #include "SpriteRenderer.hpp"
@@ -22,8 +24,6 @@
 
 #ifdef PLATFORM_WINDOWS
     #ifndef _WINDOWS_
-        #define WIN32_LEAN_AND_MEAN
-        #define NOMINMAX
         #include <Windows.h>
     #endif
 #endif
@@ -67,8 +67,10 @@ namespace Xen {
 
         NODISCARD const EngineContext& GetContext() const { return _Context; }
         NODISCARD TextureCache& GetTextures() const { return *_Textures; }
+        NODISCARD MeshCache& GetMeshes() const { return *_Meshes; }
         NODISCARD SpriteBatcher& GetBatcher() { return _SpriteBatcher; }
         NODISCARD SpriteRenderer& GetRenderer() { return _SpriteRenderer; }
+        NODISCARD MeshRenderer& GetMeshRenderer() { return _MeshRenderer; }
         NODISCARD Viewport& GetMainViewport() { return _MainViewport; }
         NODISCARD RHI::IRenderDevice& GetRenderDevice() const { return *_RenderDevice; }
         NODISCARD Window& GetWindow() const { return *_Window; }
@@ -146,12 +148,18 @@ namespace Xen {
 
         std::unique_ptr<PAK::AssetRegistry> _Assets;
         std::unique_ptr<TextureCache> _Textures;
+        std::unique_ptr<MeshCache> _Meshes;
         EngineContext _Context {};
         SpriteBatcher _SpriteBatcher;
         std::unique_ptr<Window> _Window;
         std::unique_ptr<RHI::IRenderDevice> _RenderDevice;
         Viewport _MainViewport;
         SpriteRenderer _SpriteRenderer;
+
+        // Optional: initialization fails softly (no PBR shader asset in a
+        // 2D-only game's content is not an error) and Render() no-ops while
+        // uninitialized, so a game with no 3D content pays nothing for this.
+        MeshRenderer _MeshRenderer;
 
         std::unique_ptr<Scene> _ActiveScene;
 
@@ -198,19 +206,8 @@ namespace Xen {
     }
 }  // namespace Xen
 
-#ifdef PLATFORM_WINDOWS
-    #define XEN_ENTRYPOINT int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
-
-    #define XEN_GAME(GameClass, Title)                                                                                 \
-        XEN_ENTRYPOINT {                                                                                               \
-            Xen::RunGame<GameClass>(Title, Xen::Generated::GameSettings(), __argc, __argv);                            \
-            return 0;                                                                                                  \
-        }
-#else
-    #define XEN_ENTRYPOINT int main(int argc, char** argv)
-
-    #define XEN_GAME(GameClass, Title)                                                                                 \
-        XEN_ENTRYPOINT {                                                                                               \
-            Xen::RunGame<GameClass>(Title, Xen::Generated::GameSettings(), argc, argv);                                \
-        }
-#endif
+#define XEN_GAME(GameClass, Title)                                                                                     \
+    int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {                                                            \
+        Xen::RunGame<GameClass>(Title, Xen::Generated::GameSettings(), __argc, __argv);                                \
+        return 0;                                                                                                      \
+    }

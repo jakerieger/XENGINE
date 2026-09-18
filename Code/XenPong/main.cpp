@@ -76,7 +76,7 @@ namespace {
     }
 }  // namespace
 
-XEN_ENTRYPOINT {
+int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     try {
         XenPong Game("XenPong", BuildMountConfig(Generated::GameSettings(), __argc, __argv));
 

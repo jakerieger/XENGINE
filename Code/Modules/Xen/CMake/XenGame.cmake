@@ -1,6 +1,12 @@
 include_guard(GLOBAL)
 
-set(_XEN_GAME_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}")
+# CACHE INTERNAL, not a plain set(): include_guard(GLOBAL) means this file's
+# body only ever runs once for the whole build, in whichever subdirectory
+# scope happens to include() it first (previously always XenPong's, the only
+# consumer). A plain variable set there is invisible to a sibling
+# add_subdirectory() scope like XenPBRDemo's - only a cache variable is
+# visible everywhere regardless of which scope first ran this file.
+set(_XEN_GAME_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
 
 # Creates the game's executable target, picking the right per-platform
 # entry point subsystem (e.g. WIN32 on Windows so the game doesn't get a
@@ -12,6 +18,23 @@ function(xen_add_game_executable TARGET)
     else ()
         add_executable(${TARGET} ${ARGN})
     endif ()
+
+    # Each game gets its own output subdirectory. The top-level CMakeLists.txt
+    # sets CMAKE_RUNTIME_OUTPUT_DIRECTORY_<CONFIG> once, project-wide, for
+    # every target - on a multi-config generator (Visual Studio) that always
+    # wins over a plain CMAKE_RUNTIME_OUTPUT_DIRECTORY reassignment in a
+    # game's own CMakeLists.txt, so only the per-target RUNTIME_OUTPUT_
+    # DIRECTORY(_<CONFIG>) properties actually override it. Without this,
+    # every game executable in the project lands in the same flat bin/
+    # folder and their POST_BUILD Config copies (and, in a shippable build,
+    # their PAK_FILENAME) fight over the same files - invisible with one
+    # game, a real collision the moment a second one exists.
+    set_target_properties(${TARGET} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TARGET}")
+    foreach (config ${CMAKE_CONFIGURATION_TYPES})
+        string(TOUPPER ${config} config_upper)
+        set_target_properties(${TARGET} PROPERTIES
+                RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TARGET}")
+    endforeach ()
 endfunction()
 
 function(xen_configure_game TARGET)

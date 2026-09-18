@@ -20,6 +20,12 @@ namespace Xen {
     using Float4   = DirectX::XMFLOAT4;
     using Float4x4 = DirectX::XMFLOAT4X4;
 
+    /// @brief Same underlying type as Float4 (a using-alias, not a distinct
+    /// type - so no separate IReflector::Visit overload is needed; it
+    /// dispatches to Float4's), spelled differently at field/parameter
+    /// declarations purely so a Transform::Rotation reads as what it is.
+    using Quat = DirectX::XMFLOAT4;
+
     constexpr f32 PI      = DirectX::XM_PI;
     constexpr f32 TWO_PI  = DirectX::XM_2PI;
     constexpr f32 HALF_PI = DirectX::XM_PIDIV2;
@@ -28,6 +34,11 @@ namespace Xen {
     /// implicit identity - it's a plain POD with an uninitialized default ctor).
     inline constexpr Float4x4 IdentityFloat4x4 {
       1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+
+    /// @brief No-rotation quaternion, for default member initializers - same
+    /// reasoning as IdentityFloat4x4 (a zero-initialized XMFLOAT4 is not a
+    /// valid rotation).
+    inline constexpr Quat IdentityQuat {0.0f, 0.0f, 0.0f, 1.0f};
 
     // --- Float2 -------------------------------------------------------------
     // XMFLOAT2/3/4 are plain PODs with no operators of their own - DirectXMath
@@ -72,6 +83,48 @@ namespace Xen {
         return A.x == B.x && A.y == B.y;
     }
     constexpr bool operator!=(const Float2& A, const Float2& B) {
+        return !(A == B);
+    }
+
+    // --- Float3 ---------------------------------------------------------------
+
+    constexpr Float3 operator+(const Float3& A, const Float3& B) {
+        return {A.x + B.x, A.y + B.y, A.z + B.z};
+    }
+    constexpr Float3 operator-(const Float3& A, const Float3& B) {
+        return {A.x - B.x, A.y - B.y, A.z - B.z};
+    }
+    constexpr Float3 operator-(const Float3& A) {
+        return {-A.x, -A.y, -A.z};
+    }
+    constexpr Float3 operator*(const Float3& A, const Float3& B) {
+        return {A.x * B.x, A.y * B.y, A.z * B.z};
+    }
+    constexpr Float3 operator*(const Float3& A, const f32 S) {
+        return {A.x * S, A.y * S, A.z * S};
+    }
+    constexpr Float3 operator*(const f32 S, const Float3& A) {
+        return A * S;
+    }
+    constexpr Float3 operator/(const Float3& A, const f32 S) {
+        return {A.x / S, A.y / S, A.z / S};
+    }
+    inline Float3& operator+=(Float3& A, const Float3& B) {
+        A = A + B;
+        return A;
+    }
+    inline Float3& operator-=(Float3& A, const Float3& B) {
+        A = A - B;
+        return A;
+    }
+    inline Float3& operator*=(Float3& A, const f32 S) {
+        A = A * S;
+        return A;
+    }
+    constexpr bool operator==(const Float3& A, const Float3& B) {
+        return A.x == B.x && A.y == B.y && A.z == B.z;
+    }
+    constexpr bool operator!=(const Float3& A, const Float3& B) {
         return !(A == B);
     }
 
