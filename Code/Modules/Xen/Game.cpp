@@ -60,7 +60,13 @@ namespace Xen {
             THROW_ENGINE_EXCEPTION(EngineException, "failed to initialize render device");
         }
 
-        if (!_MainViewport.Initialize(*_RenderDevice, _Window->GetWidth(), _Window->GetHeight())) {
+        // WithDepth is always on: the cost (one extra texture) is trivial
+        // next to the alternative of threading a "does this game want 3D"
+        // flag through the constructor - a virtual hook wouldn't work here
+        // anyway, since a subclass override isn't reachable from the base
+        // constructor that runs before the derived vtable is live.
+        if (!_MainViewport.Initialize(
+              *_RenderDevice, _Window->GetWidth(), _Window->GetHeight(), RHI::Format::BGRA8_UNORM, true)) {
             THROW_ENGINE_EXCEPTION(EngineException, "failed to initialize main viewport");
         }
 
@@ -79,10 +85,18 @@ namespace Xen {
         LOG_DBG("Asset mount configuration:\n%s", PAK::DescribeMounts(*_Assets).c_str());
 
         _Textures = std::make_unique<TextureCache>(*_Assets, *_RenderDevice);
+        _Meshes   = std::make_unique<MeshCache>(*_Assets, *_RenderDevice);
 
         _Context.Assets   = _Assets.get();
         _Context.Owner    = this;
         _Context.Textures = _Textures.get();
+        _Context.Meshes   = _Meshes.get();
+
+        // Not fatal if this fails: a 2D-only game's content has no PBR
+        // shader asset, and that's a normal, expected absence, not an error.
+        if (!_MeshRenderer.Initialize(*_RenderDevice, *_Assets, _MainViewport)) {
+            LOG_DBG("mesh renderer not initialized (no PBR shader asset found) - 3D rendering unavailable");
+        }
     }
 
     Game::~Game() {
@@ -93,7 +107,9 @@ namespace Xen {
         // Game.hpp would get this right anyway; doing it here makes the
         // dependency visible instead of implicit.
         _SpriteRenderer.Shutdown();
+        _MeshRenderer.Shutdown();
         _MainViewport.Shutdown();
+        _Meshes.reset();
         _Textures.reset();
     }
 
@@ -229,6 +245,13 @@ namespace Xen {
             OnRender();
             _SpriteRenderer.Render(_SpriteBatcher, *_Textures, _MainViewport);
 
+            // Runs after sprites, on top of them, depth-tested amongst
+            // itself - a no-op if this game has no PBR shader asset (see
+            // the constructor). See MeshRenderer::Render for why its render
+            // pass loads rather than clears color: it depends on the sprite
+            // pass above having already cleared this frame.
+            if (_MeshRenderer.IsInitialized()) _MeshRenderer.Render(*_ActiveScene, _MainViewport);
+
             // Standalone-game presentation: copy the viewport's color target
             // into the back buffer. An editor wouldn't call this at all - it
             // would sample _MainViewport.GetColorTarget() into an ImGui
@@ -292,6 +315,7 @@ namespace Xen {
         _ActiveScene->EndPlay();
         _ActiveScene.reset();
         _Textures->Clear();
+        _Meshes->Clear();
     }
 
     void Game::FinishSceneLoad(std::unique_ptr<Scene> Loaded) {

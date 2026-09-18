@@ -34,10 +34,11 @@ namespace Xen {
         Viewport(Viewport&&)                 = delete;
         Viewport& operator=(Viewport&&)      = delete;
 
-        /// @brief Creates the color target. Width and Height must both be
-        /// non-zero - a viewport with no on-screen presence yet (an editor
-        /// panel not laid out) should stay uninitialized rather than being
-        /// created at some placeholder size and immediately resized.
+        /// @brief Creates the color target (and, if WithDepth, a depth
+        /// target sized to match). Width and Height must both be non-zero -
+        /// a viewport with no on-screen presence yet (an editor panel not
+        /// laid out) should stay uninitialized rather than being created at
+        /// some placeholder size and immediately resized.
         ///
         /// ColorFormat defaults to BGRA8_UNORM, matching the swap chain's own
         /// back buffer format - that's what makes CopyToSwapChain a plain GPU
@@ -45,22 +46,33 @@ namespace Xen {
         /// needing a format-converting shader. A viewport that will only
         /// ever be sampled (an editor panel, never copied to a swap chain)
         /// has no such constraint and may pass a different format.
+        ///
+        /// WithDepth is off by default - 2D content (XenPong) never depth-
+        /// tests, so it costs a texture for nothing. 3D content needs it on.
         bool Initialize(RHI::IRenderDevice& Device,
                         u32 Width,
                         u32 Height,
-                        RHI::Format ColorFormat = RHI::Format::BGRA8_UNORM);
+                        RHI::Format ColorFormat = RHI::Format::BGRA8_UNORM,
+                        bool WithDepth          = false,
+                        RHI::Format DepthFormat = RHI::Format::D32_FLOAT);
         void Shutdown();
 
         NODISCARD bool IsInitialized() const { return _Device != nullptr; }
 
-        /// @brief Recreates the color target at the new size. A no-op if the
-        /// size is unchanged or is zero in either dimension - same guard
+        /// @brief Recreates the color target (and depth target, if this
+        /// viewport has one) at the new size. A no-op if the size is
+        /// unchanged or is zero in either dimension - same guard
         /// IRenderDevice::SetSwapChainSize uses, since a minimized window
         /// reports a 0x0 client area and a 0-sized texture is invalid.
         void Resize(u32 Width, u32 Height);
 
         NODISCARD RHI::TextureHandle GetColorTarget() const { return _ColorTarget; }
         NODISCARD RHI::Format GetColorFormat() const { return _ColorFormat; }
+
+        NODISCARD bool HasDepth() const { return _DepthTarget.IsValid(); }
+        NODISCARD RHI::TextureHandle GetDepthTarget() const { return _DepthTarget; }
+        NODISCARD RHI::Format GetDepthFormat() const { return _DepthFormat; }
+
         NODISCARD u32 GetWidth() const { return _Width; }
         NODISCARD u32 GetHeight() const { return _Height; }
         NODISCARD f32 GetAspectRatio() const {
@@ -71,6 +83,8 @@ namespace Xen {
         RHI::IRenderDevice* _Device {nullptr};
         RHI::TextureHandle _ColorTarget {};
         RHI::Format _ColorFormat {RHI::Format::BGRA8_UNORM};
+        RHI::TextureHandle _DepthTarget {};
+        RHI::Format _DepthFormat {RHI::Format::D32_FLOAT};
         u32 _Width {0};
         u32 _Height {0};
     };

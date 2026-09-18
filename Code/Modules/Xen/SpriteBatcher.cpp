@@ -133,7 +133,8 @@ namespace Xen {
         const Float2 Size {SourceRect.Width / PixelsPerUnit * std::abs(WorldTransform.Scale.x),
                           SourceRect.Height / PixelsPerUnit * std::abs(WorldTransform.Scale.y)};
 
-        const f32 Extent = WorldTransform.Rotation == 0.0f ? 0.0f : std::max(Size.x, Size.y) * 0.41422f;  // sqrt(2)-1
+        const f32 Extent =
+          WorldTransform.GetRotationZ() == 0.0f ? 0.0f : std::max(Size.x, Size.y) * 0.41422f;  // sqrt(2)-1
 
         const Float2 Half {Size.x * 0.5f + Extent, Size.y * 0.5f + Extent};
 

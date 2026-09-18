@@ -86,7 +86,10 @@ namespace Xen {
 
     class SceneSerializer {
     public:
-        static constexpr u32 SCENE_FORMAT_VERSION = 1;
+        // Bumped for the Transform 2D->3D migration: Position/Scale gained a
+        // Z component and Rotation changed from a scalar to a quaternion, so
+        // a v1 file's Transform blocks don't parse the same way any more.
+        static constexpr u32 SCENE_FORMAT_VERSION = 2;
 
         static Json SaveToJson(const Scene& S);
         static void LoadFromJson(Scene& S, const Json& Root);

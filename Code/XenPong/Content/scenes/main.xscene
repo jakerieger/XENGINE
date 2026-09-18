@@ -1,5 +1,5 @@
 {
-  "Version": 1,
+  "Version": 2,
   "Name": "Main",
   "Actors": [
     {
@@ -10,10 +10,17 @@
         "Transform": {
           "Position": [
             0.0,
+            0.0,
             0.0
           ],
-          "Rotation": 0.0,
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
           "Scale": [
+            1.0,
             1.0,
             1.0
           ]
@@ -59,10 +66,17 @@
         "Transform": {
           "Position": [
             0.0,
+            0.0,
             0.0
           ],
-          "Rotation": 0.0,
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
           "Scale": [
+            1.0,
             1.0,
             1.0
           ]
@@ -104,10 +118,17 @@
         "Transform": {
           "Position": [
             0.0,
+            0.0,
             0.0
           ],
-          "Rotation": 0.0,
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
           "Scale": [
+            1.0,
             1.0,
             1.0
           ]
@@ -149,10 +170,17 @@
         "Transform": {
           "Position": [
             0.0,
+            0.0,
             0.0
           ],
-          "Rotation": 0.0,
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
           "Scale": [
+            1.0,
             1.0,
             1.0
           ]
@@ -178,10 +206,17 @@
         "Transform": {
           "Position": [
             0.0,
+            0.0,
             0.0
           ],
-          "Rotation": 0.0,
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
           "Scale": [
+            1.0,
             1.0,
             1.0
           ]

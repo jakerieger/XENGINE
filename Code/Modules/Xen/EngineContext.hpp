@@ -9,6 +9,7 @@ namespace Xen {
         class AssetRegistry;
     }
     class TextureCache;
+    class MeshCache;
     class Game;
 
     /// @brief Engine-wide services a scene and its components need.
@@ -19,6 +20,7 @@ namespace Xen {
     struct EngineContext {
         PAK::AssetRegistry* Assets {nullptr};
         TextureCache* Textures {nullptr};
+        MeshCache* Meshes {nullptr};
         Game* Owner {nullptr};
     };
 }  // namespace Xen

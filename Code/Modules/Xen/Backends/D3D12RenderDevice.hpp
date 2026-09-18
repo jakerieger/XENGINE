@@ -58,8 +58,35 @@ namespace Xen::RHI::D3D12Backend {
         ShaderStage Stage {ShaderStage::Vertex};
     };
 
+    /// @brief A root signature built from a PipelineLayoutDesc, plus enough
+    /// bookkeeping to resolve Submit()'s BindUniformBuffer(Slot=N)/
+    /// BindTexture(Slot=N)/etc. commands back to the right root parameter -
+    /// those commands only carry the slot and (by which Cmd:: type they are)
+    /// the binding type, not which root parameter index that landed at,
+    /// since that's a per-layout backend decision the RHI layer never sees.
+    struct D3DPipelineLayout {
+        ComPtr<ID3D12RootSignature> RootSignature;
+
+        struct ResolvedBinding {
+            u32 Slot {0};
+            BindingType Type {BindingType::UniformBuffer};
+            u32 RootParameterIndex {0};
+            bool IsTable {false};  // false = root descriptor (CBV only), true = descriptor table
+        };
+        std::array<ResolvedBinding, PipelineLayoutDesc::MAX_BINDINGS> Bindings {};
+        u8 BindingCount {0};
+
+        NODISCARD const ResolvedBinding* Find(const u32 Slot, const BindingType Type) const {
+            for (u8 i = 0; i < BindingCount; ++i) {
+                if (Bindings[i].Slot == Slot && Bindings[i].Type == Type) return &Bindings[i];
+            }
+            return nullptr;
+        }
+    };
+
     struct D3DPipeline {
         ComPtr<ID3D12PipelineState> PSO;
+        LayoutHandle Layout {};
         D3D12_PRIMITIVE_TOPOLOGY Topology {D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST};
         std::array<u16, MAX_VERTEX_BUFFERS> Strides {};
         bool IsCompute {false};
@@ -132,6 +159,7 @@ namespace Xen::RHI::D3D12Backend {
         TextureHandle CreateTexture(const TextureDesc& Desc) override;
         SamplerHandle CreateSampler(const SamplerDesc& Desc) override;
         ShaderHandle CreateShader(const ShaderDesc& Desc) override;
+        LayoutHandle CreatePipelineLayout(const PipelineLayoutDesc& Desc) override;
         PipelineHandle CreateGraphicsPipeline(const GraphicsPipelineDesc& Desc) override;
         PipelineHandle CreateComputePipeline(const ComputePipelineDesc& Desc) override;
 
@@ -139,6 +167,7 @@ namespace Xen::RHI::D3D12Backend {
         void DestroyTexture(TextureHandle Handle) override;
         void DestroySampler(SamplerHandle Handle) override;
         void DestroyShader(ShaderHandle Handle) override;
+        void DestroyPipelineLayout(LayoutHandle Handle) override;
         void DestroyPipeline(PipelineHandle Handle) override;
 
         void UploadTexture(TextureHandle Handle, const TextureUploadDesc& Upload) override;
@@ -257,12 +286,11 @@ namespace Xen::RHI::D3D12Backend {
         std::vector<u32> _FreeOffscreenRtvSlots;
         std::vector<u32> _FreeOffscreenDsvSlots;
 
-        ComPtr<ID3D12RootSignature> _RootSignature;
-
         Pool<D3DBuffer, BufferHandle> _Buffers;
         Pool<D3DTexture, TextureHandle> _Textures;
         Pool<D3DSampler, SamplerHandle> _Samplers;
         Pool<D3DShader, ShaderHandle> _Shaders;
+        Pool<D3DPipelineLayout, LayoutHandle> _Layouts;
         Pool<D3DPipeline, PipelineHandle> _Pipelines;
 
         // Declared after the pools/allocator above (and so destroyed before
@@ -275,11 +303,13 @@ namespace Xen::RHI::D3D12Backend {
         std::deque<RetiredResource<D3DTexture>> _RetiredTextures;
         std::deque<RetiredResource<D3DSampler>> _RetiredSamplers;
         std::deque<RetiredResource<D3DShader>> _RetiredShaders;
+        std::deque<RetiredResource<D3DPipelineLayout>> _RetiredLayouts;
         std::deque<RetiredResource<D3DPipeline>> _RetiredPipelines;
 
         TransientRing _Transient;
 
         const D3DPipeline* _CurrentPipeline {nullptr};
+        const D3DPipelineLayout* _CurrentLayout {nullptr};
 
         u32 _FrameIndex {0};
         u32 _SwapWidth {0};

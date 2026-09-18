@@ -72,6 +72,7 @@ namespace Xen {
         RHI::IRenderDevice* _Device {nullptr};
         Config _Config {};
 
+        RHI::LayoutHandle _Layout {};
         RHI::PipelineHandle _Pipeline {};
         RHI::SamplerHandle _Sampler {};
         RHI::CommandBuffer _Commands;

@@ -42,11 +42,27 @@ namespace Xen {
         Transform& GetLocalTransform() { return _Transform; }
         void SetLocalTransform(const Transform& Transform) { _Transform = Transform; }
 
-        Float2 GetPosition() const { return _Transform.Position; }
-        void SetPosition(const Float2& Position) { _Transform.Position = Position; }
+        Float3 GetPosition() const { return _Transform.Position; }
+        void SetPosition(const Float3& Position) { _Transform.Position = Position; }
 
-        f32 GetRotation() const { return _Transform.Rotation; }
-        void SetRotation(const f32 Rotation) { _Transform.Rotation = Rotation; }
+        /// @brief 2D convenience: sets X/Y and leaves Z exactly as it was,
+        /// rather than zeroing it - the widened-Float3 overload above would
+        /// otherwise silently stomp any Z an actor had if a 2D call site kept
+        /// writing a 2-component position.
+        void SetPosition(const Float2& Position) {
+            _Transform.Position = {Position.x, Position.y, _Transform.Position.z};
+        }
+
+        Quat GetRotation() const { return _Transform.Rotation; }
+        void SetRotation(const Quat& Rotation) { _Transform.Rotation = Rotation; }
+
+        /// @brief 2D convenience, matching the old single-float Rotation this
+        /// superseded - see Transform::GetRotationZ/SetRotationZ.
+        f32 GetRotationZ() const { return _Transform.GetRotationZ(); }
+        void SetRotationZ(const f32 Rotation) { _Transform.SetRotationZ(Rotation); }
+
+        Float3 GetScale() const { return _Transform.Scale; }
+        void SetScale(const Float3& Scale) { _Transform.Scale = Scale; }
 
         Transform GetWorldTransform() const;
 

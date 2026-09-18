@@ -1,7 +1,5 @@
 project(Xen2D)
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/XenPong)
-
 include(XenGame)
 xen_add_game_executable(XenPong
         main.cpp

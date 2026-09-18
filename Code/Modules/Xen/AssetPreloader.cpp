@@ -4,6 +4,7 @@
 
 #include "AssetPreloader.hpp"
 #include "TextureCache.hpp"
+#include "MeshCache.hpp"
 
 #include <unordered_set>
 
@@ -35,14 +36,26 @@ namespace Xen {
 
     void PreloadSceneAssets(const Scene& S, const std::function<bool(size_t, size_t)>& Progress) {
         TextureCache* Textures = S.GetContext().Textures;
-        if (!Textures) return;
+        MeshCache* Meshes      = S.GetContext().Meshes;
 
-        // Textures only. Feeding a scene or audio reference to the texture
-        // cache would decode JSON as an image.
-        const std::vector<AssetID> Assets = GatherSceneAssets(S, AssetKind::Texture);
+        // One kind at a time, each fed only its own kind's references -
+        // feeding a mesh reference to the texture cache would decode raw
+        // vertex bytes as an image, and vice versa.
+        std::vector<AssetID> Assets;
+        if (Textures) {
+            const std::vector<AssetID> TextureAssets = GatherSceneAssets(S, AssetKind::Texture);
+            Assets.insert(Assets.end(), TextureAssets.begin(), TextureAssets.end());
+        }
+        const size_t TextureCount = Assets.size();
+
+        if (Meshes) {
+            const std::vector<AssetID> MeshAssets = GatherSceneAssets(S, AssetKind::Mesh);
+            Assets.insert(Assets.end(), MeshAssets.begin(), MeshAssets.end());
+        }
 
         for (size_t i = 0; i < Assets.size(); ++i) {
-            Textures->Preload(Assets[i]);
+            if (i < TextureCount) Textures->Preload(Assets[i]);
+            else Meshes->Preload(Assets[i]);
 
             if (Progress && !Progress(i + 1, Assets.size())) return;
         }

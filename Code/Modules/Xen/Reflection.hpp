@@ -34,6 +34,7 @@ namespace Xen {
         Texture,
         Audio,
         Scene,
+        Mesh,
         Data,
     };
 
