@@ -9,7 +9,9 @@
 namespace Xen::Generated {
     inline AssetSettings GameSettings() {
         AssetSettings Settings;
-        Settings.PakFiles                    = { @XEN_GEN_PAK_FILES@ };
+        Settings.PakFiles                    = { @XEN_GEN_PAK_FILES@,
+                                                 @XEN_ENGINE_SHADERS_PAK@,
+                                                 @XEN_ENGINE_ENVIRONMENT_PAK@ };
         Settings.ContentDirs                 = { @XEN_GEN_CONTENT_DIRS@ };
         Settings.AllowCommandLineContentDirs = @XEN_GEN_ALLOW_CLI_DIRS@;
 

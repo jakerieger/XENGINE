@@ -14,15 +14,16 @@ xen_configure_game(XenPBRDemo
 
 target_include_directories(XenPBRDemo PRIVATE Runtime Runtime/Source ${MODULES_ROOT} ${VENDOR_ROOT})
 
-# Compile engine shaders.
-#file(GLOB ENGINE_SHADERS "${CODE_ROOT}/Shaders/*.hlsl")
-#
-#foreach (SHADER_PATH ${ENGINE_SHADERS})
-#    get_filename_component(SHADER_NAME ${SHADER_PATH} NAME)
-#    message(STATUS "Compiling shader: ${SHADER_NAME}")
-#
-#
-#endforeach ()
+# TODO: Move all of this to XenGame.cmake and execute them via function(s)
+
+# Compile engine shaders
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_custom_target(compile_engine_shaders ALL
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/Scripts/compile_engine_shaders.py"
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Compiling engine shaders..."
+)
+add_dependencies(XenPBRDemo compile_engine_shaders)
 
 add_custom_command(
         TARGET XenPBRDemo
