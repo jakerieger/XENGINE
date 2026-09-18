@@ -59,6 +59,10 @@ function(xen_configure_game TARGET)
         set(XEN_GEN_PAK_FILES "R\"(${ARG_PAK_FILENAME})\"")
     endif ()
 
+    set(XEN_ENGINE_SHADERS_PAK "R\"(Engine/XEN.Shaders.xpak)\"")
+
+    set(XEN_ENGINE_ENVIRONMENT_PAK "R\"(Engine/XEN.Environment.xpak)\"")
+
     set(XEN_GEN_CONTENT_DIRS "")
     foreach (dir IN LISTS ARG_CONTENT_DIRS)
         get_filename_component(dir "${dir}" ABSOLUTE)
