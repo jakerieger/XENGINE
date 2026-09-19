@@ -9,7 +9,7 @@ from pathlib import Path
 
 def pull_git_submodules() -> bool:
     imgui_path = Path(__file__).parent / "Code" / "Vendor" / "imgui"
-    if not imgui_path.exists():
+    if not any(imgui_path.iterdir()):
         print("ImGui submodule not found. Pulling it...")
 
         # Clone submodule
