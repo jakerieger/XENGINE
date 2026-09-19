@@ -211,8 +211,18 @@ namespace Xen::RHI::D3D12Backend {
         const bool LinearMag = Mag == FilterMode::Linear;
         const bool LinearMip = Mip == MipMode::Linear;
 
-        // Encodes as a 3-bit (min,mag,mip) index into D3D12_FILTER's point/linear enum ordering.
-        const u32 Bits = (LinearMin ? 0b100u : 0u) | (LinearMag ? 0b010u : 0u) | (LinearMip ? 0b001u : 0u);
+        // D3D12_FILTER's point/linear values are NOT the plain 0-7 range a
+        // packed 3-bit (min,mag,mip) index would suggest - min occupies bit
+        // 4 (0x10), mag bit 2 (0x4), mip bit 0 (0x1), with the bits between
+        // them always zero (e.g. D3D12_FILTER_MIN_MAG_MIP_LINEAR is 0x15,
+        // not 0x7). Only MipMode::None (bit 0 always clear) happened to
+        // alias onto a value the driver silently tolerated - MipMode::Linear
+        // (the trilinear case) produces a genuinely invalid D3D12_FILTER
+        // that CreateSampler rejects hard enough to remove the device, not
+        // just fail the call. Confirmed via the debug layer's message
+        // callback: "CreateSampler2: Filter unrecognized" immediately
+        // followed by device removal.
+        const u32 Bits = (LinearMin ? 0x10u : 0u) | (LinearMag ? 0x04u : 0u) | (LinearMip ? 0x01u : 0u);
         return CAST<D3D12_FILTER>(Bits);
     }
 }  // namespace Xen::RHI::D3D12Backend

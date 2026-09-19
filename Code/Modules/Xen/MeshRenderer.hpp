@@ -47,10 +47,26 @@ namespace Xen {
         void Render(const Scene& S, const Viewport& Target);
 
     private:
+        bool CreateDefaultTextures();
+
         RHI::IRenderDevice* _Device {nullptr};
 
         RHI::LayoutHandle _Layout {};
         RHI::PipelineHandle _Pipeline {};
         RHI::CommandBuffer _Commands;
+
+        // Shared by every material texture slot (see MaterialBindings.hpp) -
+        // one physical sampler bound repeatedly rather than one per channel,
+        // since PBR maps all want the same tiling/filtering behavior.
+        RHI::SamplerHandle _Sampler {};
+
+        // Bound for whichever of a material's five channels has no map
+        // assigned, so every draw always binds all five textures and the
+        // shader never branches on "is this map present" - see PBR.hlsl.
+        // White multiplies through as the identity for Albedo/
+        // MetallicRoughness/AmbientOcclusion/Emissive; flat-normal
+        // (0.5, 0.5, 1.0, decoding to (0,0,1)) is the identity for Normal.
+        RHI::TextureHandle _WhiteTexture {};
+        RHI::TextureHandle _FlatNormalTexture {};
     };
 }  // namespace Xen
