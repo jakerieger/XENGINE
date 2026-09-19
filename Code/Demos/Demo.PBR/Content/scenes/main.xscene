@@ -49,7 +49,12 @@
               0.0,
               0.0,
               0.0
-            ]
+            ],
+            "AlbedoMap": 0,
+            "NormalMap": 0,
+            "MetallicRoughnessMap": 0,
+            "AmbientOcclusionMap": 0,
+            "EmissiveMap": 0
           }
         },
         {

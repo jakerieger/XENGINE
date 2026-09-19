@@ -38,6 +38,7 @@ add_library(Xen STATIC
         Game.cpp
         Game.hpp
         Input.hpp
+        MaterialBindings.hpp
         MeshCache.cpp
         MeshCache.hpp
         MeshComponent.cpp

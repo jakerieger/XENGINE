@@ -3,6 +3,7 @@
 //
 
 #include "MeshRenderer.hpp"
+#include "MaterialBindings.hpp"
 #include "MeshComponent.hpp"
 #include "PBRMaterialComponent.hpp"
 #include "DirectionalLightComponent.hpp"
@@ -80,13 +81,19 @@ namespace Xen {
         }
 
         // b0 per-frame (view-projection, camera, light), b1 per-object
-        // (model matrix), b2 per-material (constant PBR factors - no
-        // textures yet). Matches Code/Shaders/PBR.hlsl's register() decls
+        // (model matrix), b2 per-material (constant PBR factors), plus five
+        // texture+sampler pairs at the standardized slots every material
+        // pipeline built this way shares - see MaterialBindings.hpp and
+        // Code/Shaders/Include/MaterialBindings.hlsli, which this must match
         // exactly.
         RHI::PipelineLayoutDesc LayoutDesc;
-        LayoutDesc.Binding(0, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All)
-          .Binding(1, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All)
-          .Binding(2, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::Fragment);
+        LayoutDesc.Binding(MaterialSlot::Frame, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All)
+          .Binding(MaterialSlot::Object, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All)
+          .Binding(MaterialSlot::Material, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::Fragment);
+        for (u32 Slot = 0; Slot < MaterialSlot::TextureSlotCount; ++Slot) {
+            LayoutDesc.Binding(Slot, RHI::BindingType::SampledTexture, RHI::ShaderVisibility::Fragment)
+              .Binding(Slot, RHI::BindingType::Sampler, RHI::ShaderVisibility::Fragment);
+        }
         LayoutDesc.DebugName = "XEN.Shaders.PBR";
 
         _Layout = Device.CreatePipelineLayout(LayoutDesc);
@@ -133,7 +140,48 @@ namespace Xen {
             return false;
         }
 
+        RHI::SamplerDesc SamplerDesc;
+        SamplerDesc.DebugName = "XEN.PBR";
+        _Sampler              = Device.CreateSampler(SamplerDesc);
+
+        if (!_Sampler.IsValid() || !CreateDefaultTextures()) {
+            Shutdown();
+            return false;
+        }
+
         return true;
+    }
+
+    bool MeshRenderer::CreateDefaultTextures() {
+        // Bound for any material channel with no map assigned (see
+        // MeshRenderer.hpp) - both are 1x1 so the cost of always binding
+        // them, for a game with no textured materials at all, is trivial.
+        const auto MakeSolid = [this](const u8 R, const u8 G, const u8 B, const u8 A, const char* Name) {
+            RHI::TextureDesc Desc;
+            Desc.Width     = 1;
+            Desc.Height    = 1;
+            Desc.Fmt       = RHI::Format::RGBA8_UNORM;
+            Desc.Usage     = RHI::TextureUsage::Sampled;
+            Desc.DebugName = Name;
+
+            const RHI::TextureHandle Handle = _Device->CreateTexture(Desc);
+            if (!Handle.IsValid()) return RHI::TextureHandle {};
+
+            const u8 Pixel[4] = {R, G, B, A};
+            RHI::TextureUploadDesc Upload;
+            Upload.Data     = Pixel;
+            Upload.DataSize = sizeof(Pixel);
+            Upload.Width    = 1;
+            Upload.Height   = 1;
+            _Device->UploadTexture(Handle, Upload);
+
+            return Handle;
+        };
+
+        _WhiteTexture      = MakeSolid(255, 255, 255, 255, "XEN.PBR.White");
+        _FlatNormalTexture = MakeSolid(128, 128, 255, 255, "XEN.PBR.FlatNormal");
+
+        return _WhiteTexture.IsValid() && _FlatNormalTexture.IsValid();
     }
 
     void MeshRenderer::Shutdown() {
@@ -141,10 +189,16 @@ namespace Xen {
 
         if (_Pipeline.IsValid()) _Device->DestroyPipeline(_Pipeline);
         if (_Layout.IsValid()) _Device->DestroyPipelineLayout(_Layout);
+        if (_Sampler.IsValid()) _Device->DestroySampler(_Sampler);
+        if (_WhiteTexture.IsValid()) _Device->DestroyTexture(_WhiteTexture);
+        if (_FlatNormalTexture.IsValid()) _Device->DestroyTexture(_FlatNormalTexture);
 
-        _Pipeline = {};
-        _Layout   = {};
-        _Device   = nullptr;
+        _Pipeline          = {};
+        _Layout            = {};
+        _Sampler           = {};
+        _WhiteTexture      = {};
+        _FlatNormalTexture = {};
+        _Device            = nullptr;
     }
 
     void MeshRenderer::Render(const Scene& S, const Viewport& Target) {
@@ -201,7 +255,7 @@ namespace Xen {
             Frame.LightColorAndIntensity = {LightColor.x, LightColor.y, LightColor.z, LightIntensity};
 
             _Commands.BindPipeline(_Pipeline);
-            _Commands.BindUniformBuffer(0, _Device->AllocateUniform(Frame));
+            _Commands.BindUniformBuffer(MaterialSlot::Frame, _Device->AllocateUniform(Frame));
 
             S.ForEachActor([&](Actor& A) {
                 auto* MeshComp     = A.GetComponent<MeshComponent>();
@@ -229,8 +283,21 @@ namespace Xen {
                 const Float3& Emissive     = MaterialComp->GetEmissive();
                 Material.EmissiveAndPad    = {Emissive.x, Emissive.y, Emissive.z, 0.0f};
 
-                _Commands.BindUniformBuffer(1, _Device->AllocateUniform(Object));
-                _Commands.BindUniformBuffer(2, _Device->AllocateUniform(Material));
+                _Commands.BindUniformBuffer(MaterialSlot::Object, _Device->AllocateUniform(Object));
+                _Commands.BindUniformBuffer(MaterialSlot::Material, _Device->AllocateUniform(Material));
+
+                // Every channel is always bound - a material with no map
+                // assigned for a slot falls back to a placeholder that
+                // multiplies through as the identity (see PBR.hlsl), so
+                // there's no per-material branch to take here either.
+                const auto BindChannel = [&](const u32 Slot, const RHI::TextureHandle Handle, const RHI::TextureHandle Fallback) {
+                    _Commands.BindTexture(Slot, Handle.IsValid() ? Handle : Fallback, _Sampler);
+                };
+                BindChannel(MaterialSlot::Albedo, MaterialComp->GetAlbedoMap(), _WhiteTexture);
+                BindChannel(MaterialSlot::Normal, MaterialComp->GetNormalMap(), _FlatNormalTexture);
+                BindChannel(MaterialSlot::MetallicRoughness, MaterialComp->GetMetallicRoughnessMap(), _WhiteTexture);
+                BindChannel(MaterialSlot::AmbientOcclusion, MaterialComp->GetAmbientOcclusionMap(), _WhiteTexture);
+                BindChannel(MaterialSlot::Emissive, MaterialComp->GetEmissiveMap(), _WhiteTexture);
 
                 _Commands.BindVertexBuffer(0, VertexBuffer);
                 _Commands.BindIndexBuffer(IndexBuffer, Info.IndexType);
