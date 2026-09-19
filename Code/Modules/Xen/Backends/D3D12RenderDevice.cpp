@@ -6,6 +6,7 @@
 #include "../CommandBuffer.hpp"
 
 #include <d3dcompiler.h>
+#include <psapi.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -17,6 +18,24 @@ namespace Xen::RHI::D3D12Backend {
 
         u64 AlignUp(const u64 Value, const u64 Align) {
             return (Value + Align - 1) & ~(Align - 1);
+        }
+
+        // Only the formats UploadTexture is ever called with - RGBA8 for
+        // TextureCache's LDR images and MeshRenderer's 1x1 placeholders,
+        // RGBA16F for TextureCache's HDR (.hdr) images. Anything else logs an
+        // error rather than silently guessing a pitch with no trace.
+        u64 BytesPerPixel(const DXGI_FORMAT Format) {
+            switch (Format) {
+                case DXGI_FORMAT_R8G8B8A8_UNORM:
+                case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+                case DXGI_FORMAT_B8G8R8A8_UNORM:
+                    return 4;
+                case DXGI_FORMAT_R16G16B16A16_FLOAT:
+                    return 8;
+                default:
+                    LOG_ERR("UploadTexture: unsupported DXGI format %d", CAST<int>(Format));
+                    return 4;
+            }
         }
 
         D3D12_RESOURCE_STATES RestingBufferState(const BufferUsage Usage) {
@@ -470,6 +489,7 @@ namespace Xen::RHI::D3D12Backend {
             const D3DTexture& Tex = _RetiredTextures.front().Item;
             if (Tex.SrvHeapIndex != UINT32_MAX) _FreeSrvSlots.push_back(Tex.SrvHeapIndex);
             if (Tex.RtvHeapIndex != UINT32_MAX) _FreeOffscreenRtvSlots.push_back(Tex.RtvHeapIndex);
+            for (const u32 MipSlot : Tex.MipRtvHeapIndices) _FreeOffscreenRtvSlots.push_back(MipSlot);
             if (Tex.DsvHeapIndex != UINT32_MAX) _FreeOffscreenDsvSlots.push_back(Tex.DsvHeapIndex);
             _RetiredTextures.pop_front();
         }
@@ -508,6 +528,18 @@ namespace Xen::RHI::D3D12Backend {
 
     void D3D12RenderDevice::Submit(const CommandBuffer& Commands) {
         CommandIterator It(Commands);
+
+        // ElementCount is VertexCount (Draw) or IndexCount (DrawIndexed) for
+        // one instance - only TriangleList/TriangleStrip actually draw
+        // triangles, so anything else (point/line topologies) contributes 0.
+        const auto TrianglesPerInstance = [this](const u32 ElementCount) -> u32 {
+            if (!_CurrentPipeline) return 0;
+            switch (_CurrentPipeline->Topology) {
+                case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST: return ElementCount / 3;
+                case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP: return ElementCount >= 3 ? ElementCount - 2 : 0;
+                default: return 0;
+            }
+        };
 
         while (It.HasNext()) {
             const CmdHeader& Header = It.Next();
@@ -672,6 +704,7 @@ namespace Xen::RHI::D3D12Backend {
                     const auto& P = It.Payload<Cmd::Draw>();
                     _CmdList->DrawInstanced(P.VertexCount, P.InstanceCount, P.FirstVertex, P.FirstInstance);
                     ++_Stats.DrawCalls;
+                    _Stats.TriangleCount += TrianglesPerInstance(P.VertexCount) * P.InstanceCount;
                     break;
                 }
 
@@ -683,6 +716,7 @@ namespace Xen::RHI::D3D12Backend {
                                                    P.VertexOffset,
                                                    P.FirstInstance);
                     ++_Stats.DrawCalls;
+                    _Stats.TriangleCount += TrianglesPerInstance(P.IndexCount) * P.InstanceCount;
                     break;
                 }
 
@@ -711,6 +745,30 @@ namespace Xen::RHI::D3D12Backend {
 
             ++_Stats.CommandsExecuted;
         }
+    }
+
+    void D3D12RenderDevice::SubmitAndWait(const CommandBuffer& Commands) {
+        // Every Execute*/Transition* helper below records through _CmdList, so
+        // rather than threading a list parameter through all of them, point
+        // _CmdList at the immediate upload list for the duration of one
+        // Submit() and put the frame's list back afterwards. Safe only
+        // outside BeginFrame/EndFrame (see IRenderDevice::SubmitAndWait) -
+        // the frame list is never touched while swapped out.
+        ExecuteUploadAndWait([&](ID3D12GraphicsCommandList* List) {
+            ComPtr<ID3D12GraphicsCommandList> FrameList = std::move(_CmdList);
+            _CmdList                                    = List;
+
+            ID3D12DescriptorHeap* Heaps[] = {_SrvHeap.Get(), _SamplerHeap.Get()};
+            _CmdList->SetDescriptorHeaps(2, Heaps);
+            _CurrentPipeline = nullptr;
+            _CurrentLayout   = nullptr;
+
+            Submit(Commands);
+
+            _CmdList         = std::move(FrameList);
+            _CurrentPipeline = nullptr;
+            _CurrentLayout   = nullptr;
+        });
     }
 
     void D3D12RenderDevice::EndFrame() {
@@ -780,18 +838,33 @@ namespace Xen::RHI::D3D12Backend {
                 continue;
             }
 
+            // MipLevel picks which of the texture's per-mip RTVs (see
+            // CreateTexture) the pass renders into; the viewport below is
+            // that mip's own extent, not the texture's base size.
+            const u32 MipLevel = Desc.ColorAttachments[i].MipLevel;
+            u32 RtvIndex       = Tex->RtvHeapIndex;
+            if (MipLevel > 0) {
+                if (MipLevel - 1 >= Tex->MipRtvHeapIndices.size()) {
+                    LOG_ERR("offscreen render pass: color attachment %u targets mip %u, which has no render-target view",
+                            i,
+                            MipLevel);
+                    continue;
+                }
+                RtvIndex = Tex->MipRtvHeapIndices[MipLevel - 1];
+            }
+
             TransitionTexture(*Tex, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
             D3D12_CPU_DESCRIPTOR_HANDLE Handle = _OffscreenRtvHeap->GetCPUDescriptorHandleForHeapStart();
-            Handle.ptr += CAST<UINT64>(Tex->RtvHeapIndex) * _OffscreenRtvDescriptorSize;
+            Handle.ptr += CAST<UINT64>(RtvIndex) * _OffscreenRtvDescriptorSize;
             RtvHandles[i] = Handle;
 
             if (Desc.ColorAttachments[i].Load == LoadOp::Clear) {
                 _CmdList->ClearRenderTargetView(Handle, Desc.ColorAttachments[i].Clear.Color, 0, nullptr);
             }
 
-            Width  = Tex->Width;
-            Height = Tex->Height;
+            Width  = std::max(Tex->Width >> MipLevel, 1u);
+            Height = std::max(Tex->Height >> MipLevel, 1u);
 
             _CurrentColorAttachments[_CurrentColorAttachmentCount++] = Desc.ColorAttachments[i].Texture;
         }
@@ -1086,13 +1159,34 @@ namespace Xen::RHI::D3D12Backend {
         }
 
         if (WantsColorTarget) {
-            Tex.RtvHeapIndex = AllocateOffscreenRtvSlot();
-            if (Tex.RtvHeapIndex != UINT32_MAX) {
+            // One RTV per mip of a plain (non-array) texture, so a render
+            // pass can target any single mip; an array texture keeps the
+            // whole-resource default view (no per-slice targeting yet).
+            const bool PerMipViews = ResDesc.DepthOrArraySize == 1;
+            const u32 ViewCount    = PerMipViews ? ResDesc.MipLevels : 1;
+
+            for (u32 Mip = 0; Mip < ViewCount; ++Mip) {
+                const u32 Slot = AllocateOffscreenRtvSlot();
+                if (Slot == UINT32_MAX) {
+                    LOG_ERR("offscreen RTV heap exhausted (capacity %u)", OffscreenRtvHeapCapacity);
+                    break;
+                }
+
                 D3D12_CPU_DESCRIPTOR_HANDLE Handle = _OffscreenRtvHeap->GetCPUDescriptorHandleForHeapStart();
-                Handle.ptr += CAST<UINT64>(Tex.RtvHeapIndex) * _OffscreenRtvDescriptorSize;
-                _Device->CreateRenderTargetView(Tex.Resource.Get(), nullptr, Handle);
-            } else {
-                LOG_ERR("offscreen RTV heap exhausted (capacity %u)", OffscreenRtvHeapCapacity);
+                Handle.ptr += CAST<UINT64>(Slot) * _OffscreenRtvDescriptorSize;
+
+                if (PerMipViews) {
+                    D3D12_RENDER_TARGET_VIEW_DESC RtvDesc {};
+                    RtvDesc.Format               = Tex.Format;
+                    RtvDesc.ViewDimension        = D3D12_RTV_DIMENSION_TEXTURE2D;
+                    RtvDesc.Texture2D.MipSlice   = Mip;
+                    _Device->CreateRenderTargetView(Tex.Resource.Get(), &RtvDesc, Handle);
+                } else {
+                    _Device->CreateRenderTargetView(Tex.Resource.Get(), nullptr, Handle);
+                }
+
+                if (Mip == 0) Tex.RtvHeapIndex = Slot;
+                else Tex.MipRtvHeapIndices.push_back(Slot);
             }
         }
 
@@ -1153,8 +1247,11 @@ namespace Xen::RHI::D3D12Backend {
         u8* Mapped = nullptr;
         UploadRes->Map(0, nullptr, RCAST<void**>(&Mapped));
 
-        const auto* Src    = CAST<const u8*>(Upload.Data);
-        const u64 SrcPitch = Upload.Width * 4;  // RGBA8 - the only format the texture cache uploads today
+        // Upload.Width is 0 for "the full mip extent" (TextureUploadDesc),
+        // so fall back to the footprint's own width rather than trusting it.
+        const u64 UploadWidth = Upload.Width != 0 ? Upload.Width : Footprint.Footprint.Width;
+        const auto* Src       = CAST<const u8*>(Upload.Data);
+        const u64 SrcPitch    = UploadWidth * BytesPerPixel(ResDesc.Format);
         for (UINT Row = 0; Row < NumRows; ++Row) {
             std::memcpy(Mapped + Footprint.Offset + CAST<u64>(Row) * Footprint.Footprint.RowPitch,
                         Src + Row * SrcPitch,
@@ -1163,13 +1260,18 @@ namespace Xen::RHI::D3D12Backend {
         UploadRes->Unmap(0, nullptr);
 
         ExecuteUploadAndWait([&](ID3D12GraphicsCommandList* List) {
+            // Whole-resource transitions from the tracked state, not just
+            // this subresource from COMMON: a texture uploaded one mip at a
+            // time (an HDR environment map's pyramid) would otherwise leave
+            // its first-uploaded mip in a different state from the rest while
+            // CurrentState claims one state for all of them.
             D3D12_RESOURCE_BARRIER ToCopyDest {};
             ToCopyDest.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
             ToCopyDest.Transition.pResource   = Tex->Resource.Get();
-            ToCopyDest.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
+            ToCopyDest.Transition.StateBefore = Tex->CurrentState;
             ToCopyDest.Transition.StateAfter  = D3D12_RESOURCE_STATE_COPY_DEST;
-            ToCopyDest.Transition.Subresource = Subresource;
-            List->ResourceBarrier(1, &ToCopyDest);
+            ToCopyDest.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            if (ToCopyDest.Transition.StateBefore != D3D12_RESOURCE_STATE_COPY_DEST) List->ResourceBarrier(1, &ToCopyDest);
 
             D3D12_TEXTURE_COPY_LOCATION Dst {};
             Dst.pResource        = Tex->Resource.Get();
@@ -1193,7 +1295,7 @@ namespace Xen::RHI::D3D12Backend {
             ToShaderResource.Transition.pResource   = Tex->Resource.Get();
             ToShaderResource.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
             ToShaderResource.Transition.StateAfter  = ShaderReadable;
-            ToShaderResource.Transition.Subresource = Subresource;
+            ToShaderResource.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
             List->ResourceBarrier(1, &ToShaderResource);
         });
 
@@ -1525,6 +1627,34 @@ namespace Xen::RHI::D3D12Backend {
 
     TransientAllocation D3D12RenderDevice::AllocateTransient(const u32 Size, BufferUsage) {
         return _Transient.Allocate(Size, _Transient.GetHandle(_FrameIndex));
+    }
+
+    // --- Memory stats ----------------------------------------------------------
+
+    MemoryStats D3D12RenderDevice::GetMemoryStats() const {
+        MemoryStats Stats {};
+
+        if (_Allocator) {
+            // Local budget = video memory on a discrete GPU, or the single
+            // shared pool on UMA (see D3D12MA::Allocator::GetBudget's own
+            // doc comment) - either way, "GPU memory" for our purposes.
+            D3D12MA::Budget Local {};
+            _Allocator->GetBudget(&Local, nullptr);
+            Stats.GpuAllocatedBytes = Local.Stats.AllocationBytes;
+            Stats.GpuReservedBytes  = Local.Stats.BlockBytes;
+            Stats.GpuUsageBytes     = Local.UsageBytes;
+            Stats.GpuBudgetBytes    = Local.BudgetBytes;
+        }
+
+        // K32GetProcessMemoryInfo is forwarded from kernel32 (Vista+), unlike
+        // GetProcessMemoryInfo which needs Psapi.lib - avoids an extra link
+        // dependency for one stat.
+        PROCESS_MEMORY_COUNTERS Counters {};
+        if (::K32GetProcessMemoryInfo(::GetCurrentProcess(), &Counters, sizeof(Counters))) {
+            Stats.ProcessRamBytes = Counters.WorkingSetSize;
+        }
+
+        return Stats;
     }
 
     std::unique_ptr<IRenderDevice> CreateRenderDevice(const Backend API) {

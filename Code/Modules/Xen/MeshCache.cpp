@@ -165,6 +165,8 @@ namespace Xen {
         IBDesc.DebugName   = "Mesh IB";
         Mesh.IndexBuffer   = _Device->CreateBuffer(IBDesc);
 
+        Mesh.Info.GpuBytes = VBDesc.Size + IBDesc.Size;
+
         if (!Mesh.VertexBuffer.IsValid() || !Mesh.IndexBuffer.IsValid()) {
             THROW_ENGINE_EXCEPTION(EngineException, std::format("GPU mesh buffer creation failed for asset {}", ID.Value));
         }
@@ -182,9 +184,11 @@ namespace Xen {
 
         GpuMesh Mesh {CreateGpuMesh(ID)};
         const MeshHandle Handle {_NextHandleID++};
+        const u64 Bytes = Mesh.Info.GpuBytes;
 
         _MeshesByHandle.emplace(Handle.ID, std::move(Mesh));
         _Entries.emplace(ID.Value, Entry {Handle, 1});
+        _ResidentBytes += Bytes;
         return Handle;
     }
 
@@ -206,9 +210,11 @@ namespace Xen {
 
         GpuMesh Mesh {CreateGpuMesh(ID)};
         const MeshHandle Handle {_NextHandleID++};
+        const u64 Bytes = Mesh.Info.GpuBytes;
 
         _MeshesByHandle.emplace(Handle.ID, std::move(Mesh));
         _Entries.emplace(ID.Value, Entry {Handle, 0});
+        _ResidentBytes += Bytes;
     }
 
     bool MeshCache::IsResident(const AssetID ID) const {
@@ -246,6 +252,7 @@ namespace Xen {
             _Device->DestroyBuffer(It->second.IndexBuffer);
         }
 
+        _ResidentBytes -= It->second.Info.GpuBytes;
         _MeshesByHandle.erase(It);
     }
 
@@ -256,5 +263,6 @@ namespace Xen {
 
         _Entries.clear();
         _MeshesByHandle.clear();
+        _ResidentBytes = 0;
     }
 }  // namespace Xen

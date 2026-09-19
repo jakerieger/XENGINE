@@ -233,13 +233,13 @@ float4 PSMain(PSInput In) : SV_Target {
 
                 for (u32 i = 0; i < Count; ++i) {
                     const SpriteDrawItem& Item = Items[i];
-                    const auto [Width, Height] = Textures.GetInfo(Item.Texture);
+                    const TextureInfo Info = Textures.GetInfo(Item.Texture);
 
                     // A texture with no recorded size would divide by zero
                     // below. Emit a degenerate quad instead of NaNs, which
                     // are far harder to trace back.
-                    const f32 TexWidth  = Width ? CAST<f32>(Width) : 1.0f;
-                    const f32 TexHeight = Height ? CAST<f32>(Height) : 1.0f;
+                    const f32 TexWidth  = Info.Width ? CAST<f32>(Info.Width) : 1.0f;
+                    const f32 TexHeight = Info.Height ? CAST<f32>(Info.Height) : 1.0f;
 
                     auto& [Center, Size, Rotation, _Pad, UVRect, Tint] = Out[i];
                     // 2D-only: the GPU instance format is a flat Float2, so

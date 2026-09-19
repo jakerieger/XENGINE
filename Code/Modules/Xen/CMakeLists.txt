@@ -35,6 +35,10 @@ add_library(Xen STATIC
         DirectionalLightComponent.hpp
         EngineConfig.hpp
         EngineContext.hpp
+        EnvironmentBaker.cpp
+        EnvironmentBaker.hpp
+        EnvironmentComponent.cpp
+        EnvironmentComponent.hpp
         Game.cpp
         Game.hpp
         Input.hpp

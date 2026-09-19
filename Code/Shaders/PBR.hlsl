@@ -1,10 +1,13 @@
-// Metallic-roughness Cook-Torrance PBR, one directional light, no IBL/shadows
-// yet. Binding slots follow Include/MaterialBindings.hlsli's standardized
-// scheme - see that file for what each register means and why.
+// Metallic-roughness Cook-Torrance PBR: one directional light plus image-based
+// lighting from an equirectangular environment map and a baked BRDF LUT (see
+// BRDFIntegrate.hlsl), no shadows yet. Binding slots follow
+// Include/MaterialBindings.hlsli's standardized scheme - see that file for
+// what each register means and why.
 //
 // Loaded as a precompiled DXIL asset out of a pak (see MeshRenderer.cpp),
 // never runtime-compiled HLSL from a game's own Content directory.
 
+#include "Include/Common.hlsli"
 #include "Include/MaterialBindings.hlsli"
 
 cbuffer FrameData : register(XEN_FRAME_REGISTER) {
@@ -38,6 +41,17 @@ SamplerState AmbientOcclusionSampler : register(XEN_AO_SAMPLER_REGISTER);
 
 Texture2D EmissiveMap : register(XEN_EMISSIVE_TEX_REGISTER);
 SamplerState EmissiveSampler : register(XEN_EMISSIVE_SAMPLER_REGISTER);
+
+// Scene-level (bound once per frame, not per material) - see
+// MaterialBindings.hlsli.
+Texture2D EnvironmentMap : register(XEN_ENVIRONMENT_TEX_REGISTER);  // prefiltered specular: mip = roughness
+SamplerState EnvironmentSampler : register(XEN_ENVIRONMENT_SAMPLER_REGISTER);
+
+Texture2D IrradianceMap : register(XEN_IRRADIANCE_TEX_REGISTER);  // cosine-convolved diffuse lighting
+SamplerState IrradianceSampler : register(XEN_IRRADIANCE_SAMPLER_REGISTER);
+
+Texture2D BrdfLUT : register(XEN_BRDF_LUT_TEX_REGISTER);
+SamplerState BrdfLUTSampler : register(XEN_BRDF_LUT_SAMPLER_REGISTER);
 
 struct VSInput {
     float3 Position : TEXCOORD0;
@@ -74,7 +88,6 @@ PSInput VSMain(VSInput In) {
     return Out;
 }
 
-static const float PI = 3.14159265359;
 
 float DistributionGGX(float3 N, float3 H, float Roughness) {
     const float A = Roughness * Roughness;
@@ -102,6 +115,14 @@ float GeometrySmith(float3 N, float3 V, float3 L, float Roughness) {
 
 float3 FresnelSchlick(float CosTheta, float3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - CosTheta, 0.0, 1.0), 5.0);
+}
+
+// Fresnel-Schlick with a roughness term folded in (Sebastien Lagarde's
+// "Moving Frostbite to PBR" formulation) - the direct-lighting FresnelSchlick
+// above over-brightens grazing angles on rough indirect surfaces without it.
+float3 FresnelSchlickRoughness(float CosTheta, float3 F0, float Roughness) {
+    return F0 + (max(float3(1.0 - Roughness, 1.0 - Roughness, 1.0 - Roughness), F0) - F0) *
+                pow(clamp(1.0 - CosTheta, 0.0, 1.0), 5.0);
 }
 
 // Tangent-space normal (sampled from NormalMap, so callers always pass a
@@ -178,9 +199,34 @@ float4 PSMain(PSInput In) : SV_Target {
     const float3 Radiance   = LightColorAndIntensity.xyz * LightColorAndIntensity.w;
     const float3 DirectLight = (KDiffuse * Albedo / PI + Specular) * Radiance * NdotL;
 
-    // Flat ambient term until IBL exists - a placeholder, not a real
-    // indirect-lighting estimate.
-    const float3 Ambient = float3(0.03, 0.03, 0.03) * Albedo * AO;
+    // Image-based lighting, split-sum style: the environment maps supply the
+    // incoming light, BrdfLUT supplies how much of it this material reflects
+    // at this view angle and roughness (F0 * scale + bias).
+    //
+    // EnvironmentMap is the GGX-prefiltered specular map (EnvironmentBaker),
+    // one roughness level per mip, so roughness picks a mip: blurry
+    // reflections cost one sample. IrradianceMap is the cosine-convolved
+    // diffuse lighting, already integrated over the hemisphere. Both use
+    // SampleLevel - implicit-derivative Sample would put a visible seam where
+    // atan2 wraps in DirToEquirectUV. A scene with no environment binds a
+    // 1x2 placeholder sky for both (one mip, so the LOD below clamps to 0).
+    const float NdotV = max(dot(N, V), 0.0);
+    const float3 FIndirect = FresnelSchlickRoughness(NdotV, F0, Roughness);
+    const float3 KDiffuseIndirect = (1.0 - FIndirect) * (1.0 - Metallic);
+
+    const float3 Irradiance = IrradianceMap.SampleLevel(IrradianceSampler, DirToEquirectUV(N), 0).rgb;
+    const float3 DiffuseIBL = Irradiance * Albedo * KDiffuseIndirect * AO;
+
+    uint EnvWidth, EnvHeight, EnvLevels;
+    EnvironmentMap.GetDimensions(0, EnvWidth, EnvHeight, EnvLevels);
+    const float EnvLod = Roughness * float(EnvLevels - 1);
+
+    const float3 R = reflect(-V, N);
+    const float3 PrefilteredColor = EnvironmentMap.SampleLevel(EnvironmentSampler, DirToEquirectUV(R), EnvLod).rgb;
+    const float2 EnvBRDF = BrdfLUT.SampleLevel(BrdfLUTSampler, float2(NdotV, Roughness), 0).rg;
+    const float3 SpecularIBL = PrefilteredColor * (F0 * EnvBRDF.x + EnvBRDF.y) * AO;
+
+    const float3 Ambient = DiffuseIBL + SpecularIBL;
 
     float3 Color = Ambient + DirectLight + Emissive;
 

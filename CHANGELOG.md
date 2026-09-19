@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-19
+
+### Added
+
+- `RHI::FrameStats::TriangleCount`, tallied per Draw/DrawIndexed call for TriangleList/TriangleStrip topologies - shown in Demo.PBR's Frame Stats window.
+- Resident-byte tracking on `TextureCache`/`MeshCache` (`GetResidentBytes()`) and a new `IRenderDevice::GetMemoryStats()` (GPU allocated/reserved/usage/budget via D3D12MA's budget query, plus process RAM) - both exposed to any demo's debug UI, not folded into per-frame `FrameStats`. Demo.PBR's Frame Stats window shows both.
+- Real image-based lighting in `PBR.hlsl`, replacing the old flat `0.03 * Albedo` ambient constant (which gave a `Metallic = 1` surface nothing to show at all - a full metal has zero diffuse response by definition): a Radiance `.hdr` equirectangular environment map supplies the incoming light (sampled at `N` for diffuse, at the reflection vector for specular), and a baked split-sum BRDF LUT supplies how much of it the material reflects (`F0 * scale + bias`).
+  - `EnvironmentComponent` (scene-wide, first one found wins - same rule as the directional light) references the `.hdr` asset; a scene with none binds a dim two-tone placeholder sky, so the shader never branches on "is there an environment".
+  - `TextureCache` decodes `.hdr` (detected from content, `stbi_loadf`) to packed RGBA16F, clamped to half-float range so a bright sun disc can't become infinity.
+  - The BRDF LUT is a 256x256 RG16F texture rendered once at `MeshRenderer::Initialize` by `Code/Shaders/BRDFIntegrate.hlsl` (GGX importance-sampled integration, fullscreen triangle from `SV_VertexID`, no bindings).
+  - Two new scene-level binding slots, `Environment` (t5/s5) and `BrdfLut` (t6/s6), bound once per frame rather than per draw - see `MaterialBindings.hlsli`/`.hpp`.
+  - `IRenderDevice::SubmitAndWait()`: execute a `CommandBuffer` immediately and block until the GPU finishes, outside the `BeginFrame`/`EndFrame` cycle and with no present - what a one-shot bake pass needs, the same way `UploadTexture` is already synchronous.
+  - `Scripts/generate_test_hdri.py` writes a synthetic sky+sun test map (not shipped content; Demo.PBR points at it).
+  - Prefiltered, not raw: `EnvironmentBaker` (`EnvironmentBaker.hpp/.cpp`) bakes the environment on the GPU, the first frame a scene has one, into (a) a GGX-prefiltered specular mip chain - mip `m` is roughness `m / (mips - 1)`, so `PBR.hlsl` reads a blurry reflection with one sample at `LOD = Roughness * (levels - 1)` - and (b) a small 64x32 cosine-convolved irradiance map for diffuse. `PrefilterEnvironment.hlsl`/`IrradianceConvolve.hlsl` importance-sample the source at a mip chosen from each sample's pdf (filtered importance sampling), so a bright sun disc spreads smoothly instead of speckling; `TextureCache` gives an HDR image a CPU box-filtered mip pyramid for exactly that. The baked pair is rebaked if the scene's environment changes; a scene with none binds the placeholder sky for both maps (`Environment` t5, `Irradiance` t6, `BrdfLut` t7).
+  - D3D12 render targets can now target a single mip (`ColorAttachment::MipLevel`, previously ignored): a color-target texture gets one RTV per mip, and the pass viewport is that mip's own extent. The offscreen RTV heap grew from 32 to 128 slots to fit mip chains.
+  - Shared shader code moved into includes, per the standardized-shader-input direction: `Include/Common.hlsli` (`PI`, the equirect direction<->UV mapping, Hammersley/GGX sampling) and `Include/Fullscreen.hlsli` (the `SV_VertexID` fullscreen triangle); `BRDFIntegrate.hlsl` and `PBR.hlsl` now use them.
+
+### Fixed
+
+- `TextureCache` always created textures as `RGBA8_UNORM`, with a cache-*wide* `SrgbTextures` config flag nothing ever set - so a color texture like an albedo/emissive map (authored in sRGB) was sampled as raw, un-linearized bytes and then gamma-encoded a second time by `PBR.hlsl`'s own tonemap pass, desaturating and darkening it. Since one `TextureCache` is shared between sprites (which want raw passthrough - displayed as-authored, no lighting) and PBR material channels (where albedo/emissive need sRGB decode but normal/metallic-roughness/occlusion must NOT be decoded, per glTF), a cache-wide flag couldn't express this correctly. Replaced with a per-`Acquire`/`Preload` `Srgb` parameter; `PBRMaterialComponent` now requests it only for its Albedo/Emissive channels.
+- `D3D12RenderDevice::UploadTexture` hardcoded a 4-bytes-per-pixel source row pitch ("RGBA8 - the only format the texture cache uploads today"), which would have silently corrupted any wider-format upload (an HDR texture reads the wrong byte range on every row). The pitch now comes from the resource's actual format.
+- `D3D12RenderDevice::UploadTexture` transitioned only the uploaded subresource from a hardcoded `COMMON`, then recorded one state for the whole resource - wrong for a texture uploaded one mip at a time (the first-uploaded mip ended up in a different state from the rest). It now transitions the whole resource from its tracked state.
+- `PipelineLayoutDesc::MAX_BINDINGS` was 16 with an unchecked `Binding()` - MeshRenderer's layout is now 17 (3 cbuffers + 7 texture/sampler pairs), so the 17th binding would have written out of bounds. Raised to 32.
+
 ## 2026-09-18
 
 ### Added

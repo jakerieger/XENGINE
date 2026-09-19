@@ -60,8 +60,8 @@ namespace Xen {
                 // to special-case the standalone-texture path.
                 Item.SourceRect = Sprite->GetSourceRect();
                 if (Item.SourceRect.IsEmpty() && Textures) {
-                    const auto [Width, Height] = Textures->GetInfo(Tex);
-                    Item.SourceRect            = Rect {0.0f, 0.0f, CAST<f32>(Width), CAST<f32>(Height)};
+                    const TextureInfo Info = Textures->GetInfo(Tex);
+                    Item.SourceRect        = Rect {0.0f, 0.0f, CAST<f32>(Info.Width), CAST<f32>(Info.Height)};
                 }
 
                 if (Cull) {

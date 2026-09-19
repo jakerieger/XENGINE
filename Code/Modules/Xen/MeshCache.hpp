@@ -35,6 +35,8 @@ namespace Xen {
         u32 VertexCount {0};
         u32 IndexCount {0};
         RHI::IndexType IndexType {RHI::IndexType::U32};
+        /// Exact vertex + index buffer bytes resident on the GPU.
+        u64 GpuBytes {0};
     };
 
     /// @brief The fixed GPU vertex layout every mesh is uploaded as,
@@ -70,6 +72,9 @@ namespace Xen {
         NODISCARD RHI::BufferHandle GetVertexBuffer(MeshHandle Handle) const;
         NODISCARD RHI::BufferHandle GetIndexBuffer(MeshHandle Handle) const;
         NODISCARD size_t GetResidentCount() const { return _Entries.size(); }
+        /// @brief Sum of every resident mesh's MeshInfo::GpuBytes - O(1),
+        /// maintained incrementally rather than summed on each call.
+        NODISCARD u64 GetResidentBytes() const { return _ResidentBytes; }
         NODISCARD u32 GetRefCount(AssetID ID) const;
 
         void Clear();
@@ -95,5 +100,6 @@ namespace Xen {
         std::unordered_map<PAK::AssetIDValue, Entry> _Entries;
         std::unordered_map<u32, GpuMesh> _MeshesByHandle;
         u32 _NextHandleID {1};  // 0 reserved for "invalid"
+        u64 _ResidentBytes {0};
     };
 }  // namespace Xen

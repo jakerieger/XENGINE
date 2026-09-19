@@ -55,7 +55,7 @@ namespace Xen {
         Scene* S = GetScene();
         if (!S || !S->GetContext().Textures) return;
 
-        Channel.Handle   = S->GetContext().Textures->Acquire(Channel.Asset);
+        Channel.Handle   = S->GetContext().Textures->Acquire(Channel.Asset, Channel.Srgb);
         Channel.Acquired = true;
     }
 
@@ -85,7 +85,7 @@ namespace Xen {
             return;
         }
 
-        const TextureHandle New = ID.IsValid() ? Cache->Acquire(ID) : TextureHandle {};
+        const TextureHandle New = ID.IsValid() ? Cache->Acquire(ID, Channel.Srgb) : TextureHandle {};
         if (Channel.Acquired) Cache->Release(Channel.Asset);
 
         Channel.Asset    = ID;

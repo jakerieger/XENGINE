@@ -37,8 +37,13 @@ namespace Xen::RHI::D3D12Backend {
         u32 MipLevels {1};
         TextureUsage Usage {TextureUsage::None};
         u32 SrvHeapIndex {UINT32_MAX};
-        u32 RtvHeapIndex {UINT32_MAX};
+        u32 RtvHeapIndex {UINT32_MAX};  // mip 0's render-target view
         u32 DsvHeapIndex {UINT32_MAX};
+
+        // Mips 1..MipLevels-1's own render-target views, in order - a render
+        // pass targets one mip at a time (ColorAttachment::MipLevel), so each
+        // needs its own RTV. Empty for a single-mip or array texture.
+        std::vector<u32> MipRtvHeapIndices;
 
         // Tracked so a texture reused across passes/frames (a render target
         // that's later sampled, then rendered into again next frame) gets the
@@ -177,6 +182,7 @@ namespace Xen::RHI::D3D12Backend {
 
         void BeginFrame() override;
         void Submit(const CommandBuffer& Commands) override;
+        void SubmitAndWait(const CommandBuffer& Commands) override;
         void EndFrame() override;
 
         void SetSwapChainSize(u32 Width, u32 Height) override;
@@ -187,6 +193,7 @@ namespace Xen::RHI::D3D12Backend {
         TransientAllocation AllocateTransient(u32 Size, BufferUsage Usage) override;
 
         NODISCARD const FrameStats& GetLastFrameStats() const override { return _LastStats; }
+        NODISCARD MemoryStats GetMemoryStats() const override;
 
         // --- Debug UI (Dear ImGui) integration -----------------------------
         //
@@ -303,7 +310,7 @@ namespace Xen::RHI::D3D12Backend {
         // RTV/DSV descriptors don't need to live in a shader-visible heap
         // anyway (only SRV/UAV/sampler descriptors bound via a root
         // descriptor table do).
-        static constexpr u32 OffscreenRtvHeapCapacity = 32;
+        static constexpr u32 OffscreenRtvHeapCapacity = 128;  // a mip-chained render target takes one slot per mip
         static constexpr u32 OffscreenDsvHeapCapacity = 8;
         ComPtr<ID3D12DescriptorHeap> _OffscreenRtvHeap;
         ComPtr<ID3D12DescriptorHeap> _OffscreenDsvHeap;

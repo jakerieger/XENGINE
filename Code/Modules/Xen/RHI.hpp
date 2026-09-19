@@ -352,7 +352,11 @@ namespace Xen::RHI {
     };
 
     struct PipelineLayoutDesc {
-        static constexpr u32 MAX_BINDINGS = 16;
+        // MeshRenderer's PBR layout alone is 19 (3 cbuffers + 8 texture/
+        // sampler pairs, see MaterialBindings.hpp) - Binding() has no bounds
+        // check, so this must stay comfortably above the largest layout any
+        // pipeline builds.
+        static constexpr u32 MAX_BINDINGS = 32;
 
         BindingSlot Bindings[MAX_BINDINGS] {};
         u8 BindingCount {0};

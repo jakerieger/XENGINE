@@ -25,8 +25,16 @@ namespace Xen::MaterialSlot {
     inline constexpr u32 AmbientOcclusion  = 3;
     inline constexpr u32 Emissive          = 4;
 
+    // Scene-level slots: unlike the five above, these aren't a material's own
+    // - they don't vary per draw, so MeshRenderer binds them once per frame,
+    // before the per-actor loop, rather than once per draw.
+    inline constexpr u32 Environment = 5;  // GGX-prefiltered equirect environment, mip = roughness (RGBA16F)
+    inline constexpr u32 Irradiance  = 6;  // cosine-convolved equirect diffuse lighting (RGBA16F)
+    inline constexpr u32 BrdfLut     = 7;  // baked split-sum BRDF LUT (RG16F)
+
     /// @brief One past the highest texture slot above - the number of
     /// texture/sampler binding pairs a pipeline built on this convention
-    /// declares, and the number MeshRenderer always binds per draw.
-    inline constexpr u32 TextureSlotCount = 5;
+    /// declares. MeshRenderer binds slots [0, Environment) per draw and
+    /// [Environment, TextureSlotCount) once per frame.
+    inline constexpr u32 TextureSlotCount = 8;
 }  // namespace Xen::MaterialSlot
