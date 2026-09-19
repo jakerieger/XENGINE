@@ -13,6 +13,8 @@ imgui.ini
 *.vs
 *.cs
 *.gltf
+*.glb
+*.hdr
 
 # claude build caches
 build*/

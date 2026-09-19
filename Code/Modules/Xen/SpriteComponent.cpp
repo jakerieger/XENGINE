@@ -78,8 +78,8 @@ namespace Xen {
         Rect Source = _SourceRect;
         if (Source.IsEmpty()) {
             if (const Scene* S = GetScene(); S && S->GetContext().Textures && _Texture.IsValid()) {
-                const auto [Width, Height] = S->GetContext().Textures->GetInfo(_Texture);
-                Source                     = Rect {0.0f, 0.0f, CAST<f32>(Width), CAST<f32>(Height)};
+                const TextureInfo Info = S->GetContext().Textures->GetInfo(_Texture);
+                Source                 = Rect {0.0f, 0.0f, CAST<f32>(Info.Width), CAST<f32>(Info.Height)};
             }
         }
 

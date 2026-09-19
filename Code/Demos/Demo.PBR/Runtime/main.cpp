@@ -12,12 +12,17 @@
 #include <Xen/MeshComponent.hpp>
 #include <Xen/PBRMaterialComponent.hpp>
 #include <Xen/DirectionalLightComponent.hpp>
+#include <Xen/EnvironmentComponent.hpp>
 #include <Xen/XenGameSettings.h>
 
 #include <imgui.h>
 
 namespace {
     using namespace Xen;
+
+    f32 ToMB(const u64 Bytes) {
+        return CAST<f32>(Bytes) / (1024.0f * 1024.0f);
+    }
 
     class XenPBRDemo final : public Game {
         using Game::Game;
@@ -40,15 +45,37 @@ namespace {
             ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
             if (ImGui::Begin("Frame Stats")) {
                 const RHI::FrameStats& Stats = GetRenderDevice().GetLastFrameStats();
-                const f32 Delta               = GetLastFrameDelta();
+                const f32 Delta              = GetLastFrameDelta();
 
                 ImGui::Text("Frame:  %llu", GetFrameCount());
                 ImGui::Text("Delta:  %.2f ms (%.0f FPS)", Delta * 1000.0f, Delta > 0.0f ? 1.0f / Delta : 0.0f);
                 ImGui::Separator();
                 ImGui::Text("Draw calls:      %u", Stats.DrawCalls);
+                ImGui::Text("Triangles:       %u", Stats.TriangleCount);
                 ImGui::Text("Render passes:   %u", Stats.RenderPasses);
-                ImGui::Text("Pipeline binds:  %u (%u redundant skipped)", Stats.PipelineBinds, Stats.RedundantBindsSkipped);
+                ImGui::Text("Pipeline binds:  %u (%u redundant skipped)",
+                            Stats.PipelineBinds,
+                            Stats.RedundantBindsSkipped);
                 ImGui::Text("Transient bytes: %u", Stats.TransientBytesUsed);
+
+                ImGui::Separator();
+                ImGui::Text("Asset Caches");
+                const TextureCache& Textures = GetTextures();
+                const MeshCache& Meshes      = GetMeshes();
+                ImGui::Text("  Textures: %llu (%.2f MB)",
+                            CAST<u64>(Textures.GetResidentCount()),
+                            ToMB(Textures.GetResidentBytes()));
+                ImGui::Text("  Meshes:   %llu (%.2f MB)",
+                            CAST<u64>(Meshes.GetResidentCount()),
+                            ToMB(Meshes.GetResidentBytes()));
+
+                ImGui::Separator();
+                ImGui::Text("Memory");
+                const RHI::MemoryStats& Mem = GetRenderDevice().GetMemoryStats();
+                ImGui::Text("  GPU allocated: %.2f MB", ToMB(Mem.GpuAllocatedBytes));
+                ImGui::Text("  GPU reserved:  %.2f MB", ToMB(Mem.GpuReservedBytes));
+                ImGui::Text("  GPU usage:     %.2f / %.2f MB", ToMB(Mem.GpuUsageBytes), ToMB(Mem.GpuBudgetBytes));
+                ImGui::Text("  Process RAM:   %.2f MB", ToMB(Mem.ProcessRamBytes));
             }
             ImGui::End();
         }
@@ -66,23 +93,26 @@ namespace {
         void OnSceneUnloading(Scene& S) override { LOG_INFO("Scene unloading: %s", S.GetName().c_str()); }
     };
 
-    // First milestone for the 3D/PBR groundwork: a single mesh, one
-    // directional light, no textures/shadows/IBL yet. See MeshRenderer and
-    // Content/shaders/pbr.hlsl.
+    // A single textured mesh, one directional light and an environment map
+    // (no shadows yet). See MeshRenderer and Code/Shaders/PBR.hlsl.
     void BuildScene(const EngineContext& Ctx) {
         using namespace DirectX;
 
         Scene MainScene("Main");
         MainScene.SetContext(Ctx);
 
-        const ActorHandle CubeHandle = MainScene.Spawn("Cube");
-        Actor* CubeActor             = MainScene.Get(CubeHandle);
-        CubeActor->AddComponent<MeshComponent>(ASSET("meshes/suzanne.glb"));
-        auto* Material = CubeActor->AddComponent<PBRMaterialComponent>();
-        Material->SetAlbedo({0.7f, 0.15f, 0.15f});
-        Material->SetMetallic(0.2f);
-        Material->SetRoughness(0.35f);
-        CubeActor->AddComponent<RotatingComponent>();
+        const ActorHandle MonkeHandle = MainScene.Spawn("Monke");
+        Actor* MonkeActor             = MainScene.Get(MonkeHandle);
+        MonkeActor->AddComponent<MeshComponent>(ASSET("meshes/suzanne.glb"));
+        auto* Material = MonkeActor->AddComponent<PBRMaterialComponent>();
+
+        Material->SetAlbedoMapAsset(ASSET("textures/pbr_gold_worn_albedo.png"));
+        Material->SetMetallicRoughnessMapAsset(ASSET("textures/pbr_gold_worn_mr.png"));
+        Material->SetNormalMapAsset(ASSET("textures/pbr_gold_worn_normal.png"));
+        Material->SetMetallic(1.0f);
+
+        MonkeActor->AddComponent<RotatingComponent>();
+        MonkeActor->SetPosition(Float3 {0.0f, 1.0f, 0.0f});
 
         const ActorHandle CameraHandle = MainScene.Spawn("MainCamera");
         Actor* CameraActor             = MainScene.Get(CameraHandle);
@@ -104,6 +134,14 @@ namespace {
         Quat LightRotationOut;
         XMStoreFloat4(&LightRotationOut, LightRotation);
         LightActor->SetRotation(LightRotationOut);
+
+        // Synthetic sky+sun test map - regenerate with
+        // Scripts/generate_test_hdri.py. Swap in a real equirectangular .hdr
+        // by changing this asset path.
+        const ActorHandle EnvironmentHandle = MainScene.Spawn("Environment");
+        Actor* EnvironmentActor             = MainScene.Get(EnvironmentHandle);
+        auto* Environment                   = EnvironmentActor->AddComponent<EnvironmentComponent>();
+        Environment->SetMapAsset(ASSET("xen.hdr.spring.hdr"));
 
         const auto ScenePath = Generated::GameSettings().ContentDirs[0] / "scenes" / "main.xscene";
         SceneSerializer::SaveToFile(MainScene, ScenePath);

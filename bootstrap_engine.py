@@ -44,6 +44,7 @@ def pull_git_submodules() -> bool:
 def main():
     # Get submodules if missing
     if not pull_git_submodules():
+        print("Failed to pull git submodules")
         return 1
 
     # compile engine shaders

@@ -89,17 +89,24 @@ namespace Xen {
             AssetID Asset {};
             TextureHandle Handle {};
             bool Acquired {false};
+            // Albedo/emissive are authored as perceptual (sRGB-encoded)
+            // color, like any other color image, and need the GPU to
+            // linearize them on sample before they hit the lighting math in
+            // PBR.hlsl. Normal/metallic-roughness/occlusion store raw
+            // vector/scalar data - per glTF's own convention - and must NOT
+            // be decoded, or they come out wrong. See TextureCache::Acquire.
+            bool Srgb {false};
         };
 
         void AcquireChannel(TextureChannel& Channel);
         void ReleaseChannel(TextureChannel& Channel);
         void SetChannelAsset(TextureChannel& Channel, AssetID ID);
 
-        TextureChannel _AlbedoMap;
+        TextureChannel _AlbedoMap {.Srgb = true};
         TextureChannel _NormalMap;
         TextureChannel _MetallicRoughnessMap;
         TextureChannel _AmbientOcclusionMap;
-        TextureChannel _EmissiveMap;
+        TextureChannel _EmissiveMap {.Srgb = true};
 
         // Every channel is optional, so unlike SpriteComponent's single
         // required texture, a channel's own Acquired flag can legitimately

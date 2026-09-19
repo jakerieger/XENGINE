@@ -6,11 +6,11 @@
       "ID": 1,
       "Parent": 0,
       "Properties": {
-        "Name": "Cube",
+        "Name": "Monke",
         "Transform": {
           "Position": [
             0.0,
-            0.0,
+            1.0,
             0.0
           ],
           "Rotation": [
@@ -38,21 +38,21 @@
           "Type": "PBRMaterialComponent",
           "Properties": {
             "Albedo": [
-              0.699999988079071,
-              0.15000000596046448,
-              0.15000000596046448
+              1.0,
+              1.0,
+              1.0
             ],
-            "Metallic": 0.20000000298023224,
-            "Roughness": 0.3499999940395355,
+            "Metallic": 1.0,
+            "Roughness": 0.5,
             "AmbientOcclusion": 1.0,
             "Emissive": [
               0.0,
               0.0,
               0.0
             ],
-            "AlbedoMap": 0,
-            "NormalMap": 0,
-            "MetallicRoughnessMap": 0,
+            "AlbedoMap": 5478356833302805381,
+            "NormalMap": 18136257898383615067,
+            "MetallicRoughnessMap": 7660235995507065423,
             "AmbientOcclusionMap": 0,
             "EmissiveMap": 0
           }
@@ -140,6 +140,40 @@
               1.0
             ],
             "Intensity": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "ID": 4,
+      "Parent": 0,
+      "Properties": {
+        "Name": "Environment",
+        "Transform": {
+          "Position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Enabled": true
+      },
+      "Components": [
+        {
+          "Type": "EnvironmentComponent",
+          "Properties": {
+            "Map": 2462894980171083987
           }
         }
       ]

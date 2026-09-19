@@ -7,6 +7,7 @@
 #include "MeshComponent.hpp"
 #include "PBRMaterialComponent.hpp"
 #include "DirectionalLightComponent.hpp"
+#include "EnvironmentComponent.hpp"
 #include "CameraComponent.hpp"
 #include "Actor.hpp"
 #include "Scene.hpp"
@@ -144,22 +145,127 @@ namespace Xen {
         SamplerDesc.DebugName = "XEN.PBR";
         _Sampler              = Device.CreateSampler(SamplerDesc);
 
-        if (!_Sampler.IsValid() || !CreateDefaultTextures()) {
+        RHI::SamplerDesc EnvironmentSamplerDesc;
+        EnvironmentSamplerDesc.AddressU  = RHI::AddressMode::Repeat;
+        EnvironmentSamplerDesc.AddressV  = RHI::AddressMode::ClampToEdge;
+        EnvironmentSamplerDesc.DebugName = "XEN.PBR.Environment";
+        _EnvironmentSampler              = Device.CreateSampler(EnvironmentSamplerDesc);
+
+        RHI::SamplerDesc ClampSamplerDesc;
+        ClampSamplerDesc.AddressU  = RHI::AddressMode::ClampToEdge;
+        ClampSamplerDesc.AddressV  = RHI::AddressMode::ClampToEdge;
+        ClampSamplerDesc.DebugName = "XEN.PBR.Clamp";
+        _ClampSampler              = Device.CreateSampler(ClampSamplerDesc);
+
+        if (!_Sampler.IsValid() || !_EnvironmentSampler.IsValid() || !_ClampSampler.IsValid() ||
+            !CreateDefaultTextures() || !BakeBrdfLut(Assets)) {
             Shutdown();
             return false;
         }
 
+        // Not fatal: without the baker a scene's environment can't be
+        // prefiltered, so it just keeps the placeholder sky (Render checks
+        // IsInitialized before trying to bake).
+        _Baker.Initialize(Device, Assets);
+
         return true;
+    }
+
+    void MeshRenderer::ReleaseBakedEnvironment() {
+        if (_PrefilteredEnvironment.IsValid()) _Device->DestroyTexture(_PrefilteredEnvironment);
+        if (_IrradianceMap.IsValid()) _Device->DestroyTexture(_IrradianceMap);
+
+        _PrefilteredEnvironment = {};
+        _IrradianceMap          = {};
+        _BakedSource            = {};
+    }
+
+    bool MeshRenderer::BakeBrdfLut(const PAK::AssetRegistry& Assets) {
+        constexpr AssetID VertexAsset   = ASSET("xen.shader.brdfintegrate.vs");
+        constexpr AssetID FragmentAsset = ASSET("xen.shader.brdfintegrate.ps");
+        if (!Assets.Contains(VertexAsset) || !Assets.Contains(FragmentAsset)) return false;
+
+        const PAK::AssetBuffer VertexSource   = Assets.Load(VertexAsset);
+        const PAK::AssetBuffer FragmentSource = Assets.Load(FragmentAsset);
+
+        RHI::ShaderDesc VertexDesc;
+        VertexDesc.Stage      = RHI::ShaderStage::Vertex;
+        VertexDesc.SourceType = RHI::ShaderSourceType::DXIL;
+        VertexDesc.Code       = VertexSource.Data();
+        VertexDesc.CodeSize   = VertexSource.Size();
+        VertexDesc.DebugName  = "XEN.Shaders.BRDFIntegrate.vs";
+
+        RHI::ShaderDesc FragmentDesc;
+        FragmentDesc.Stage      = RHI::ShaderStage::Fragment;
+        FragmentDesc.SourceType = RHI::ShaderSourceType::DXIL;
+        FragmentDesc.Code       = FragmentSource.Data();
+        FragmentDesc.CodeSize   = FragmentSource.Size();
+        FragmentDesc.DebugName  = "XEN.Shaders.BRDFIntegrate.ps";
+
+        const RHI::ShaderHandle Vertex   = _Device->CreateShader(VertexDesc);
+        const RHI::ShaderHandle Fragment = _Device->CreateShader(FragmentDesc);
+
+        // Nothing to bind: the integration is a pure function of the pixel's
+        // own position, and the fullscreen triangle comes from SV_VertexID
+        // (no vertex buffer), so this is an empty layout and vertex layout.
+        RHI::PipelineLayoutDesc LayoutDesc;
+        LayoutDesc.DebugName           = "XEN.Shaders.BRDFIntegrate";
+        const RHI::LayoutHandle Layout = _Device->CreatePipelineLayout(LayoutDesc);
+
+        RHI::PipelineHandle Pipeline;
+        if (Vertex.IsValid() && Fragment.IsValid() && Layout.IsValid()) {
+            RHI::GraphicsPipelineDesc PipelineDesc;
+            PipelineDesc.VertexShader         = Vertex;
+            PipelineDesc.FragmentShader       = Fragment;
+            PipelineDesc.PipelineLayout       = Layout;
+            PipelineDesc.Topology             = RHI::PrimitiveTopology::TriangleList;
+            PipelineDesc.ColorAttachmentCount = 1;
+            PipelineDesc.ColorFormats[0]      = RHI::Format::RG16_FLOAT;
+            PipelineDesc.DebugName            = "XEN.Shaders.BRDFIntegrate";
+            Pipeline                          = _Device->CreateGraphicsPipeline(PipelineDesc);
+        }
+
+        if (Vertex.IsValid()) _Device->DestroyShader(Vertex);
+        if (Fragment.IsValid()) _Device->DestroyShader(Fragment);
+
+        RHI::TextureDesc LutDesc;
+        LutDesc.Width     = 256;
+        LutDesc.Height    = 256;
+        LutDesc.Fmt       = RHI::Format::RG16_FLOAT;
+        LutDesc.Usage     = RHI::TextureUsage::ColorTarget | RHI::TextureUsage::Sampled;
+        LutDesc.DebugName = "XEN.PBR.BrdfLUT";
+        _BrdfLUT          = _Device->CreateTexture(LutDesc);
+
+        const bool CanBake = Pipeline.IsValid() && _BrdfLUT.IsValid();
+        if (CanBake) {
+            RHI::CommandBuffer Bake;
+            RHI::RenderPassDesc Pass = RHI::RenderPassDesc::ColorTarget(_BrdfLUT, 0.0f, 0.0f, 0.0f, 0.0f);
+            Pass.DebugName           = "BRDF LUT";
+            Bake.BeginRenderPass(Pass);
+            Bake.BindPipeline(Pipeline);
+            Bake.Draw(3);
+            Bake.EndRenderPass();
+
+            // Blocks until the GPU is done - the LUT is sampled by the very
+            // first frame, so there's no in-flight window to hide this in,
+            // and it's a one-time cost at startup, not per frame.
+            _Device->SubmitAndWait(Bake);
+        }
+
+        if (Pipeline.IsValid()) _Device->DestroyPipeline(Pipeline);
+        if (Layout.IsValid()) _Device->DestroyPipelineLayout(Layout);
+
+        return CanBake;
     }
 
     bool MeshRenderer::CreateDefaultTextures() {
         // Bound for any material channel with no map assigned (see
         // MeshRenderer.hpp) - both are 1x1 so the cost of always binding
         // them, for a game with no textured materials at all, is trivial.
-        const auto MakeSolid = [this](const u8 R, const u8 G, const u8 B, const u8 A, const char* Name) {
+        const auto MakeTexture = [this](const u32 Width, const u32 Height, const u8* Pixels, const char* Name) {
             RHI::TextureDesc Desc;
-            Desc.Width     = 1;
-            Desc.Height    = 1;
+            Desc.Width     = Width;
+            Desc.Height    = Height;
             Desc.Fmt       = RHI::Format::RGBA8_UNORM;
             Desc.Usage     = RHI::TextureUsage::Sampled;
             Desc.DebugName = Name;
@@ -167,38 +273,63 @@ namespace Xen {
             const RHI::TextureHandle Handle = _Device->CreateTexture(Desc);
             if (!Handle.IsValid()) return RHI::TextureHandle {};
 
-            const u8 Pixel[4] = {R, G, B, A};
             RHI::TextureUploadDesc Upload;
-            Upload.Data     = Pixel;
-            Upload.DataSize = sizeof(Pixel);
-            Upload.Width    = 1;
-            Upload.Height   = 1;
+            Upload.Data     = Pixels;
+            Upload.DataSize = CAST<size_t>(Width) * Height * 4;
+            Upload.Width    = Width;
+            Upload.Height   = Height;
             _Device->UploadTexture(Handle, Upload);
 
             return Handle;
         };
 
+        const auto MakeSolid = [&](const u8 R, const u8 G, const u8 B, const u8 A, const char* Name) {
+            const u8 Pixel[4] = {R, G, B, A};
+            return MakeTexture(1, 1, Pixel, Name);
+        };
+
         _WhiteTexture      = MakeSolid(255, 255, 255, 255, "XEN.PBR.White");
         _FlatNormalTexture = MakeSolid(128, 128, 255, 255, "XEN.PBR.FlatNormal");
 
-        return _WhiteTexture.IsValid() && _FlatNormalTexture.IsValid();
+        // A 1x2 equirect map: row 0 is straight up, row 1 straight down (see
+        // DirToEquirectUV in PBR.hlsl), with U irrelevant at width 1 - a
+        // vertical sky/ground gradient once bilinear filtering and the
+        // environment sampler's clamped V blend between the two texels.
+        // Kept dim and near-neutral on purpose (the same two colors, already
+        // scaled by intensity, the old analytic SampleSky used): a strongly
+        // tinted stand-in competes with a metal's own F0 tint.
+        const u8 Sky[8] = {87, 89, 92, 255, 41, 38, 34, 255};
+        _DefaultEnvironmentMap = MakeTexture(1, 2, Sky, "XEN.PBR.DefaultEnvironment");
+
+        return _WhiteTexture.IsValid() && _FlatNormalTexture.IsValid() && _DefaultEnvironmentMap.IsValid();
     }
 
     void MeshRenderer::Shutdown() {
         if (!_Device) return;
+
+        ReleaseBakedEnvironment();
+        _Baker.Shutdown();
 
         if (_Pipeline.IsValid()) _Device->DestroyPipeline(_Pipeline);
         if (_Layout.IsValid()) _Device->DestroyPipelineLayout(_Layout);
         if (_Sampler.IsValid()) _Device->DestroySampler(_Sampler);
         if (_WhiteTexture.IsValid()) _Device->DestroyTexture(_WhiteTexture);
         if (_FlatNormalTexture.IsValid()) _Device->DestroyTexture(_FlatNormalTexture);
+        if (_EnvironmentSampler.IsValid()) _Device->DestroySampler(_EnvironmentSampler);
+        if (_ClampSampler.IsValid()) _Device->DestroySampler(_ClampSampler);
+        if (_DefaultEnvironmentMap.IsValid()) _Device->DestroyTexture(_DefaultEnvironmentMap);
+        if (_BrdfLUT.IsValid()) _Device->DestroyTexture(_BrdfLUT);
 
-        _Pipeline          = {};
-        _Layout            = {};
-        _Sampler           = {};
-        _WhiteTexture      = {};
-        _FlatNormalTexture = {};
-        _Device            = nullptr;
+        _Pipeline              = {};
+        _Layout                = {};
+        _Sampler               = {};
+        _WhiteTexture          = {};
+        _FlatNormalTexture     = {};
+        _EnvironmentSampler    = {};
+        _ClampSampler          = {};
+        _DefaultEnvironmentMap = {};
+        _BrdfLUT               = {};
+        _Device                = nullptr;
     }
 
     void MeshRenderer::Render(const Scene& S, const Viewport& Target) {
@@ -256,6 +387,55 @@ namespace Xen {
 
             _Commands.BindPipeline(_Pipeline);
             _Commands.BindUniformBuffer(MaterialSlot::Frame, _Device->AllocateUniform(Frame));
+
+            // Scene-level IBL, bound once here rather than per actor: none of
+            // it varies per draw, and descriptor-table bindings persist
+            // across draws until rebound. The scene's first
+            // EnvironmentComponent with a map wins (same "first one found"
+            // rule as the light); it's baked into the prefiltered/irradiance
+            // pair the shader actually samples. With none (or a bake that
+            // failed) the placeholder sky stands in for both, so the shader
+            // never branches on "is there an environment".
+            RHI::TextureHandle EnvironmentSource {};
+            u32 EnvironmentWidth = 0;
+            const std::vector<Actor*> Environments = S.FindActorsWith<EnvironmentComponent>();
+            if (!Environments.empty()) {
+                if (const auto* Env = Environments.front()->GetComponent<EnvironmentComponent>();
+                    Env && Env->GetMap().IsValid()) {
+                    EnvironmentSource = Env->GetMap();
+                    if (const TextureCache* Textures = S.GetContext().Textures) {
+                        EnvironmentWidth = Textures->GetInfo(EnvironmentSource).Width;
+                    }
+                }
+            }
+
+            if (EnvironmentSource != _BakedSource) {
+                // The baked pair belongs to a different (or no longer any)
+                // environment - drop it before deciding whether to rebake.
+                ReleaseBakedEnvironment();
+
+                if (EnvironmentSource.IsValid() && _Baker.IsInitialized()) {
+                    // Recorded as attempted even if it fails, so a failing
+                    // bake isn't retried (and its textures re-created) every
+                    // frame - the placeholder sky just stays bound instead.
+                    _BakedSource = EnvironmentSource;
+
+                    EnvironmentBaker::Result Baked;
+                    if (_Baker.Bake(EnvironmentSource, EnvironmentWidth, Baked)) {
+                        _PrefilteredEnvironment = Baked.Prefiltered;
+                        _IrradianceMap          = Baked.Irradiance;
+                    }
+                }
+            }
+
+            const bool HasBakedEnvironment = _PrefilteredEnvironment.IsValid() && _IrradianceMap.IsValid();
+            _Commands.BindTexture(MaterialSlot::Environment,
+                                  HasBakedEnvironment ? _PrefilteredEnvironment : _DefaultEnvironmentMap,
+                                  _EnvironmentSampler);
+            _Commands.BindTexture(MaterialSlot::Irradiance,
+                                  HasBakedEnvironment ? _IrradianceMap : _DefaultEnvironmentMap,
+                                  _EnvironmentSampler);
+            _Commands.BindTexture(MaterialSlot::BrdfLut, _BrdfLUT, _ClampSampler);
 
             S.ForEachActor([&](Actor& A) {
                 auto* MeshComp     = A.GetComponent<MeshComponent>();

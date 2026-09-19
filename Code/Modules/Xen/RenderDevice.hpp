@@ -55,6 +55,29 @@ namespace Xen::RHI {
         u32 RedundantBindsSkipped {0};
         u32 RenderPasses {0};
         u32 TransientBytesUsed {0};
+        // Only tallied for TriangleList/TriangleStrip draws - point/line
+        // topologies leave this untouched, since they draw no triangles.
+        u32 TriangleCount {0};
+    };
+
+    /// @brief Snapshot of GPU/RAM memory usage, queried on demand (not
+    /// per-frame tracked like FrameStats) - cheap enough to call from a debug
+    /// UI every frame, but not free enough to fold into the hot Submit() path.
+    struct MemoryStats {
+        /// Bytes actually suballocated to live resources - the useful number.
+        u64 GpuAllocatedBytes {0};
+        /// Bytes reserved in GPU memory blocks, including unused
+        /// suballocation slack; always >= GpuAllocatedBytes.
+        u64 GpuReservedBytes {0};
+        /// OS-reported total video memory usage attributed to this process
+        /// (includes resources outside this allocator, e.g. the swap chain).
+        u64 GpuUsageBytes {0};
+        /// OS-reported video memory budget/ceiling before the driver starts
+        /// evicting this process's allocations - not a hard cap.
+        u64 GpuBudgetBytes {0};
+        /// Current process working set (RAM) - not GPU-related, but relevant
+        /// alongside VRAM for spotting a leak.
+        u64 ProcessRamBytes {0};
     };
 
     class IRenderDevice {
@@ -112,6 +135,19 @@ namespace Xen::RHI {
         virtual void Submit(const CommandBuffer& Commands) = 0;
         virtual void EndFrame()                            = 0;
 
+        /// @brief Executes Commands immediately and blocks until the GPU has
+        /// finished them - outside the BeginFrame/Submit/EndFrame cycle, with
+        /// no present. For one-shot work that has to be done before the first
+        /// frame or between frames (baking a lookup table into a render
+        /// target, say), the same way UploadTexture is already synchronous.
+        ///
+        /// Must NOT be called between BeginFrame and EndFrame: it runs on its
+        /// own command list, so resource-state changes it makes would race
+        /// with whatever the in-progress frame's list has already recorded
+        /// against the same resources. Frame stats (FrameStats) accumulate
+        /// its commands like any other Submit.
+        virtual void SubmitAndWait(const CommandBuffer& Commands) = 0;
+
         /// @brief Tells the device how large the default framebuffer is. Drive
         /// this from Window::ConsumeResized, and call it once at startup.
         virtual void SetSwapChainSize(u32 Width, u32 Height) = 0;
@@ -143,6 +179,9 @@ namespace Xen::RHI {
         }
 
         NODISCARD virtual const FrameStats& GetLastFrameStats() const = 0;
+
+        /// @brief Queried, not tracked per-frame - see MemoryStats.
+        NODISCARD virtual MemoryStats GetMemoryStats() const = 0;
     };
 
     std::unique_ptr<IRenderDevice> CreateRenderDevice(Backend API);
