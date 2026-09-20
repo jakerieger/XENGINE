@@ -19,8 +19,10 @@
 
 namespace Xen {
     namespace {
+        // Matches Code/Shaders/Include/FrameData.hlsli exactly.
         struct FrameConstants {
             Float4x4 ViewProjection;
+            Float4x4 InvViewProjection;
             Float4 CameraPositionAndPad;
             Float4 LightDirectionAndPad;
             Float4 LightColorAndIntensity;
@@ -129,6 +131,57 @@ namespace Xen {
         PipelineDesc.DebugName                     = "XEN.Shaders.PBR";
 
         _Pipeline = Device.CreateGraphicsPipeline(PipelineDesc);
+
+        // The environment background: same layout (so every binding is
+        // already in place when Render switches to it), drawn at the far
+        // plane so it only shows where no mesh is - depth-tested LessEqual
+        // against a buffer cleared to 1.0, never written. Optional: a missing
+        // shader just means no background, not no mesh rendering.
+        {
+            constexpr AssetID SkyVertexAsset   = ASSET("xen.shader.sky.vs");
+            constexpr AssetID SkyFragmentAsset = ASSET("xen.shader.sky.ps");
+            if (Assets.Contains(SkyVertexAsset) && Assets.Contains(SkyFragmentAsset)) {
+                const PAK::AssetBuffer SkyVertexSource   = Assets.Load(SkyVertexAsset);
+                const PAK::AssetBuffer SkyFragmentSource = Assets.Load(SkyFragmentAsset);
+
+                RHI::ShaderDesc SkyVertexDesc;
+                SkyVertexDesc.Stage      = RHI::ShaderStage::Vertex;
+                SkyVertexDesc.SourceType = RHI::ShaderSourceType::DXIL;
+                SkyVertexDesc.Code       = SkyVertexSource.Data();
+                SkyVertexDesc.CodeSize   = SkyVertexSource.Size();
+                SkyVertexDesc.DebugName  = "XEN.Shaders.Sky.vs";
+
+                RHI::ShaderDesc SkyFragmentDesc;
+                SkyFragmentDesc.Stage      = RHI::ShaderStage::Fragment;
+                SkyFragmentDesc.SourceType = RHI::ShaderSourceType::DXIL;
+                SkyFragmentDesc.Code       = SkyFragmentSource.Data();
+                SkyFragmentDesc.CodeSize   = SkyFragmentSource.Size();
+                SkyFragmentDesc.DebugName  = "XEN.Shaders.Sky.ps";
+
+                const RHI::ShaderHandle SkyVertex   = Device.CreateShader(SkyVertexDesc);
+                const RHI::ShaderHandle SkyFragment = Device.CreateShader(SkyFragmentDesc);
+
+                if (SkyVertex.IsValid() && SkyFragment.IsValid()) {
+                    RHI::GraphicsPipelineDesc SkyDesc;
+                    SkyDesc.VertexShader                    = SkyVertex;
+                    SkyDesc.FragmentShader                  = SkyFragment;
+                    SkyDesc.PipelineLayout                  = _Layout;
+                    SkyDesc.Topology                        = RHI::PrimitiveTopology::TriangleList;
+                    SkyDesc.Rasterizer.Cull                 = RHI::CullMode::None;
+                    SkyDesc.DepthStencil.DepthTestEnable    = true;
+                    SkyDesc.DepthStencil.DepthWriteEnable   = false;
+                    SkyDesc.DepthStencil.DepthCompare       = RHI::CompareOp::LessEqual;
+                    SkyDesc.ColorAttachmentCount            = 1;
+                    SkyDesc.ColorFormats[0]                 = TargetFormats.GetColorFormat();
+                    SkyDesc.DepthFormat                     = TargetFormats.GetDepthFormat();
+                    SkyDesc.DebugName                       = "XEN.Shaders.Sky";
+                    _SkyPipeline                            = Device.CreateGraphicsPipeline(SkyDesc);
+                }
+
+                if (SkyVertex.IsValid()) Device.DestroyShader(SkyVertex);
+                if (SkyFragment.IsValid()) Device.DestroyShader(SkyFragment);
+            }
+        }
 
         // The shader objects are no longer needed once the program is linked.
         Device.DestroyShader(Vertex);
@@ -291,15 +344,51 @@ namespace Xen {
         _WhiteTexture      = MakeSolid(255, 255, 255, 255, "XEN.PBR.White");
         _FlatNormalTexture = MakeSolid(128, 128, 255, 255, "XEN.PBR.FlatNormal");
 
-        // A 1x2 equirect map: row 0 is straight up, row 1 straight down (see
-        // DirToEquirectUV in PBR.hlsl), with U irrelevant at width 1 - a
-        // vertical sky/ground gradient once bilinear filtering and the
-        // environment sampler's clamped V blend between the two texels.
-        // Kept dim and near-neutral on purpose (the same two colors, already
-        // scaled by intensity, the old analytic SampleSky used): a strongly
-        // tinted stand-in competes with a metal's own F0 tint.
-        const u8 Sky[8] = {87, 89, 92, 255, 41, 38, 34, 255};
-        _DefaultEnvironmentMap = MakeTexture(1, 2, Sky, "XEN.PBR.DefaultEnvironment");
+        // A tiny placeholder sky cube: each face 4x4, +Y all sky, -Y all
+        // ground, and the four side faces a top-to-bottom sky->ground
+        // gradient (their top row is above the horizon, their bottom row
+        // below it), so it reads as a horizon from any direction. Kept dim
+        // and near-neutral on purpose: a strongly tinted stand-in competes
+        // with a metal's own F0 tint. Sampled by direction like a real baked
+        // cube, so the shader never branches on "is there an environment".
+        {
+            constexpr u32 FaceSize = 4;
+            constexpr f32 Sky[3]    = {87.0f, 89.0f, 92.0f};
+            constexpr f32 Ground[3] = {41.0f, 38.0f, 34.0f};
+
+            RHI::TextureDesc Desc;
+            Desc.Type        = RHI::TextureType::TextureCube;
+            Desc.Width       = FaceSize;
+            Desc.Height      = FaceSize;
+            Desc.Fmt         = RHI::Format::RGBA8_UNORM;
+            Desc.Usage       = RHI::TextureUsage::Sampled;
+            Desc.DebugName   = "XEN.PBR.DefaultEnvironment";
+            _DefaultEnvironmentMap = _Device->CreateTexture(Desc);
+
+            if (_DefaultEnvironmentMap.IsValid()) {
+                // D3D cube face order: +X, -X, +Y, -Y, +Z, -Z.
+                for (u32 Face = 0; Face < 6; ++Face) {
+                    u8 Pixels[FaceSize * FaceSize * 4];
+                    for (u32 Row = 0; Row < FaceSize; ++Row) {
+                        // 0 = all sky, 1 = all ground.
+                        const f32 T = Face == 2 ? 0.0f : Face == 3 ? 1.0f : (CAST<f32>(Row) + 0.5f) / FaceSize;
+                        for (u32 Col = 0; Col < FaceSize; ++Col) {
+                            u8* Px = &Pixels[(Row * FaceSize + Col) * 4];
+                            for (u32 C = 0; C < 3; ++C) Px[C] = CAST<u8>(Sky[C] + (Ground[C] - Sky[C]) * T);
+                            Px[3] = 255;
+                        }
+                    }
+
+                    RHI::TextureUploadDesc Upload;
+                    Upload.Data       = Pixels;
+                    Upload.DataSize   = sizeof(Pixels);
+                    Upload.ArrayLayer = Face;
+                    Upload.Width      = FaceSize;
+                    Upload.Height     = FaceSize;
+                    _Device->UploadTexture(_DefaultEnvironmentMap, Upload);
+                }
+            }
+        }
 
         return _WhiteTexture.IsValid() && _FlatNormalTexture.IsValid() && _DefaultEnvironmentMap.IsValid();
     }
@@ -310,6 +399,7 @@ namespace Xen {
         ReleaseBakedEnvironment();
         _Baker.Shutdown();
 
+        if (_SkyPipeline.IsValid()) _Device->DestroyPipeline(_SkyPipeline);
         if (_Pipeline.IsValid()) _Device->DestroyPipeline(_Pipeline);
         if (_Layout.IsValid()) _Device->DestroyPipelineLayout(_Layout);
         if (_Sampler.IsValid()) _Device->DestroySampler(_Sampler);
@@ -320,6 +410,7 @@ namespace Xen {
         if (_DefaultEnvironmentMap.IsValid()) _Device->DestroyTexture(_DefaultEnvironmentMap);
         if (_BrdfLUT.IsValid()) _Device->DestroyTexture(_BrdfLUT);
 
+        _SkyPipeline           = {};
         _Pipeline              = {};
         _Layout                = {};
         _Sampler               = {};
@@ -330,6 +421,51 @@ namespace Xen {
         _DefaultEnvironmentMap = {};
         _BrdfLUT               = {};
         _Device                = nullptr;
+    }
+
+    MeshRenderer::EnvironmentState MeshRenderer::ResolveEnvironment(const Scene& S) {
+        // The scene's first EnvironmentComponent with a map wins (same "first
+        // one found" rule as the light); it's baked into the prefiltered/
+        // irradiance pair the shader actually samples.
+        RHI::TextureHandle EnvironmentSource {};
+        u32 EnvironmentWidth   = 0;
+        bool ShowBackground    = false;
+        const std::vector<Actor*> Environments = S.FindActorsWith<EnvironmentComponent>();
+        if (!Environments.empty()) {
+            if (const auto* Env = Environments.front()->GetComponent<EnvironmentComponent>();
+                Env && Env->GetMap().IsValid()) {
+                EnvironmentSource = Env->GetMap();
+                ShowBackground    = Env->GetShowBackground();
+                if (const TextureCache* Textures = S.GetContext().Textures) {
+                    EnvironmentWidth = Textures->GetInfo(EnvironmentSource).Width;
+                }
+            }
+        }
+
+        if (EnvironmentSource != _BakedSource) {
+            // The baked pair belongs to a different (or no longer any)
+            // environment - drop it before deciding whether to rebake.
+            ReleaseBakedEnvironment();
+
+            if (EnvironmentSource.IsValid() && _Baker.IsInitialized()) {
+                // Recorded as attempted even if it fails, so a failing
+                // bake isn't retried (and its textures re-created) every
+                // frame - the placeholder sky just stays bound instead.
+                _BakedSource = EnvironmentSource;
+
+                EnvironmentBaker::Result Baked;
+                if (_Baker.Bake(EnvironmentSource, EnvironmentWidth, Baked)) {
+                    _PrefilteredEnvironment = Baked.Prefiltered;
+                    _IrradianceMap          = Baked.Irradiance;
+                }
+            }
+        }
+
+        return {_PrefilteredEnvironment.IsValid() && _IrradianceMap.IsValid(), ShowBackground};
+    }
+
+    void MeshRenderer::PrepareEnvironment(const Scene& S) {
+        if (_Device) ResolveEnvironment(S);
     }
 
     void MeshRenderer::Render(const Scene& S, const Viewport& Target) {
@@ -362,6 +498,12 @@ namespace Xen {
         if (Meshes && Camera) {
             FrameConstants Frame {};
             Frame.ViewProjection = Camera->GetViewProjectionMatrix();
+            {
+                // For Sky.hlsl: unproject a pixel back to a world-space ray.
+                using namespace DirectX;
+                const XMMATRIX ViewProjection = XMLoadFloat4x4(&Frame.ViewProjection);
+                XMStoreFloat4x4(&Frame.InvViewProjection, XMMatrixInverse(nullptr, ViewProjection));
+            }
 
             const Float3 CamPos =
               Camera->GetOwner() ? Camera->GetOwner()->GetWorldTransform().Position : Float3 {0.0f, 0.0f, 0.0f};
@@ -390,45 +532,12 @@ namespace Xen {
 
             // Scene-level IBL, bound once here rather than per actor: none of
             // it varies per draw, and descriptor-table bindings persist
-            // across draws until rebound. The scene's first
-            // EnvironmentComponent with a map wins (same "first one found"
-            // rule as the light); it's baked into the prefiltered/irradiance
-            // pair the shader actually samples. With none (or a bake that
-            // failed) the placeholder sky stands in for both, so the shader
-            // never branches on "is there an environment".
-            RHI::TextureHandle EnvironmentSource {};
-            u32 EnvironmentWidth = 0;
-            const std::vector<Actor*> Environments = S.FindActorsWith<EnvironmentComponent>();
-            if (!Environments.empty()) {
-                if (const auto* Env = Environments.front()->GetComponent<EnvironmentComponent>();
-                    Env && Env->GetMap().IsValid()) {
-                    EnvironmentSource = Env->GetMap();
-                    if (const TextureCache* Textures = S.GetContext().Textures) {
-                        EnvironmentWidth = Textures->GetInfo(EnvironmentSource).Width;
-                    }
-                }
-            }
-
-            if (EnvironmentSource != _BakedSource) {
-                // The baked pair belongs to a different (or no longer any)
-                // environment - drop it before deciding whether to rebake.
-                ReleaseBakedEnvironment();
-
-                if (EnvironmentSource.IsValid() && _Baker.IsInitialized()) {
-                    // Recorded as attempted even if it fails, so a failing
-                    // bake isn't retried (and its textures re-created) every
-                    // frame - the placeholder sky just stays bound instead.
-                    _BakedSource = EnvironmentSource;
-
-                    EnvironmentBaker::Result Baked;
-                    if (_Baker.Bake(EnvironmentSource, EnvironmentWidth, Baked)) {
-                        _PrefilteredEnvironment = Baked.Prefiltered;
-                        _IrradianceMap          = Baked.Irradiance;
-                    }
-                }
-            }
-
-            const bool HasBakedEnvironment = _PrefilteredEnvironment.IsValid() && _IrradianceMap.IsValid();
+            // across draws until rebound. With no environment (or a bake that
+            // failed) the placeholder sky stands in for both maps, so the
+            // shader never branches on "is there an environment".
+            const EnvironmentState Environment = ResolveEnvironment(S);
+            const bool HasBakedEnvironment     = Environment.HasBaked;
+            const bool ShowBackground          = Environment.ShowBackground;
             _Commands.BindTexture(MaterialSlot::Environment,
                                   HasBakedEnvironment ? _PrefilteredEnvironment : _DefaultEnvironmentMap,
                                   _EnvironmentSampler);
@@ -483,6 +592,14 @@ namespace Xen {
                 _Commands.BindIndexBuffer(IndexBuffer, Info.IndexType);
                 _Commands.DrawIndexed(Info.IndexCount);
             });
+
+            // The background, last: it only lands on pixels no mesh covered
+            // (far-plane depth vs LessEqual), and it needs the real baked
+            // environment - the placeholder sky isn't something to draw.
+            if (HasBakedEnvironment && ShowBackground && _SkyPipeline.IsValid()) {
+                _Commands.BindPipeline(_SkyPipeline);
+                _Commands.Draw(3);
+            }
         }
 
         _Commands.EndRenderPass();

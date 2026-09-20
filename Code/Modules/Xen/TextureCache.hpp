@@ -29,6 +29,17 @@ namespace Xen {
         u64 GpuBytes {0};
     };
 
+    /// @brief An image decoded on the CPU, ready to be turned into a GPU texture
+    /// - the pure-CPU half of loading one (see TextureCache::DecodeAsset), which
+    /// is why it can be produced on AssetLoader's worker threads.
+    struct DecodedTexture {
+        TextureInfo Info {};
+        bool IsHdr {false};
+        bool Srgb {false};  // LDR only; ignored for an HDR image (always RGBA16F)
+        std::vector<u8> Pixels;                   // mip 0
+        std::vector<std::vector<u8>> MipTail;     // mips 1..N (HDR only)
+    };
+
     class TextureCache {
     public:
         struct Config {
@@ -46,6 +57,14 @@ namespace Xen {
             /// and mipping an atlas bleeds neighbouring tiles into the lower
             /// levels. Turn it on for heavily minified or zoomed-out content.
             bool GenerateMips {false};
+
+            /// @brief Widest an HDR (.hdr environment map) image is kept on
+            /// the GPU; a wider one is box-downsampled by powers of two while
+            /// it's decoded (see RadianceHdr.hpp). RGBA16F is 8 bytes a texel,
+            /// so an 8K map is 256 MB of VRAM (plus a third again for its mip
+            /// pyramid) - and EnvironmentBaker caps what it bakes from it
+            /// anyway, so pixels past this width buy nothing but memory.
+            u32 MaxHdrWidth {4096};
 
             Config() {}
         };
@@ -78,6 +97,18 @@ namespace Xen {
         void Release(AssetID ID);
         void Preload(AssetID ID, bool Srgb = false);
 
+        /// @brief The CPU half of loading a texture: reads the asset out of the
+        /// registry and decodes it. Touches no cache state and no GPU object, so
+        /// it's safe to call from any thread (AssetLoader's workers) - given
+        /// the registry's sources are (see PakFileSource). Throws like Acquire
+        /// does for a missing or undecodable asset.
+        NODISCARD DecodedTexture DecodeAsset(AssetID ID, bool Srgb) const;
+
+        /// @brief The GPU half: creates and uploads the texture and inserts it
+        /// as a preloaded (RefCount 0) entry. Main thread only. A no-op if the
+        /// asset is already resident, exactly like Preload.
+        void AdoptPreloaded(AssetID ID, DecodedTexture&& Decoded);
+
         NODISCARD bool IsResident(AssetID ID) const;
         NODISCARD TextureInfo GetInfo(TextureHandle Handle) const;
         NODISCARD size_t GetResidentCount() const { return _Entries.size(); }
@@ -105,12 +136,13 @@ namespace Xen {
         /// also gets its full mip pyramid: the returned buffer is mip 0 and
         /// OutMipTail holds mips 1..N in order, each a box-filtered halving of
         /// the one before (empty for an LDR image).
-        static std::vector<u8> DecodeImage(const u8* Bytes,
-                                           size_t Size,
-                                           TextureInfo& OutInfo,
-                                           bool& OutIsHdr,
-                                           std::vector<std::vector<u8>>& OutMipTail);
+        std::vector<u8> DecodeImage(const u8* Bytes,
+                                    size_t Size,
+                                    TextureInfo& OutInfo,
+                                    bool& OutIsHdr,
+                                    std::vector<std::vector<u8>>& OutMipTail) const;
         Entry CreateEntry(AssetID ID, u32 InitialRefCount, bool Srgb);
+        Entry UploadEntry(AssetID ID, DecodedTexture&& Decoded, u32 InitialRefCount);
         void FreeTexture(TextureHandle Handle) const;
 
         PAK::AssetRegistry* _Assets {nullptr};

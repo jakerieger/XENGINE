@@ -36,6 +36,12 @@ namespace Xen {
         NODISCARD AssetID GetMapAsset() const { return _MapAsset; }
         void SetMapAsset(AssetID ID);
 
+        /// @brief Whether MeshRenderer also draws the environment as the
+        /// scene's background, behind everything (on by default). Off keeps
+        /// the environment lighting the scene without being visible.
+        NODISCARD bool GetShowBackground() const { return _ShowBackground; }
+        void SetShowBackground(const bool Show) { _ShowBackground = Show; }
+
         /// @brief The resolved GPU texture, invalid until BeginPlay (or if
         /// no map is assigned) - MeshRenderer substitutes its placeholder.
         NODISCARD TextureHandle GetMap() const { return _Map; }
@@ -45,6 +51,7 @@ namespace Xen {
         void Release();
 
         AssetID _MapAsset {};
+        bool _ShowBackground {true};
         TextureHandle _Map {};
         bool _Acquired {false};
 

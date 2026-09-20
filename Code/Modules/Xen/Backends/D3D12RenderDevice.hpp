@@ -37,13 +37,18 @@ namespace Xen::RHI::D3D12Backend {
         u32 MipLevels {1};
         TextureUsage Usage {TextureUsage::None};
         u32 SrvHeapIndex {UINT32_MAX};
-        u32 RtvHeapIndex {UINT32_MAX};  // mip 0's render-target view
+        u32 RtvHeapIndex {UINT32_MAX};  // the first render-target view (mip 0, layer 0) - RtvSlots[0]
         u32 DsvHeapIndex {UINT32_MAX};
 
-        // Mips 1..MipLevels-1's own render-target views, in order - a render
-        // pass targets one mip at a time (ColorAttachment::MipLevel), so each
-        // needs its own RTV. Empty for a single-mip or array texture.
-        std::vector<u32> MipRtvHeapIndices;
+        TextureType Type {TextureType::Texture2D};
+        u32 Mips {1};    // the resource's actual mip count (Desc.MipLevels == 0 already resolved)
+        u32 Layers {1};  // array slices; 6 for a cube
+
+        // One render-target view per (layer, mip), indexed layer * Mips + mip
+        // - a render pass targets a single mip of a single slice at a time
+        // (ColorAttachment::MipLevel/ArrayLayer). Empty for a texture that
+        // isn't a color target.
+        std::vector<u32> RtvSlots;
 
         // Tracked so a texture reused across passes/frames (a render target
         // that's later sampled, then rendered into again next frame) gets the
@@ -310,7 +315,7 @@ namespace Xen::RHI::D3D12Backend {
         // RTV/DSV descriptors don't need to live in a shader-visible heap
         // anyway (only SRV/UAV/sampler descriptors bound via a root
         // descriptor table do).
-        static constexpr u32 OffscreenRtvHeapCapacity = 128;  // a mip-chained render target takes one slot per mip
+        static constexpr u32 OffscreenRtvHeapCapacity = 512;  // a mip-chained render target takes one slot per mip
         static constexpr u32 OffscreenDsvHeapCapacity = 8;
         ComPtr<ID3D12DescriptorHeap> _OffscreenRtvHeap;
         ComPtr<ID3D12DescriptorHeap> _OffscreenDsvHeap;

@@ -51,6 +51,17 @@ namespace Xen {
         f32 UV[2];        ///< Texture coordinates (glTF's TEXCOORD_0); zero-filled if the source mesh has none.
     };
 
+    /// @brief A mesh parsed on the CPU into the fixed GPU vertex layout and
+    /// index buffer, ready to upload - the pure-CPU half of loading one (see
+    /// MeshCache::DecodeAsset), which is why it can be produced on AssetLoader's
+    /// worker threads.
+    struct DecodedMesh {
+        MeshInfo Info {};
+        std::vector<MeshVertex> Vertices;
+        std::vector<u16> Indices16;  // used when Info.IndexType is U16
+        std::vector<u32> Indices32;  // used when it's U32
+    };
+
     /// @brief Loads mesh assets (glTF/GLB - see MeshCache.cpp) onto the GPU
     /// and caches them by AssetID, ref-counted - the same acquire/release/
     /// preload shape as TextureCache, so a mesh shared by many actors (a
@@ -66,6 +77,17 @@ namespace Xen {
         MeshHandle Acquire(AssetID ID);
         void Release(AssetID ID);
         void Preload(AssetID ID);
+
+        /// @brief The CPU half of loading a mesh: reads the asset and parses it
+        /// (cgltf) into vertex/index arrays. Touches no cache state and no GPU
+        /// object, so it's safe to call from any thread, given the registry's
+        /// sources are. Throws like Acquire does for a missing or invalid mesh.
+        NODISCARD DecodedMesh DecodeAsset(AssetID ID) const;
+
+        /// @brief The GPU half: creates the two buffers and inserts the mesh as
+        /// a preloaded (RefCount 0) entry. Main thread only. A no-op if the
+        /// asset is already resident, exactly like Preload.
+        void AdoptPreloaded(AssetID ID, DecodedMesh&& Decoded);
 
         NODISCARD bool IsResident(AssetID ID) const;
         NODISCARD MeshInfo GetInfo(MeshHandle Handle) const;
@@ -91,7 +113,7 @@ namespace Xen {
             u32 RefCount {0};
         };
 
-        GpuMesh CreateGpuMesh(AssetID ID) const;
+        GpuMesh UploadMesh(AssetID ID, DecodedMesh&& Decoded);
         void FreeMesh(MeshHandle Handle);
 
         PAK::AssetRegistry* _Assets {nullptr};

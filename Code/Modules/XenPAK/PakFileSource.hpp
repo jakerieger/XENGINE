@@ -10,6 +10,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <unordered_map>
 
 namespace Xen::PAK {
@@ -34,6 +35,13 @@ namespace Xen::PAK {
         std::filesystem::path _PakPath;
         int _Priority;
         std::ifstream _FileStream;
+
+        // LoadFull is called from AssetLoader's worker threads as well as the
+        // main thread, and they'd otherwise race on _FileStream's single
+        // shared seek position. Held only around the seek+read; decrypt and
+        // decompress run outside it, so workers still unpack in parallel.
+        std::mutex _ReadMutex;
+
         std::unordered_map<AssetIDValue, PakTableEntry> _Table;
         PakSalt _Salt {};
     };

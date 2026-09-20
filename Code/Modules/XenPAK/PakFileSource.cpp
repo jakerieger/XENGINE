@@ -50,15 +50,19 @@ namespace Xen::PAK {
 
         const PakTableEntry& Entry = It->second;
 
-        _FileStream.clear();
-        _FileStream.seekg(CAST<std::streamoff>(Entry.Offset), std::ios::beg);
-        if (!_FileStream) {
-            THROW_ENGINE_EXCEPTION(EngineException, "seek failed for asset ID " + std::to_string(ID.Value));
-        }
-
         std::vector<u8> Stored(Entry.CompressedSize);
-        if (Entry.CompressedSize > 0 && !_FileStream.read(RCAST<char*>(Stored.data()), Entry.CompressedSize)) {
-            THROW_ENGINE_EXCEPTION(EngineException, "read failed for asset ID " + std::to_string(ID.Value));
+        {
+            std::lock_guard Lock(_ReadMutex);
+
+            _FileStream.clear();
+            _FileStream.seekg(CAST<std::streamoff>(Entry.Offset), std::ios::beg);
+            if (!_FileStream) {
+                THROW_ENGINE_EXCEPTION(EngineException, "seek failed for asset ID " + std::to_string(ID.Value));
+            }
+
+            if (Entry.CompressedSize > 0 && !_FileStream.read(RCAST<char*>(Stored.data()), Entry.CompressedSize)) {
+                THROW_ENGINE_EXCEPTION(EngineException, "read failed for asset ID " + std::to_string(ID.Value));
+            }
         }
 
         // Compress and then encrypt (decrypt and then decompress)

@@ -13,9 +13,25 @@ namespace Xen {
         std::unordered_set<PAK::AssetIDValue> Seen;
         std::vector<AssetID> Out;
 
-        for (const auto& [Value, K] : _Found) {
-            if (K != Kind) continue;
-            if (Seen.insert(Value).second) Out.emplace_back(Value);
+        for (const Found& F : _Found) {
+            if (F.Kind != Kind) continue;
+            if (Seen.insert(F.Value).second) Out.emplace_back(F.Value);
+        }
+
+        return Out;
+    }
+
+    std::vector<LoadRequest> AssetGatherer::Requests() const {
+        std::unordered_set<PAK::AssetIDValue> Seen;
+        std::vector<LoadRequest> Out;
+
+        // Textures before meshes, matching the order PreloadSceneAssets always
+        // used; each kind keeps its first-seen order.
+        for (const AssetKind Kind : {AssetKind::Texture, AssetKind::Mesh}) {
+            for (const Found& F : _Found) {
+                if (F.Kind != Kind) continue;
+                if (Seen.insert(F.Value).second) Out.push_back({AssetID {F.Value}, F.Kind, F.Srgb});
+            }
         }
 
         return Out;
@@ -34,6 +50,19 @@ namespace Xen {
         return Gatherer.OfKind(Kind);
     }
 
+    std::vector<LoadRequest> GatherSceneLoadRequests(const Scene& S) {
+        AssetGatherer Gatherer;
+
+        S.ForEachActor([&](Actor& A) {
+            A.Reflect(Gatherer);
+            for (size_t i = 0; i < A.GetComponentCount(); ++i) {
+                if (IComponent* C = A.GetComponentAt(i)) C->Reflect(Gatherer);
+            }
+        });
+
+        return Gatherer.Requests();
+    }
+
     void PreloadSceneAssets(const Scene& S, const std::function<bool(size_t, size_t)>& Progress) {
         TextureCache* Textures = S.GetContext().Textures;
         MeshCache* Meshes      = S.GetContext().Meshes;
@@ -41,23 +70,14 @@ namespace Xen {
         // One kind at a time, each fed only its own kind's references -
         // feeding a mesh reference to the texture cache would decode raw
         // vertex bytes as an image, and vice versa.
-        std::vector<AssetID> Assets;
-        if (Textures) {
-            const std::vector<AssetID> TextureAssets = GatherSceneAssets(S, AssetKind::Texture);
-            Assets.insert(Assets.end(), TextureAssets.begin(), TextureAssets.end());
-        }
-        const size_t TextureCount = Assets.size();
+        const std::vector<LoadRequest> Requests = GatherSceneLoadRequests(S);
 
-        if (Meshes) {
-            const std::vector<AssetID> MeshAssets = GatherSceneAssets(S, AssetKind::Mesh);
-            Assets.insert(Assets.end(), MeshAssets.begin(), MeshAssets.end());
-        }
+        for (size_t i = 0; i < Requests.size(); ++i) {
+            const LoadRequest& Request = Requests[i];
+            if (Request.Kind == AssetKind::Texture && Textures) Textures->Preload(Request.ID, Request.Srgb);
+            else if (Request.Kind == AssetKind::Mesh && Meshes) Meshes->Preload(Request.ID);
 
-        for (size_t i = 0; i < Assets.size(); ++i) {
-            if (i < TextureCount) Textures->Preload(Assets[i]);
-            else Meshes->Preload(Assets[i]);
-
-            if (Progress && !Progress(i + 1, Assets.size())) return;
+            if (Progress && !Progress(i + 1, Requests.size())) return;
         }
     }
 }  // namespace Xen

@@ -106,9 +106,9 @@ namespace {
         MonkeActor->AddComponent<MeshComponent>(ASSET("meshes/suzanne.glb"));
         auto* Material = MonkeActor->AddComponent<PBRMaterialComponent>();
 
-        Material->SetAlbedoMapAsset(ASSET("textures/pbr_gold_worn_albedo.png"));
-        Material->SetMetallicRoughnessMapAsset(ASSET("textures/pbr_gold_worn_mr.png"));
-        Material->SetNormalMapAsset(ASSET("textures/pbr_gold_worn_normal.png"));
+        Material->SetAlbedoMapAsset(ASSET("textures/pbr_gold_rough_albedo.png"));
+        Material->SetMetallicRoughnessMapAsset(ASSET("textures/pbr_gold_rough_rm.png"));
+        Material->SetNormalMapAsset(ASSET("textures/pbr_gold_rough_normal.png"));
         Material->SetMetallic(1.0f);
 
         MonkeActor->AddComponent<RotatingComponent>();
@@ -135,9 +135,10 @@ namespace {
         XMStoreFloat4(&LightRotationOut, LightRotation);
         LightActor->SetRotation(LightRotationOut);
 
-        // Synthetic sky+sun test map - regenerate with
-        // Scripts/generate_test_hdri.py. Swap in a real equirectangular .hdr
-        // by changing this asset path.
+        // An equirectangular .hdr environment - the engine-shipped ones live
+        // in Engine/Environment; Scripts/generate_test_hdri.py writes a small
+        // synthetic sky+sun one for testing. Also drawn as the scene's
+        // background (EnvironmentComponent::SetShowBackground to turn off).
         const ActorHandle EnvironmentHandle = MainScene.Spawn("Environment");
         Actor* EnvironmentActor             = MainScene.Get(EnvironmentHandle);
         auto* Environment                   = EnvironmentActor->AddComponent<EnvironmentComponent>();

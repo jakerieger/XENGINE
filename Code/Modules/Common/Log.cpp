@@ -34,6 +34,11 @@ namespace Xen {
         const auto TimeStamp      = GetTimeStamp();
         const auto LogEntry       = std::format("[{}] | {} | {}\n", TimeStamp, SeverityString, Msg);
 
+        // One lock over the file, the console and the ring buffer: AssetLoader's
+        // worker threads log too, and unlocked writes to the same ofstream/
+        // stdout interleave mid-line.
+        std::lock_guard Lock(_BufferMutex);
+
         _LogStream << LogEntry;
         _LogStream.flush();
 
@@ -47,16 +52,13 @@ namespace Xen {
         }
 #endif
 
-        {
-            std::lock_guard Lock(_BufferMutex);
-            _Entries[_CurrentEntry] = {
-              .Message   = Msg,
-              .TimeStamp = TimeStamp,
-              .Severity  = Sev,
-            };
-            _CurrentEntry = (_CurrentEntry + 1) % LOGGER_MAX_ENTRIES;
-            _TotalEntries = std::min<size_t>(_TotalEntries + 1, LOGGER_MAX_ENTRIES);
-        }
+        _Entries[_CurrentEntry] = {
+          .Message   = Msg,
+          .TimeStamp = TimeStamp,
+          .Severity  = Sev,
+        };
+        _CurrentEntry = (_CurrentEntry + 1) % LOGGER_MAX_ENTRIES;
+        _TotalEntries = std::min<size_t>(_TotalEntries + 1, LOGGER_MAX_ENTRIES);
     }
 
     void Logger::Clear() {

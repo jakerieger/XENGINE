@@ -11,31 +11,38 @@
 
 namespace Xen {
     namespace {
-        // The prefiltered map's base (roughness 0) width is capped here: a
-        // mirror-sharp reflection of a 1024x512 map is plenty, and the bake
-        // cost and memory both grow with the base size.
-        constexpr u32 MaxBaseWidth = 1024;
+        // The prefiltered cube's face size (at roughness 0, a mirror) is a
+        // quarter of the equirect source's width - a face covers 90 degrees, a
+        // quarter of the source's 360 - rounded down to a power of two and
+        // capped: past this a mirror-sharp reflection buys nothing, and the
+        // bake cost and memory grow with the square of it.
+        constexpr u32 MaxFaceSize = 1024;
+        constexpr u32 MinFaceSize = 32;
 
-        // Mips run down to a 16-texel-wide level (roughness 1) or this many,
+        // Mips run down to an 8-texel face (roughness 1) or this many,
         // whichever comes first - below that the lobe is so wide every texel
         // is nearly the same color anyway.
-        constexpr u32 MaxLevels    = 7;
-        constexpr u32 SmallestWidth = 16;
+        constexpr u32 MaxLevels     = 8;
+        constexpr u32 SmallestFace  = 8;
 
-        constexpr u32 IrradianceWidth  = 64;
-        constexpr u32 IrradianceHeight = 32;
+        // Irradiance is so low-frequency a 32x32 face is plenty.
+        constexpr u32 IrradianceFaceSize = 32;
 
-        constexpr f32 PrefilterSampleCount  = 512.0f;
-        constexpr f32 IrradianceSampleCount = 2048.0f;
+        constexpr f32 PrefilterSampleCount  = 384.0f;
+        constexpr f32 IrradianceSampleCount = 1024.0f;
+
+        constexpr u32 CubeFaces = 6;
 
         constexpr RHI::Format BakeFormat = RHI::Format::RGBA16_FLOAT;
 
         // Matches the cbuffer both bake shaders declare at b0.
         struct BakeParams {
-            f32 Roughness;
+            f32 Mip;
             f32 SampleCount;
-            f32 DestWidth;
-            f32 Pad;
+            f32 MipCount;
+            f32 Face;
+            f32 DestSize;  // texels per face side at this mip
+            f32 Pad[3];
         };
 
         RHI::ShaderHandle LoadShader(RHI::IRenderDevice& Device,
@@ -148,24 +155,25 @@ namespace Xen {
     bool EnvironmentBaker::Bake(const RHI::TextureHandle Source, const u32 SourceWidth, Result& Out) {
         if (!_Device || !Source.IsValid() || SourceWidth == 0) return false;
 
-        const u32 BaseWidth  = std::min(SourceWidth, MaxBaseWidth);
-        const u32 BaseHeight = std::max(BaseWidth / 2, 1u);
+        u32 FaceSize = MaxFaceSize;
+        while (FaceSize > MinFaceSize && FaceSize * 4 > SourceWidth) FaceSize /= 2;
 
-        // floor(log2(BaseWidth)) - log2(SmallestWidth) + 1 levels, clamped.
         u32 Levels = 1;
-        for (u32 Width = BaseWidth; Width > SmallestWidth && Levels < MaxLevels; Width /= 2) ++Levels;
+        for (u32 Size = FaceSize; Size > SmallestFace && Levels < MaxLevels; Size /= 2) ++Levels;
 
         RHI::TextureDesc PrefilteredDesc;
-        PrefilteredDesc.Width     = BaseWidth;
-        PrefilteredDesc.Height    = BaseHeight;
+        PrefilteredDesc.Type      = RHI::TextureType::TextureCube;
+        PrefilteredDesc.Width     = FaceSize;
+        PrefilteredDesc.Height    = FaceSize;
         PrefilteredDesc.MipLevels = Levels;
         PrefilteredDesc.Fmt       = BakeFormat;
         PrefilteredDesc.Usage     = RHI::TextureUsage::ColorTarget | RHI::TextureUsage::Sampled;
         PrefilteredDesc.DebugName = "XEN.Environment.Prefiltered";
 
         RHI::TextureDesc IrradianceDesc;
-        IrradianceDesc.Width     = IrradianceWidth;
-        IrradianceDesc.Height    = IrradianceHeight;
+        IrradianceDesc.Type      = RHI::TextureType::TextureCube;
+        IrradianceDesc.Width     = IrradianceFaceSize;
+        IrradianceDesc.Height    = IrradianceFaceSize;
         IrradianceDesc.Fmt       = BakeFormat;
         IrradianceDesc.Usage     = RHI::TextureUsage::ColorTarget | RHI::TextureUsage::Sampled;
         IrradianceDesc.DebugName = "XEN.Environment.Irradiance";
@@ -183,11 +191,13 @@ namespace Xen {
 
         const auto RecordPass = [&](const RHI::TextureHandle Target,
                                     const u32 Mip,
+                                    const u32 Face,
                                     const RHI::PipelineHandle Pipeline,
                                     const BakeParams& Params) {
             RHI::RenderPassDesc Pass = RHI::RenderPassDesc::ColorTarget(Target, 0.0f, 0.0f, 0.0f, 1.0f);
-            Pass.ColorAttachments[0].MipLevel = Mip;
-            Pass.DebugName                    = "Environment bake";
+            Pass.ColorAttachments[0].MipLevel   = Mip;
+            Pass.ColorAttachments[0].ArrayLayer = Face;  // a cube's slices are its faces
+            Pass.DebugName                      = "Environment bake";
 
             _Commands.BeginRenderPass(Pass);
             _Commands.BindPipeline(Pipeline);
@@ -197,18 +207,32 @@ namespace Xen {
             _Commands.EndRenderPass();
         };
 
-        // Mip m is roughness m / (Levels - 1): PBR.hlsl maps roughness back to
-        // a mip the same way (Roughness * (levels - 1)), so the two must agree.
+        // Mip m's roughness comes from RoughnessForMip in the shader
+        // (Common.hlsli) - the same mapping PBR.hlsl inverts to pick a mip, so
+        // the baker only says which mip of how many it is drawing.
         for (u32 Mip = 0; Mip < Levels; ++Mip) {
-            const f32 Roughness = Levels > 1 ? CAST<f32>(Mip) / CAST<f32>(Levels - 1) : 0.0f;
-            const f32 DestWidth = CAST<f32>(std::max(BaseWidth >> Mip, 1u));
-            RecordPass(Prefiltered, Mip, _PrefilterPipeline, BakeParams {Roughness, PrefilterSampleCount, DestWidth, 0.0f});
+            const u32 MipSize = std::max(FaceSize >> Mip, 1u);
+            for (u32 Face = 0; Face < CubeFaces; ++Face) {
+                RecordPass(Prefiltered,
+                           Mip,
+                           Face,
+                           _PrefilterPipeline,
+                           BakeParams {CAST<f32>(Mip),
+                                       PrefilterSampleCount,
+                                       CAST<f32>(Levels),
+                                       CAST<f32>(Face),
+                                       CAST<f32>(MipSize),
+                                       {}});
+            }
         }
 
-        RecordPass(Irradiance,
-                   0,
-                   _IrradiancePipeline,
-                   BakeParams {0.0f, IrradianceSampleCount, CAST<f32>(IrradianceWidth), 0.0f});
+        for (u32 Face = 0; Face < CubeFaces; ++Face) {
+            RecordPass(Irradiance,
+                       0,
+                       Face,
+                       _IrradiancePipeline,
+                       BakeParams {0.0f, IrradianceSampleCount, 1.0f, CAST<f32>(Face), CAST<f32>(IrradianceFaceSize), {}});
+        }
 
         _Commands.PopDebugGroup();
         _Device->Submit(_Commands);

@@ -48,6 +48,14 @@ namespace Xen {
         /// WithDepth) - this renderer always depth-tests.
         void Render(const Scene& S, const Viewport& Target);
 
+        /// @brief Bakes the scene's environment (the prefiltered/irradiance
+        /// cube maps) now instead of on the first Render that sees it. The
+        /// bake is a burst of GPU work, so a game calls this while its loading
+        /// screen is still up rather than hitching the first real frame. Must
+        /// be called between BeginFrame and EndFrame, like Render; a no-op if
+        /// the scene has no environment or it's already baked.
+        void PrepareEnvironment(const Scene& S);
+
     private:
         bool CreateDefaultTextures();
 
@@ -61,6 +69,7 @@ namespace Xen {
 
         RHI::LayoutHandle _Layout {};
         RHI::PipelineHandle _Pipeline {};
+        RHI::PipelineHandle _SkyPipeline {};  // optional - see Initialize
         RHI::CommandBuffer _Commands;
 
         // Shared by every material texture slot (see MaterialBindings.hpp) -
@@ -88,8 +97,9 @@ namespace Xen {
         RHI::SamplerHandle _ClampSampler {};
 
         // Bound whenever the scene has no EnvironmentComponent (or one with
-        // no map): a 1x2 two-tone sky, so the shader always samples a real
-        // texture and never branches on "is there an environment".
+        // no map): a tiny sky/ground gradient cube, so the shader always
+        // samples a real texture and never branches on "is there an
+        // environment".
         RHI::TextureHandle _DefaultEnvironmentMap {};
         RHI::TextureHandle _BrdfLUT {};
 
@@ -103,5 +113,16 @@ namespace Xen {
         RHI::TextureHandle _IrradianceMap {};
 
         void ReleaseBakedEnvironment();
+
+        struct EnvironmentState {
+            bool HasBaked {false};
+            bool ShowBackground {false};
+        };
+
+        /// @brief Finds the scene's environment, (re)bakes it if it changed,
+        /// and reports what's now bound-able. Records into the current frame
+        /// (the bake uses Submit), so only call it between BeginFrame and
+        /// EndFrame.
+        EnvironmentState ResolveEnvironment(const Scene& S);
     };
 }  // namespace Xen

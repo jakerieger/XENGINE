@@ -54,6 +54,14 @@ namespace Xen {
 
         AssetKind Asset {AssetKind::Unknown};
 
+        /// For a Texture asset: it's a color image (albedo, emissive) authored
+        /// in sRGB, so the loader must upload it sRGB-decoded. Data maps
+        /// (normal, roughness, ...) and sprites leave it false. Lives here,
+        /// with the reference, because the asset preloader has to know it
+        /// before the owning component's BeginPlay asks - a texture already
+        /// resident keeps whatever format it was first loaded with.
+        bool Srgb {false};
+
         NODISCARD bool HasRange() const { return Min != Max; }
     };
 

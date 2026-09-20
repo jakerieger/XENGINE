@@ -13,7 +13,11 @@ namespace Xen {
         R.Property("AmbientOcclusion", _AmbientOcclusion, {.Category = "Material", .Min = 0.0f, .Max = 1.0f});
         R.Property("Emissive", _Emissive, {.Category = "Material"});
 
-        R.Property("AlbedoMap", _AlbedoMap.Asset, {.Category = "Material Maps", .Asset = AssetKind::Texture});
+        // Albedo/emissive are color maps: .Srgb tells the asset preloader to
+        // load them sRGB-decoded (kept in step with TextureChannel::Srgb).
+        R.Property("AlbedoMap",
+                   _AlbedoMap.Asset,
+                   {.Category = "Material Maps", .Asset = AssetKind::Texture, .Srgb = true});
         R.Property("NormalMap", _NormalMap.Asset, {.Category = "Material Maps", .Asset = AssetKind::Texture});
         R.Property("MetallicRoughnessMap",
                    _MetallicRoughnessMap.Asset,
@@ -21,7 +25,9 @@ namespace Xen {
         R.Property("AmbientOcclusionMap",
                    _AmbientOcclusionMap.Asset,
                    {.Category = "Material Maps", .Asset = AssetKind::Texture});
-        R.Property("EmissiveMap", _EmissiveMap.Asset, {.Category = "Material Maps", .Asset = AssetKind::Texture});
+        R.Property("EmissiveMap",
+                   _EmissiveMap.Asset,
+                   {.Category = "Material Maps", .Asset = AssetKind::Texture, .Srgb = true});
         // The resolved TextureHandle in each channel is deliberately not
         // reflected: it's a runtime GPU handle, meaningless across sessions,
         // and rebuilt in BeginPlay.

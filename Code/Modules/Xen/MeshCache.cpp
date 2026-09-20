@@ -31,7 +31,7 @@ namespace Xen {
             return nullptr;
         }
 
-        // RAII wrapper so an exception thrown partway through CreateGpuMesh
+        // RAII wrapper so an exception thrown partway through DecodeAsset
         // (a THROW_ENGINE_EXCEPTION from any of the validation checks below)
         // can't leak the cgltf_data allocation.
         struct GltfHandle {
@@ -46,7 +46,7 @@ namespace Xen {
         Clear();
     }
 
-    MeshCache::GpuMesh MeshCache::CreateGpuMesh(const AssetID ID) const {
+    DecodedMesh MeshCache::DecodeAsset(const AssetID ID) const {
         if (!_Assets->Contains(ID)) {
             THROW_ENGINE_EXCEPTION(EngineException, std::format("mesh asset {} not found", ID.Value));
         }
@@ -144,34 +144,59 @@ namespace Xen {
             for (u32 i = 0; i < IndexCount; ++i) Indices16[i] = CAST<u16>(Indices[i]);
         }
 
+        DecodedMesh Out;
+        Out.Info.VertexCount = VertexCount;
+        Out.Info.IndexCount  = IndexCount;
+        Out.Info.IndexType   = UseU16 ? RHI::IndexType::U16 : RHI::IndexType::U32;
+        Out.Info.GpuBytes    = Vertices.size() * sizeof(MeshVertex) +
+                            (UseU16 ? Indices16.size() * sizeof(u16) : Indices.size() * sizeof(u32));
+        Out.Vertices         = std::move(Vertices);
+        if (UseU16) Out.Indices16 = std::move(Indices16);
+        else Out.Indices32 = std::move(Indices);
+
+        return Out;
+    }
+
+    MeshCache::GpuMesh MeshCache::UploadMesh(const AssetID ID, DecodedMesh&& Decoded) {
+        const bool UseU16 = Decoded.Info.IndexType == RHI::IndexType::U16;
+
         GpuMesh Mesh;
-        Mesh.Info.VertexCount = VertexCount;
-        Mesh.Info.IndexCount  = IndexCount;
-        Mesh.Info.IndexType   = UseU16 ? RHI::IndexType::U16 : RHI::IndexType::U32;
+        Mesh.Info = Decoded.Info;
 
         RHI::BufferDesc VBDesc;
-        VBDesc.Size        = Vertices.size() * sizeof(MeshVertex);
+        VBDesc.Size        = Decoded.Vertices.size() * sizeof(MeshVertex);
         VBDesc.Usage       = RHI::BufferUsage::Vertex;
         VBDesc.Memory      = RHI::MemoryUsage::GpuOnly;
-        VBDesc.InitialData = Vertices.data();
+        VBDesc.InitialData = Decoded.Vertices.data();
         VBDesc.DebugName   = "Mesh VB";
         Mesh.VertexBuffer  = _Device->CreateBuffer(VBDesc);
 
         RHI::BufferDesc IBDesc;
-        IBDesc.Size        = UseU16 ? Indices16.size() * sizeof(u16) : Indices.size() * sizeof(u32);
+        IBDesc.Size        = UseU16 ? Decoded.Indices16.size() * sizeof(u16) : Decoded.Indices32.size() * sizeof(u32);
         IBDesc.Usage       = RHI::BufferUsage::Index;
         IBDesc.Memory      = RHI::MemoryUsage::GpuOnly;
-        IBDesc.InitialData = UseU16 ? CAST<const void*>(Indices16.data()) : CAST<const void*>(Indices.data());
+        IBDesc.InitialData = UseU16 ? CAST<const void*>(Decoded.Indices16.data())
+                                    : CAST<const void*>(Decoded.Indices32.data());
         IBDesc.DebugName   = "Mesh IB";
         Mesh.IndexBuffer   = _Device->CreateBuffer(IBDesc);
-
-        Mesh.Info.GpuBytes = VBDesc.Size + IBDesc.Size;
 
         if (!Mesh.VertexBuffer.IsValid() || !Mesh.IndexBuffer.IsValid()) {
             THROW_ENGINE_EXCEPTION(EngineException, std::format("GPU mesh buffer creation failed for asset {}", ID.Value));
         }
 
         return Mesh;
+    }
+
+    void MeshCache::AdoptPreloaded(const AssetID ID, DecodedMesh&& Decoded) {
+        if (!ID.IsValid() || _Entries.contains(ID.Value)) return;
+
+        GpuMesh Mesh {UploadMesh(ID, std::move(Decoded))};
+        const MeshHandle Handle {_NextHandleID++};
+        const u64 Bytes = Mesh.Info.GpuBytes;
+
+        _MeshesByHandle.emplace(Handle.ID, std::move(Mesh));
+        _Entries.emplace(ID.Value, Entry {Handle, 0});
+        _ResidentBytes += Bytes;
     }
 
     MeshHandle MeshCache::Acquire(const AssetID ID) {
@@ -182,7 +207,7 @@ namespace Xen {
             return It->second.Handle;
         }
 
-        GpuMesh Mesh {CreateGpuMesh(ID)};
+        GpuMesh Mesh {UploadMesh(ID, DecodeAsset(ID))};
         const MeshHandle Handle {_NextHandleID++};
         const u64 Bytes = Mesh.Info.GpuBytes;
 
@@ -208,13 +233,7 @@ namespace Xen {
     void MeshCache::Preload(const AssetID ID) {
         if (!ID.IsValid() || _Entries.contains(ID.Value)) return;
 
-        GpuMesh Mesh {CreateGpuMesh(ID)};
-        const MeshHandle Handle {_NextHandleID++};
-        const u64 Bytes = Mesh.Info.GpuBytes;
-
-        _MeshesByHandle.emplace(Handle.ID, std::move(Mesh));
-        _Entries.emplace(ID.Value, Entry {Handle, 0});
-        _ResidentBytes += Bytes;
+        AdoptPreloaded(ID, DecodeAsset(ID));
     }
 
     bool MeshCache::IsResident(const AssetID ID) const {

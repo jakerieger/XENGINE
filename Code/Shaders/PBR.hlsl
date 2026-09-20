@@ -1,6 +1,6 @@
 // Metallic-roughness Cook-Torrance PBR: one directional light plus image-based
-// lighting from an equirectangular environment map and a baked BRDF LUT (see
-// BRDFIntegrate.hlsl), no shadows yet. Binding slots follow
+// lighting from baked environment cube maps (see EnvironmentBaker) and a baked
+// BRDF LUT (see BRDFIntegrate.hlsl), no shadows yet. Binding slots follow
 // Include/MaterialBindings.hlsli's standardized scheme - see that file for
 // what each register means and why.
 //
@@ -8,14 +8,9 @@
 // never runtime-compiled HLSL from a game's own Content directory.
 
 #include "Include/Common.hlsli"
+#include "Include/FrameData.hlsli"
 #include "Include/MaterialBindings.hlsli"
-
-cbuffer FrameData : register(XEN_FRAME_REGISTER) {
-    row_major float4x4 ViewProjection;
-    float4 CameraPositionAndPad;    // xyz = CameraPosition
-    float4 LightDirectionAndPad;    // xyz = LightDirection (points FROM the light TOWARD the surface)
-    float4 LightColorAndIntensity;  // xyz = LightColor, w = LightIntensity
-};
+#include "Include/Tonemap.hlsli"
 
 cbuffer ObjectData : register(XEN_OBJECT_REGISTER) {
     row_major float4x4 Model;
@@ -44,10 +39,10 @@ SamplerState EmissiveSampler : register(XEN_EMISSIVE_SAMPLER_REGISTER);
 
 // Scene-level (bound once per frame, not per material) - see
 // MaterialBindings.hlsli.
-Texture2D EnvironmentMap : register(XEN_ENVIRONMENT_TEX_REGISTER);  // prefiltered specular: mip = roughness
+TextureCube EnvironmentMap : register(XEN_ENVIRONMENT_TEX_REGISTER);  // prefiltered specular: mip = roughness (RoughnessForMip)
 SamplerState EnvironmentSampler : register(XEN_ENVIRONMENT_SAMPLER_REGISTER);
 
-Texture2D IrradianceMap : register(XEN_IRRADIANCE_TEX_REGISTER);  // cosine-convolved diffuse lighting
+TextureCube IrradianceMap : register(XEN_IRRADIANCE_TEX_REGISTER);  // cosine-convolved diffuse lighting
 SamplerState IrradianceSampler : register(XEN_IRRADIANCE_SAMPLER_REGISTER);
 
 Texture2D BrdfLUT : register(XEN_BRDF_LUT_TEX_REGISTER);
@@ -203,26 +198,26 @@ float4 PSMain(PSInput In) : SV_Target {
     // incoming light, BrdfLUT supplies how much of it this material reflects
     // at this view angle and roughness (F0 * scale + bias).
     //
-    // EnvironmentMap is the GGX-prefiltered specular map (EnvironmentBaker),
-    // one roughness level per mip, so roughness picks a mip: blurry
-    // reflections cost one sample. IrradianceMap is the cosine-convolved
-    // diffuse lighting, already integrated over the hemisphere. Both use
-    // SampleLevel - implicit-derivative Sample would put a visible seam where
-    // atan2 wraps in DirToEquirectUV. A scene with no environment binds a
-    // 1x2 placeholder sky for both (one mip, so the LOD below clamps to 0).
+    // EnvironmentMap is the GGX-prefiltered specular cube (EnvironmentBaker),
+    // one roughness level per mip (MipForRoughness inverts the baker's
+    // RoughnessForMip), so roughness picks a mip: blurry reflections cost one
+    // sample. IrradianceMap is the cosine-convolved diffuse lighting, already
+    // integrated over the hemisphere. Both are sampled by direction, and
+    // SampleLevel picks the mip explicitly. A scene with no environment binds
+    // a tiny placeholder sky cube for both (one mip, so the LOD clamps to 0).
     const float NdotV = max(dot(N, V), 0.0);
     const float3 FIndirect = FresnelSchlickRoughness(NdotV, F0, Roughness);
     const float3 KDiffuseIndirect = (1.0 - FIndirect) * (1.0 - Metallic);
 
-    const float3 Irradiance = IrradianceMap.SampleLevel(IrradianceSampler, DirToEquirectUV(N), 0).rgb;
+    const float3 Irradiance = IrradianceMap.SampleLevel(IrradianceSampler, N, 0).rgb;
     const float3 DiffuseIBL = Irradiance * Albedo * KDiffuseIndirect * AO;
 
     uint EnvWidth, EnvHeight, EnvLevels;
     EnvironmentMap.GetDimensions(0, EnvWidth, EnvHeight, EnvLevels);
-    const float EnvLod = Roughness * float(EnvLevels - 1);
+    const float EnvLod = MipForRoughness(Roughness, EnvLevels);
 
     const float3 R = reflect(-V, N);
-    const float3 PrefilteredColor = EnvironmentMap.SampleLevel(EnvironmentSampler, DirToEquirectUV(R), EnvLod).rgb;
+    const float3 PrefilteredColor = EnvironmentMap.SampleLevel(EnvironmentSampler, R, EnvLod).rgb;
     const float2 EnvBRDF = BrdfLUT.SampleLevel(BrdfLUTSampler, float2(NdotV, Roughness), 0).rg;
     const float3 SpecularIBL = PrefilteredColor * (F0 * EnvBRDF.x + EnvBRDF.y) * AO;
 
@@ -230,11 +225,5 @@ float4 PSMain(PSInput In) : SV_Target {
 
     float3 Color = Ambient + DirectLight + Emissive;
 
-    // Reinhard tonemap + gamma correction: the swap chain is a plain UNORM
-    // target (no sRGB view, no HDR/tonemap pass yet), so this has to happen
-    // here or values above 1.0 just clip.
-    Color = Color / (Color + float3(1.0, 1.0, 1.0));
-    Color = pow(Color, float3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2));
-
-    return float4(Color, 1.0);
+    return float4(TonemapAndEncode(Color), 1.0);
 }

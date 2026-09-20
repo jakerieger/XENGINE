@@ -19,6 +19,10 @@
 // per-frame one.
 static const uint SampleCount = 1024;
 
+VSOutput VSMain(uint VertexID : SV_VertexID) {
+    return FullscreenVertex(VertexID, 0.0);
+}
+
 // Smith geometry term with the IBL remapping of k (Roughness^2 / 2, not the
 // direct-lighting (Roughness + 1)^2 / 8 PBR.hlsl uses for analytic lights).
 float GeometrySchlickGGXIBL(float NdotX, float Roughness) {

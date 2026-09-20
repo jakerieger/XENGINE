@@ -6,9 +6,11 @@
 
 #include <Common/XenCommon.hpp>
 
+#include "AssetLoader.hpp"
 #include "AssetSettings.hpp"
 #include "DebugUI.hpp"
 #include "EngineConfig.hpp"
+#include "LoadingScreen.hpp"
 #include "MeshCache.hpp"
 #include "MeshRenderer.hpp"
 #include "Scene.hpp"
@@ -21,6 +23,7 @@
 #include <XenPAK/AssetMount.hpp>
 #include <XenPAK/AssetRegistry.hpp>
 
+#include <chrono>
 #include <filesystem>
 
 #ifndef _WINDOWS_
@@ -62,6 +65,20 @@ namespace Xen {
         void UnloadScene();
 
         NODISCARD bool IsSceneChangePending() const { return _PendingSceneChange; };
+
+        /// @brief Whether a scene is currently being loaded. The scene's assets
+        /// are unpacked and decoded on worker threads while the main thread
+        /// keeps the window alive and, once the load has been running for
+        /// LoadingScreen::Config::ShowDelaySeconds, draws a loading screen.
+        /// There is no active scene until it finishes: OnUpdate/OnRender don't
+        /// run and GetActiveScene() is null. A scene change requested during a
+        /// load cancels it and starts the new one.
+        NODISCARD bool IsLoading() const { return _Load != nullptr; }
+
+        /// @brief The built-in loading screen - tweak its Config (colors,
+        /// show delay, minimum time on screen) from OnStartup, or replace it
+        /// outright by overriding OnLoadingScreen.
+        NODISCARD LoadingScreen& GetLoadingScreen() { return _LoadingScreen; }
         NODISCARD Scene* GetActiveScene() const { return _ActiveScene.get(); };
 
         NODISCARD const EngineContext& GetContext() const { return _Context; }
@@ -140,6 +157,16 @@ namespace Xen {
         /// @brief After the draw list is built, before it is submitted.
         virtual void OnRender() {}
 
+        /// @brief Once per frame while a scene loads (and the loading screen
+        /// is due), inside an active frame - between BeginFrame and EndFrame.
+        /// Draw your own loading screen into the swap chain and return true,
+        /// or return false (the default) for the built-in bar and spinner.
+        /// Nothing else runs meanwhile: no scene exists yet.
+        virtual bool OnLoadingScreen(const LoadingProgress& Progress) {
+            (void)Progress;
+            return false;
+        }
+
     private:
         enum class PendingKind : u8 { None, LoadAsset, LoadFile, Unload };
 
@@ -148,6 +175,14 @@ namespace Xen {
         void ApplyPendingSceneChange();
         void TearDownActiveScene();
         void FinishSceneLoad(std::unique_ptr<Scene> Loaded);
+
+        void BeginSceneLoad(std::unique_ptr<Scene> Loaded);
+        void TickLoading(f32 DeltaTime);
+        void DrawLoadingFrame(const LoadingProgress& Progress, f32 DeltaTime, bool WarmUpEnvironment);
+
+        /// @brief Abandons a load in progress (joins its workers) and drops
+        /// whatever assets it had already made resident.
+        void CancelLoad();
 
         EngineConfig _EngineConfig {};
         AudioConfig _AudioConfig {};
@@ -172,6 +207,22 @@ namespace Xen {
         // has a live device to call it on - a backstop, since ~Game()
         // shuts it down explicitly anyway (see there).
         DebugUI _DebugUI;
+
+        LoadingScreen _LoadingScreen;
+
+        // A scene mid-load: deserialized but not yet active, its assets being
+        // unpacked by the loader's workers. Declared after the caches and the
+        // device (so it's destroyed before them - its workers use both) and
+        // reset explicitly in ~Game as well.
+        struct LoadState {
+            std::unique_ptr<Scene> Incoming;
+            AssetLoader Loader;
+            std::chrono::steady_clock::time_point Start;
+            std::chrono::steady_clock::time_point VisibleSince;
+            bool Visible {false};      // the loading screen has appeared
+            bool AssetsDone {false};   // every asset is resident; waiting out the minimum on-screen time
+        };
+        std::unique_ptr<LoadState> _Load;
 
         std::unique_ptr<Scene> _ActiveScene;
 

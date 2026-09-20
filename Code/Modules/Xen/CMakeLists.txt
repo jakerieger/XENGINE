@@ -18,6 +18,8 @@ add_library(Xen STATIC
         Actor.cpp
         Actor.hpp
         ActorHandle.hpp
+        AssetLoader.cpp
+        AssetLoader.hpp
         AssetPreloader.cpp
         AssetPreloader.hpp
         AssetSettings.hpp
@@ -39,9 +41,13 @@ add_library(Xen STATIC
         EnvironmentBaker.hpp
         EnvironmentComponent.cpp
         EnvironmentComponent.hpp
+        FPPlayerController.cpp
+        FPPlayerController.hpp
         Game.cpp
         Game.hpp
         Input.hpp
+        LoadingScreen.cpp
+        LoadingScreen.hpp
         MaterialBindings.hpp
         MeshCache.cpp
         MeshCache.hpp
@@ -53,6 +59,8 @@ add_library(Xen STATIC
         PBRMaterialComponent.hpp
         Reflection.hpp
         RenderDevice.hpp
+        RadianceHdr.cpp
+        RadianceHdr.hpp
         RHI.cpp
         RHI.hpp
         Scene.cpp

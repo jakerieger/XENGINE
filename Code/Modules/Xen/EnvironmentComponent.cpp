@@ -8,6 +8,7 @@
 namespace Xen {
     void EnvironmentComponent::Reflect(IReflector& R) {
         R.Property("Map", _MapAsset, {.Category = "Environment", .Asset = AssetKind::Texture});
+        R.Property("ShowBackground", _ShowBackground, {.Category = "Environment"});
         // _Map is a runtime GPU handle - meaningless across sessions, rebuilt
         // in BeginPlay, so it's deliberately not reflected.
     }

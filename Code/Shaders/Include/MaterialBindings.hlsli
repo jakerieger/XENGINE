@@ -53,10 +53,10 @@
 // Scene-level slots: not a material's own (t0-t4 above are), and they don't
 // vary per draw - MeshRenderer binds them once per frame, before the per-actor
 // loop. Every pipeline built on this convention declares them.
-#define XEN_ENVIRONMENT_TEX_REGISTER      t5  // GGX-prefiltered equirect environment (RGBA16F), mip = roughness, sampled by direction (see Common.hlsli)
+#define XEN_ENVIRONMENT_TEX_REGISTER      t5  // GGX-prefiltered environment CUBE (RGBA16F), mip = roughness (see Common.hlsli's RoughnessForMip), sampled by direction
 #define XEN_ENVIRONMENT_SAMPLER_REGISTER  s5
 
-#define XEN_IRRADIANCE_TEX_REGISTER      t6  // Cosine-convolved equirect diffuse lighting (RGBA16F), sampled by the surface normal
+#define XEN_IRRADIANCE_TEX_REGISTER      t6  // Cosine-convolved diffuse-lighting CUBE (RGBA16F), sampled by the surface normal
 #define XEN_IRRADIANCE_SAMPLER_REGISTER  s6
 
 #define XEN_BRDF_LUT_TEX_REGISTER      t7  // RG16F split-sum LUT, indexed by (NdotV, Roughness) -> (scale, bias)

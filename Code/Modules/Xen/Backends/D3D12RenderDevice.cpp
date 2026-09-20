@@ -488,8 +488,7 @@ namespace Xen::RHI::D3D12Backend {
         while (!_RetiredTextures.empty() && _RetiredTextures.front().FenceValue <= Completed) {
             const D3DTexture& Tex = _RetiredTextures.front().Item;
             if (Tex.SrvHeapIndex != UINT32_MAX) _FreeSrvSlots.push_back(Tex.SrvHeapIndex);
-            if (Tex.RtvHeapIndex != UINT32_MAX) _FreeOffscreenRtvSlots.push_back(Tex.RtvHeapIndex);
-            for (const u32 MipSlot : Tex.MipRtvHeapIndices) _FreeOffscreenRtvSlots.push_back(MipSlot);
+            for (const u32 RtvSlot : Tex.RtvSlots) _FreeOffscreenRtvSlots.push_back(RtvSlot);
             if (Tex.DsvHeapIndex != UINT32_MAX) _FreeOffscreenDsvSlots.push_back(Tex.DsvHeapIndex);
             _RetiredTextures.pop_front();
         }
@@ -838,20 +837,21 @@ namespace Xen::RHI::D3D12Backend {
                 continue;
             }
 
-            // MipLevel picks which of the texture's per-mip RTVs (see
-            // CreateTexture) the pass renders into; the viewport below is
-            // that mip's own extent, not the texture's base size.
-            const u32 MipLevel = Desc.ColorAttachments[i].MipLevel;
-            u32 RtvIndex       = Tex->RtvHeapIndex;
-            if (MipLevel > 0) {
-                if (MipLevel - 1 >= Tex->MipRtvHeapIndices.size()) {
-                    LOG_ERR("offscreen render pass: color attachment %u targets mip %u, which has no render-target view",
-                            i,
-                            MipLevel);
-                    continue;
-                }
-                RtvIndex = Tex->MipRtvHeapIndices[MipLevel - 1];
+            // MipLevel/ArrayLayer pick which of the texture's per-(layer, mip)
+            // RTVs (see CreateTexture) the pass renders into; the viewport
+            // below is that mip's own extent, not the texture's base size.
+            const u32 MipLevel   = Desc.ColorAttachments[i].MipLevel;
+            const u32 ArrayLayer = Desc.ColorAttachments[i].ArrayLayer;
+            const size_t RtvSlot = CAST<size_t>(ArrayLayer) * Tex->Mips + MipLevel;
+            if (MipLevel >= Tex->Mips || ArrayLayer >= Tex->Layers || RtvSlot >= Tex->RtvSlots.size()) {
+                LOG_ERR("offscreen render pass: color attachment %u targets mip %u / layer %u, which has no "
+                        "render-target view",
+                        i,
+                        MipLevel,
+                        ArrayLayer);
+                continue;
             }
+            const u32 RtvIndex = Tex->RtvSlots[RtvSlot];
 
             TransitionTexture(*Tex, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
@@ -1099,6 +1099,9 @@ namespace Xen::RHI::D3D12Backend {
         Tex.Height    = Desc.Height;
         Tex.MipLevels = Desc.MipLevels == 0 ? 0 : Desc.MipLevels;
         Tex.Usage     = Desc.Usage;
+        Tex.Type      = Desc.Type;
+        // A cube is always exactly six slices; an array is whatever was asked for.
+        Tex.Layers = Desc.Type == TextureType::TextureCube ? 6 : std::max<u32>(Desc.ArrayLayers, 1);
 
         D3D12MA::ALLOCATION_DESC AllocDesc {};
         AllocDesc.HeapType = D3D12_HEAP_TYPE_DEFAULT;
@@ -1120,8 +1123,9 @@ namespace Xen::RHI::D3D12Backend {
         ResDesc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
         ResDesc.Width            = Desc.Width;
         ResDesc.Height           = Desc.Height;
-        ResDesc.DepthOrArraySize = CAST<UINT16>(std::max<u32>(Desc.ArrayLayers, 1));
+        ResDesc.DepthOrArraySize = CAST<UINT16>(Tex.Layers);
         ResDesc.MipLevels        = CAST<UINT16>(Tex.MipLevels == 0 ? 1 : Tex.MipLevels);
+        Tex.Mips                 = ResDesc.MipLevels;
         ResDesc.Format           = ResourceFormat;
         ResDesc.SampleDesc.Count = std::max<u32>(Desc.SampleCount, 1);
         ResDesc.Flags            = WantsColorTarget   ? D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
@@ -1150,44 +1154,58 @@ namespace Xen::RHI::D3D12Backend {
                 Handle.ptr += CAST<UINT64>(Tex.SrvHeapIndex) * _SrvDescriptorSize;
 
                 D3D12_SHADER_RESOURCE_VIEW_DESC SrvDesc {};
-                SrvDesc.Format = WantsDepthTarget ? ToDepthSrvFormat(Desc.Fmt) : Tex.Format;
-                SrvDesc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
+                SrvDesc.Format                  = WantsDepthTarget ? ToDepthSrvFormat(Desc.Fmt) : Tex.Format;
                 SrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-                SrvDesc.Texture2D.MipLevels     = ResDesc.MipLevels;
+                if (Desc.Type == TextureType::TextureCube) {
+                    SrvDesc.ViewDimension         = D3D12_SRV_DIMENSION_TEXTURECUBE;
+                    SrvDesc.TextureCube.MipLevels = ResDesc.MipLevels;
+                } else if (Tex.Layers > 1) {
+                    SrvDesc.ViewDimension                = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+                    SrvDesc.Texture2DArray.MipLevels     = ResDesc.MipLevels;
+                    SrvDesc.Texture2DArray.ArraySize     = Tex.Layers;
+                } else {
+                    SrvDesc.ViewDimension       = D3D12_SRV_DIMENSION_TEXTURE2D;
+                    SrvDesc.Texture2D.MipLevels = ResDesc.MipLevels;
+                }
                 _Device->CreateShaderResourceView(Tex.Resource.Get(), &SrvDesc, Handle);
             }
         }
 
         if (WantsColorTarget) {
-            // One RTV per mip of a plain (non-array) texture, so a render
-            // pass can target any single mip; an array texture keeps the
-            // whole-resource default view (no per-slice targeting yet).
-            const bool PerMipViews = ResDesc.DepthOrArraySize == 1;
-            const u32 ViewCount    = PerMipViews ? ResDesc.MipLevels : 1;
+            // One RTV per (layer, mip), so a render pass can target any single
+            // mip of any single slice (a cube's face, a prefiltered mip).
+            const u32 ViewCount = Tex.Layers * Tex.Mips;
+            Tex.RtvSlots.reserve(ViewCount);
 
-            for (u32 Mip = 0; Mip < ViewCount; ++Mip) {
-                const u32 Slot = AllocateOffscreenRtvSlot();
-                if (Slot == UINT32_MAX) {
-                    LOG_ERR("offscreen RTV heap exhausted (capacity %u)", OffscreenRtvHeapCapacity);
-                    break;
-                }
+            for (u32 Layer = 0; Layer < Tex.Layers; ++Layer) {
+                for (u32 Mip = 0; Mip < Tex.Mips; ++Mip) {
+                    const u32 Slot = AllocateOffscreenRtvSlot();
+                    if (Slot == UINT32_MAX) {
+                        LOG_ERR("offscreen RTV heap exhausted (capacity %u)", OffscreenRtvHeapCapacity);
+                        break;
+                    }
 
-                D3D12_CPU_DESCRIPTOR_HANDLE Handle = _OffscreenRtvHeap->GetCPUDescriptorHandleForHeapStart();
-                Handle.ptr += CAST<UINT64>(Slot) * _OffscreenRtvDescriptorSize;
+                    D3D12_CPU_DESCRIPTOR_HANDLE Handle = _OffscreenRtvHeap->GetCPUDescriptorHandleForHeapStart();
+                    Handle.ptr += CAST<UINT64>(Slot) * _OffscreenRtvDescriptorSize;
 
-                if (PerMipViews) {
                     D3D12_RENDER_TARGET_VIEW_DESC RtvDesc {};
-                    RtvDesc.Format               = Tex.Format;
-                    RtvDesc.ViewDimension        = D3D12_RTV_DIMENSION_TEXTURE2D;
-                    RtvDesc.Texture2D.MipSlice   = Mip;
+                    RtvDesc.Format = Tex.Format;
+                    if (Tex.Layers > 1) {
+                        RtvDesc.ViewDimension                  = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+                        RtvDesc.Texture2DArray.MipSlice        = Mip;
+                        RtvDesc.Texture2DArray.FirstArraySlice = Layer;
+                        RtvDesc.Texture2DArray.ArraySize       = 1;
+                    } else {
+                        RtvDesc.ViewDimension      = D3D12_RTV_DIMENSION_TEXTURE2D;
+                        RtvDesc.Texture2D.MipSlice = Mip;
+                    }
                     _Device->CreateRenderTargetView(Tex.Resource.Get(), &RtvDesc, Handle);
-                } else {
-                    _Device->CreateRenderTargetView(Tex.Resource.Get(), nullptr, Handle);
-                }
 
-                if (Mip == 0) Tex.RtvHeapIndex = Slot;
-                else Tex.MipRtvHeapIndices.push_back(Slot);
+                    Tex.RtvSlots.push_back(Slot);
+                }
             }
+
+            if (!Tex.RtvSlots.empty()) Tex.RtvHeapIndex = Tex.RtvSlots.front();
         }
 
         if (WantsDepthTarget) {

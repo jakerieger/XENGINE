@@ -5,6 +5,8 @@
 #include <Common/Log.hpp>
 
 #include "Game.hpp"
+
+#include <thread>
 #include "AssetPreloader.hpp"
 #include "SceneSerializer.hpp"
 #include "AssetSettings.hpp"
@@ -81,6 +83,17 @@ namespace Xen {
         // content in it.
         SetViewport(_Window->GetWidth(), _Window->GetHeight());
 
+        // Not fatal: without it a load just has no default screen. Painting
+        // one background frame right away means the launch never shows an
+        // unpainted window while the rest of this constructor runs.
+        if (_LoadingScreen.Initialize(*_RenderDevice)) {
+            _RenderDevice->BeginFrame();
+            _LoadingScreen.DrawBackground();
+            _RenderDevice->EndFrame();
+        } else {
+            LOG_WARN("loading screen unavailable - a load will show no default screen");
+        }
+
         if (!_SpriteRenderer.Initialize(*_RenderDevice)) {
             THROW_ENGINE_EXCEPTION(EngineException, "failed to initialize sprite renderer");
         }
@@ -105,6 +118,8 @@ namespace Xen {
     }
 
     Game::~Game() {
+        // First: the loader's workers use the caches and the device.
+        _Load.reset();
         if (_ActiveScene) TearDownActiveScene();
 
         // Explicit, so the renderer and viewport release their GPU resources
@@ -114,6 +129,7 @@ namespace Xen {
         _Window->SetDebugUI(nullptr);
         _DebugUI.Shutdown();
         _SpriteRenderer.Shutdown();
+        _LoadingScreen.Shutdown();
         _MeshRenderer.Shutdown();
         _MainViewport.Shutdown();
         _Meshes.reset();
@@ -155,6 +171,11 @@ namespace Xen {
         _Running = true;
         OnStartup();
         ApplyPendingSceneChange();
+
+        // A frame budget is for the game, not for waiting on its assets.
+        while (_Running && _Load) {
+            TickFrame(_FixedTimeStep);
+        }
 
         for (u32 i = 0; i < FrameCount && _Running; ++i) {
             TickFrame(_FixedTimeStep);
@@ -214,6 +235,16 @@ namespace Xen {
     void Game::TickFrame(const f32 DeltaTime) {
         _LastDelta = DeltaTime;
         ++_FrameCount;
+
+        // A scene is loading: there's nothing to update or draw but the
+        // loading screen. RunLoop still pumps the window every iteration, so it
+        // stays responsive.
+        if (_Load) {
+            TickLoading(DeltaTime);
+            _Window->ResetInput();
+            ApplyPendingSceneChange();
+            return;
+        }
 
         _Accumulator += DeltaTime;
 
@@ -288,6 +319,7 @@ namespace Xen {
         const auto Path        = _PendingPath;
         _PendingKind           = PendingKind::None;
 
+        CancelLoad();
         TearDownActiveScene();
 
         switch (Kind) {
@@ -305,7 +337,7 @@ namespace Xen {
 
                 auto Loaded = std::make_unique<Scene>("", _Context);
                 SceneSerializer::LoadFromString(*Loaded, Text);
-                FinishSceneLoad(std::move(Loaded));
+                BeginSceneLoad(std::move(Loaded));
 
                 return;
             }
@@ -313,7 +345,7 @@ namespace Xen {
             case PendingKind::LoadFile: {
                 auto Loaded = std::make_unique<Scene>("", _Context);
                 SceneSerializer::LoadFromFile(*Loaded, Path);
-                FinishSceneLoad(std::move(Loaded));
+                BeginSceneLoad(std::move(Loaded));
 
                 return;
             }
@@ -332,10 +364,103 @@ namespace Xen {
     }
 
     void Game::FinishSceneLoad(std::unique_ptr<Scene> Loaded) {
+        // Every asset is already resident (AssetLoader), so each component's
+        // Acquire in BeginPlay is a cache hit.
         _ActiveScene = std::move(Loaded);
-        PreloadSceneAssets(*_ActiveScene);
         OnSceneLoaded(*_ActiveScene);
         _ActiveScene->BeginPlay();
         _Accumulator = 0.0f;
+    }
+
+    void Game::BeginSceneLoad(std::unique_ptr<Scene> Loaded) {
+        _Load           = std::make_unique<LoadState>();
+        _Load->Incoming = std::move(Loaded);
+        _Load->Start    = std::chrono::steady_clock::now();
+
+        // Workers start unpacking and decoding right here; nothing is drawn
+        // until TickLoading decides the load is slow enough to warrant it.
+        _Load->Loader.Begin(GatherSceneLoadRequests(*_Load->Incoming), _Textures.get(), _Meshes.get());
+        _Accumulator = 0.0f;
+    }
+
+    void Game::CancelLoad() {
+        if (!_Load) return;
+
+        _Load.reset();  // ~AssetLoader stops and joins the workers
+
+        // Whatever the load had already made resident belongs to no scene.
+        _Textures->Clear();
+        _Meshes->Clear();
+    }
+
+    void Game::TickLoading(const f32 DeltaTime) {
+        using Clock = std::chrono::steady_clock;
+
+        if (_Window->ConsumeResized()) { SetViewport(_Window->GetWidth(), _Window->GetHeight()); }
+
+        LoadState& L = *_Load;
+
+        // The GPU half of every asset the workers have finished. A worker's
+        // failure (a missing or undecodable asset) surfaces here, on the main
+        // thread, where the old synchronous load threw it.
+        try {
+            L.AssetsDone = L.Loader.Pump(4.0);
+        } catch (...) {
+            _Load.reset();
+            throw;
+        }
+
+        const auto Now = Clock::now();
+
+        LoadingProgress Progress;
+        Progress.Total          = L.Loader.Total();
+        Progress.Done           = L.Loader.Done();
+        Progress.Fraction       = (L.AssetsDone || Progress.Total == 0)
+                                    ? 1.0f
+                                    : CAST<f32>(Progress.Done) / CAST<f32>(Progress.Total);
+        Progress.ElapsedSeconds = std::chrono::duration<f32>(Now - L.Start).count();
+
+        const LoadingScreen::Config& Cfg = _LoadingScreen.GetConfig();
+        if (!L.Visible && Progress.ElapsedSeconds >= Cfg.ShowDelaySeconds) {
+            L.Visible      = true;
+            L.VisibleSince = Now;
+            _LoadingScreen.Reset();
+        }
+
+        const bool CanPresent = !_Window->IsMinimized();
+        if (L.Visible && CanPresent) {
+            DrawLoadingFrame(Progress, DeltaTime, false);
+        } else {
+            // Nothing is being presented (so nothing paces this loop the way
+            // vsync does): don't spin a core while the workers decode.
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+
+        if (!L.AssetsDone) return;
+
+        // Once it has appeared, keep it up for its minimum time.
+        if (L.Visible && std::chrono::duration<f32>(Now - L.VisibleSince).count() < Cfg.MinVisibleSeconds) return;
+
+        const bool WasVisible = L.Visible;
+        std::unique_ptr<Scene> Incoming = std::move(L.Incoming);
+        _Load.reset();  // L is gone from here on
+
+        FinishSceneLoad(std::move(Incoming));
+
+        // If the loading screen is up, bake the environment under it instead
+        // of hitching the first real frame.
+        if (WasVisible && CanPresent && _MeshRenderer.IsInitialized()) {
+            DrawLoadingFrame(Progress, 0.0f, true);
+        }
+    }
+
+    void Game::DrawLoadingFrame(const LoadingProgress& Progress, const f32 DeltaTime, const bool WarmUpEnvironment) {
+        _RenderDevice->BeginFrame();
+
+        if (WarmUpEnvironment && _ActiveScene) _MeshRenderer.PrepareEnvironment(*_ActiveScene);
+
+        if (!OnLoadingScreen(Progress) && _LoadingScreen.IsInitialized()) { _LoadingScreen.Draw(Progress, DeltaTime); }
+
+        _RenderDevice->EndFrame();
     }
 }  // namespace Xen

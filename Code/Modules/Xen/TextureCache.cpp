@@ -6,11 +6,11 @@
 #include <Common/Exception.hpp>
 
 #include "TextureCache.hpp"
+#include "RadianceHdr.hpp"
 
 #include <XenPAK/AssetRegistry.hpp>
 #include <XenPAK/AssetBuffer.hpp>
 
-#include <DirectXPackedVector.h>
 #include <stb_image.h>
 #include <algorithm>
 #include <format>
@@ -34,33 +34,22 @@ namespace Xen {
             }
             return Total;
         }
-
-        std::vector<u8> PackHalves(const float* Values, const size_t Count) {
-            std::vector<u8> Halves(Count * sizeof(DirectX::PackedVector::HALF));
-            DirectX::PackedVector::XMConvertFloatToHalfStream(RCAST<DirectX::PackedVector::HALF*>(Halves.data()),
-                                                              sizeof(DirectX::PackedVector::HALF),
-                                                              Values,
-                                                              sizeof(float),
-                                                              Count);
-            return Halves;
-        }
     }  // namespace
 
     TextureCache::~TextureCache() {
         Clear();
     }
 
-    TextureCache::Entry TextureCache::CreateEntry(const AssetID ID, const u32 InitialRefCount, const bool Srgb) {
+    DecodedTexture TextureCache::DecodeAsset(const AssetID ID, const bool Srgb) const {
         if (!_Assets->Contains(ID)) {
             THROW_ENGINE_EXCEPTION(EngineException, std::format("texture asset {} not found", ID.Value));
         }
 
         const PAK::AssetBuffer Encoded = _Assets->Load(ID);
 
-        Entry E;
-        bool IsHdr = false;
-        std::vector<std::vector<u8>> MipTail;
-        std::vector<u8> Pixels = DecodeImage(Encoded.Data(), Encoded.Size(), E.Info, IsHdr, MipTail);
+        DecodedTexture Out;
+        Out.Srgb   = Srgb;
+        Out.Pixels = DecodeImage(Encoded.Data(), Encoded.Size(), Out.Info, Out.IsHdr, Out.MipTail);
 
         // An HDR image is decoded to RGBA16F regardless of Srgb (sRGB is an
         // 8-bit gamma-curve encoding - a float texture is already linear by
@@ -69,8 +58,32 @@ namespace Xen {
         // MipTail): an environment map is the source EnvironmentBaker filters
         // by sample density, which needs its lower mips. GenerateMips is a
         // separate knob for LDR sprite/material content.
-        const bool WithMips = IsHdr || _Config.GenerateMips;
-        E.Info.GpuBytes     = ComputeTextureBytes(E.Info.Width, E.Info.Height, IsHdr ? 8 : 4, WithMips);
+        const bool WithMips = Out.IsHdr || _Config.GenerateMips;
+        Out.Info.GpuBytes   = ComputeTextureBytes(Out.Info.Width, Out.Info.Height, Out.IsHdr ? 8 : 4, WithMips);
+        return Out;
+    }
+
+    TextureCache::Entry TextureCache::CreateEntry(const AssetID ID, const u32 InitialRefCount, const bool Srgb) {
+        return UploadEntry(ID, DecodeAsset(ID, Srgb), InitialRefCount);
+    }
+
+    void TextureCache::AdoptPreloaded(const AssetID ID, DecodedTexture&& Decoded) {
+        if (!ID.IsValid() || _Entries.contains(ID.Value)) return;
+
+        const Entry E = UploadEntry(ID, std::move(Decoded), 0);
+        _ResidentBytes += E.Info.GpuBytes;
+        _Entries.emplace(ID.Value, E);
+    }
+
+    TextureCache::Entry
+    TextureCache::UploadEntry(const AssetID ID, DecodedTexture&& Decoded, const u32 InitialRefCount) {
+        Entry E;
+        E.Info                       = Decoded.Info;
+        const bool IsHdr             = Decoded.IsHdr;
+        const bool Srgb              = Decoded.Srgb;
+        std::vector<u8>& Pixels      = Decoded.Pixels;
+        std::vector<std::vector<u8>>& MipTail = Decoded.MipTail;
+        const bool WithMips          = IsHdr || _Config.GenerateMips;
 
         RHI::TextureDesc Desc;
         Desc.Type   = RHI::TextureType::Texture2D;
@@ -187,66 +200,24 @@ namespace Xen {
                                               const size_t Size,
                                               TextureInfo& OutInfo,
                                               bool& OutIsHdr,
-                                              std::vector<std::vector<u8>>& OutMipTail) {
-        int W = 0, H = 0, Channels = 0;
-
-        OutIsHdr = stbi_is_hdr_from_memory(Bytes, CAST<int>(Size)) != 0;
+                                              std::vector<std::vector<u8>>& OutMipTail) const {
+        OutIsHdr = IsRadianceHdr(Bytes, Size);
         if (OutIsHdr) {
-            float* Floats = stbi_loadf_from_memory(Bytes, CAST<int>(Size), &W, &H, &Channels, STBI_rgb_alpha);
-            if (!Floats) {
-                THROW_ENGINE_EXCEPTION(EngineException,
-                                       std::format("HDR image decode failed: {}", stbi_failure_reason()));
+            // Streamed and downsampled while decoding (see RadianceHdr.hpp),
+            // so a huge capture never exists in memory at full float size.
+            RadianceImage Image;
+            std::string Error;
+            if (!DecodeRadianceHdr(Bytes, Size, _Config.MaxHdrWidth, Image, Error)) {
+                THROW_ENGINE_EXCEPTION(EngineException, std::format("HDR image decode failed: {}", Error));
             }
 
-            OutInfo.Width  = CAST<u32>(W);
-            OutInfo.Height = CAST<u32>(H);
-
-            // RGBA16F tops out at 65504 - a real capture's sun disc can be
-            // brighter than that, and an out-of-range float converts to
-            // infinity, which then poisons every lighting sum it touches.
-            constexpr float HalfMax  = 65504.0f;
-            const size_t ValueCount  = CAST<size_t>(W) * CAST<size_t>(H) * 4;
-            for (size_t i = 0; i < ValueCount; ++i) Floats[i] = std::min(Floats[i], HalfMax);
-
-            std::vector<u8> Halves = PackHalves(Floats, ValueCount);
-
-            // Box-filter the pyramid in float (halving to 1x1, the same
-            // 2x2-average-with-clamped-edges each level), packing each level
-            // to half as it's produced so only two float levels are live at
-            // once. Averaging radiance linearly is the right filter for HDR.
-            std::vector<float> Previous(Floats, Floats + ValueCount);
-            u32 PrevW = CAST<u32>(W), PrevH = CAST<u32>(H);
-            stbi_image_free(Floats);
-
-            while (PrevW > 1 || PrevH > 1) {
-                const u32 NextW = std::max(PrevW / 2, 1u);
-                const u32 NextH = std::max(PrevH / 2, 1u);
-                std::vector<float> Next(CAST<size_t>(NextW) * NextH * 4);
-
-                for (u32 y = 0; y < NextH; ++y) {
-                    const u32 y0 = std::min(y * 2, PrevH - 1);
-                    const u32 y1 = std::min(y * 2 + 1, PrevH - 1);
-                    for (u32 x = 0; x < NextW; ++x) {
-                        const u32 x0 = std::min(x * 2, PrevW - 1);
-                        const u32 x1 = std::min(x * 2 + 1, PrevW - 1);
-                        for (u32 c = 0; c < 4; ++c) {
-                            const auto At = [&](const u32 px, const u32 py) {
-                                return Previous[(CAST<size_t>(py) * PrevW + px) * 4 + c];
-                            };
-                            Next[(CAST<size_t>(y) * NextW + x) * 4 + c] =
-                              0.25f * (At(x0, y0) + At(x1, y0) + At(x0, y1) + At(x1, y1));
-                        }
-                    }
-                }
-
-                OutMipTail.push_back(PackHalves(Next.data(), Next.size()));
-                Previous = std::move(Next);
-                PrevW    = NextW;
-                PrevH    = NextH;
-            }
-
-            return Halves;
+            OutInfo.Width  = Image.Width;
+            OutInfo.Height = Image.Height;
+            OutMipTail     = std::move(Image.MipTail);
+            return std::move(Image.Mip0);
         }
+
+        int W = 0, H = 0, Channels = 0;
 
         stbi_uc* Pixels = stbi_load_from_memory(Bytes, CAST<int>(Size), &W, &H, &Channels, STBI_rgb_alpha);
         if (!Pixels) {

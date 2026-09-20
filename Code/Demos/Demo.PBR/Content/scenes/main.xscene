@@ -50,9 +50,9 @@
               0.0,
               0.0
             ],
-            "AlbedoMap": 5478356833302805381,
-            "NormalMap": 18136257898383615067,
-            "MetallicRoughnessMap": 7660235995507065423,
+            "AlbedoMap": 13156857523636750588,
+            "NormalMap": 15353199290926578074,
+            "MetallicRoughnessMap": 5111910975383270524,
             "AmbientOcclusionMap": 0,
             "EmissiveMap": 0
           }
@@ -173,7 +173,8 @@
         {
           "Type": "EnvironmentComponent",
           "Properties": {
-            "Map": 2462894980171083987
+            "Map": 2462894980171083987,
+            "ShowBackground": true
           }
         }
       ]
