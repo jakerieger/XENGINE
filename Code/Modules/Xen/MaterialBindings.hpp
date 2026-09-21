@@ -31,10 +31,11 @@ namespace Xen::MaterialSlot {
     inline constexpr u32 Environment = 5;  // GGX-prefiltered environment cube, mip = roughness (RGBA16F)
     inline constexpr u32 Irradiance  = 6;  // cosine-convolved diffuse-lighting cube (RGBA16F)
     inline constexpr u32 BrdfLut     = 7;  // baked split-sum BRDF LUT (RG16F)
+    inline constexpr u32 ShadowMap   = 8;  // directional-light shadow map (D32_FLOAT), comparison sampler
 
     /// @brief One past the highest texture slot above - the number of
     /// texture/sampler binding pairs a pipeline built on this convention
     /// declares. MeshRenderer binds slots [0, Environment) per draw and
     /// [Environment, TextureSlotCount) once per frame.
-    inline constexpr u32 TextureSlotCount = 8;
+    inline constexpr u32 TextureSlotCount = 9;
 }  // namespace Xen::MaterialSlot

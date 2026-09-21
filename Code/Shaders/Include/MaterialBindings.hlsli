@@ -61,3 +61,6 @@
 
 #define XEN_BRDF_LUT_TEX_REGISTER      t7  // RG16F split-sum LUT, indexed by (NdotV, Roughness) -> (scale, bias)
 #define XEN_BRDF_LUT_SAMPLER_REGISTER  s7
+
+#define XEN_SHADOW_MAP_TEX_REGISTER      t8  // Directional-light shadow map (D32_FLOAT), sampled with a comparison sampler
+#define XEN_SHADOW_MAP_SAMPLER_REGISTER  s8  // SamplerComparisonState (LessEqual, clamp)

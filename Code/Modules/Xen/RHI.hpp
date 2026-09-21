@@ -266,6 +266,7 @@ namespace Xen::RHI {
     enum class MipMode : u8 { None, Nearest, Linear };
     enum class AddressMode : u8 { Repeat, MirrorRepeat, ClampToEdge, ClampToBorder };
     enum class BorderColor : u8 { TransparentBlack, OpaqueBlack, OpaqueWhite };
+    enum class CompareOp : u8 { Never, Less, Equal, LessEqual, Greater, NotEqual, GreaterEqual, Always };
 
     struct TextureDesc {
         TextureType Type {TextureType::Texture2D};
@@ -296,6 +297,15 @@ namespace Xen::RHI {
         AddressMode AddressV {AddressMode::Repeat};
         BorderColor Border {BorderColor::OpaqueBlack};
         u8 MaxAnisotropy {1};  // 1 disables
+
+        /// A comparison sampler (HLSL SamplerComparisonState): sampling a
+        /// depth texture with SampleCmp returns the fraction of the filter
+        /// footprint passing `sampled CompareFunc reference`, already
+        /// bilinearly weighted - hardware percentage-closer filtering for
+        /// shadow maps. Anisotropy is ignored when set.
+        bool Compare {false};
+        CompareOp CompareFunc {CompareOp::LessEqual};
+
         f32 MipLodBias {0.0f};
         f32 MinLod {0.0f};
         f32 MaxLod {1000.0f};
@@ -375,8 +385,6 @@ namespace Xen::RHI {
     enum class PrimitiveTopology : u8 { PointList, LineList, LineStrip, TriangleList, TriangleStrip };
 
     enum class VertexInputRate : u8 { Vertex, Instance };
-
-    enum class CompareOp : u8 { Never, Less, Equal, LessEqual, Greater, NotEqual, GreaterEqual, Always };
 
     enum class CullMode : u8 { None, Front, Back };
     enum class FrontFace : u8 { CounterClockwise, Clockwise };
@@ -563,6 +571,8 @@ namespace Xen::RHI {
     /// refactor later.
     struct GraphicsPipelineDesc {
         ShaderHandle VertexShader {};
+        /// Optional: leave invalid for a depth-only pipeline (a shadow pass),
+        /// which needs no pixel stage at all.
         ShaderHandle FragmentShader {};
         ShaderHandle GeometryShader {};  // optional
 

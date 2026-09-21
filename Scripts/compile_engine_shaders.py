@@ -76,7 +76,12 @@ class ShaderCompiler:
             )
 
     def _compile_shader(self, shader_file: Path, shader_type: ShaderType) -> None:
+        source = shader_file.read_text(encoding="utf-8", errors="replace")
         for stage in self.STAGES[shader_type]:
+            # A graphics shader only gets the stages it actually defines - a
+            # depth-only pass (Shadow.hlsl) has a vertex stage and no pixel one.
+            if shader_type == ShaderType.GRAPHICS and self.ENTRYPOINTS[stage] not in source:
+                continue
             self._invoke_dxc(shader_file, stage)
         print(f"Compiled '{shader_file.stem}' ({shader_type})")
 

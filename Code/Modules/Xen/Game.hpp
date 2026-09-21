@@ -160,7 +160,7 @@ namespace Xen {
         /// @brief Once per frame while a scene loads (and the loading screen
         /// is due), inside an active frame - between BeginFrame and EndFrame.
         /// Draw your own loading screen into the swap chain and return true,
-        /// or return false (the default) for the built-in bar and spinner.
+        /// or return false (the default) for the built-in spinner.
         /// Nothing else runs meanwhile: no scene exists yet.
         virtual bool OnLoadingScreen(const LoadingProgress& Progress) {
             (void)Progress;

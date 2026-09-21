@@ -4,8 +4,29 @@
 
 #pragma once
 
+#include "ComponentRegistry.hpp"
+
 namespace Xen {
+    class CameraComponent;
 
-    class FPPlayerController {};
+    REGISTER_COMPONENT(FPPlayerController)
+    class FPPlayerController : public IComponent {
+    public:
+        XEN_COMPONENT_TYPE(FPPlayerController)
+        FPPlayerController();
+        ~FPPlayerController() override;
 
+        void Reflect(IReflector& R) override;
+
+        void BeginPlay() override;
+
+        void Tick(f32 DeltaTime) override;
+
+        void FixedTick(f32 FixedDelta) override;
+
+        void EndPlay() override;
+
+    private:
+        CameraComponent* _Camera {nullptr};
+    };
 }  // namespace Xen

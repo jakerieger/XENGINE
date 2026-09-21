@@ -15,7 +15,10 @@
 #include <XenPAK/AssetRegistry.hpp>
 #include <XenPAK/AssetBuffer.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <limits>
 
 namespace Xen {
     namespace {
@@ -26,6 +29,9 @@ namespace Xen {
             Float4 CameraPositionAndPad;
             Float4 LightDirectionAndPad;
             Float4 LightColorAndIntensity;
+            Float4x4 LightViewProjection;
+            Float4 ShadowParams;
+            Float4 ShadowParams2;
         };
 
         struct ObjectConstants {
@@ -84,7 +90,7 @@ namespace Xen {
         }
 
         // b0 per-frame (view-projection, camera, light), b1 per-object
-        // (model matrix), b2 per-material (constant PBR factors), plus five
+        // (model matrix), b2 per-material (constant PBR factors), plus the
         // texture+sampler pairs at the standardized slots every material
         // pipeline built this way shares - see MaterialBindings.hpp and
         // Code/Shaders/Include/MaterialBindings.hlsli, which this must match
@@ -210,11 +216,25 @@ namespace Xen {
         ClampSamplerDesc.DebugName = "XEN.PBR.Clamp";
         _ClampSampler              = Device.CreateSampler(ClampSamplerDesc);
 
+        // Clamped, not bordered: the shader already treats anything outside
+        // the map's footprint as lit, so an edge texel is never sampled for
+        // its own sake.
+        RHI::SamplerDesc ShadowSamplerDesc;
+        ShadowSamplerDesc.MipFilter   = RHI::MipMode::None;
+        ShadowSamplerDesc.AddressU    = RHI::AddressMode::ClampToEdge;
+        ShadowSamplerDesc.AddressV    = RHI::AddressMode::ClampToEdge;
+        ShadowSamplerDesc.Compare     = true;
+        ShadowSamplerDesc.CompareFunc = RHI::CompareOp::LessEqual;
+        ShadowSamplerDesc.DebugName   = "XEN.PBR.Shadow";
+        _ShadowSampler                = Device.CreateSampler(ShadowSamplerDesc);
+
         if (!_Sampler.IsValid() || !_EnvironmentSampler.IsValid() || !_ClampSampler.IsValid() ||
-            !CreateDefaultTextures() || !BakeBrdfLut(Assets)) {
+            !_ShadowSampler.IsValid() || !CreateDefaultTextures() || !BakeBrdfLut(Assets)) {
             Shutdown();
             return false;
         }
+
+        CreateShadowPipeline(Assets);
 
         // Not fatal: without the baker a scene's environment can't be
         // prefiltered, so it just keeps the placeholder sky (Render checks
@@ -390,7 +410,87 @@ namespace Xen {
             }
         }
 
-        return _WhiteTexture.IsValid() && _FlatNormalTexture.IsValid() && _DefaultEnvironmentMap.IsValid();
+        // The stand-in shadow map (see MeshRenderer.hpp): a depth texture is
+        // created in DEPTH_WRITE and only reaches a samplable state by having
+        // been rendered into once, so clear it to the far plane right now.
+        {
+            RHI::TextureDesc Desc;
+            Desc.Fmt        = RHI::Format::D32_FLOAT;
+            Desc.Usage      = RHI::TextureUsage::DepthTarget | RHI::TextureUsage::Sampled;
+            Desc.DebugName  = "XEN.PBR.ShadowFallback";
+            _ShadowFallback = _Device->CreateTexture(Desc);
+
+            if (_ShadowFallback.IsValid()) {
+                RHI::CommandBuffer Clear;
+                RHI::RenderPassDesc Pass;
+                Pass.HasDepthStencil          = true;
+                Pass.DepthStencil.Texture     = _ShadowFallback;
+                Pass.DepthStencil.DepthLoad   = RHI::LoadOp::Clear;
+                Pass.DepthStencil.DepthStore  = RHI::StoreOp::Store;
+                Pass.DepthStencil.Clear.Depth = 1.0f;
+                Pass.DebugName                = "Shadow fallback";
+                Clear.BeginRenderPass(Pass);
+                Clear.EndRenderPass();
+                _Device->SubmitAndWait(Clear);
+            }
+        }
+
+        return _WhiteTexture.IsValid() && _FlatNormalTexture.IsValid() && _DefaultEnvironmentMap.IsValid() &&
+               _ShadowFallback.IsValid();
+    }
+
+    void MeshRenderer::CreateShadowPipeline(const PAK::AssetRegistry& Assets) {
+        constexpr AssetID VertexAsset = ASSET("xen.shader.shadow.vs");
+        if (!Assets.Contains(VertexAsset)) {
+            LOG_WARN("shadow shader not found - directional lights will not cast shadows");
+            return;
+        }
+        const PAK::AssetBuffer VertexSource = Assets.Load(VertexAsset);
+
+        RHI::ShaderDesc VertexDesc;
+        VertexDesc.Stage               = RHI::ShaderStage::Vertex;
+        VertexDesc.SourceType          = RHI::ShaderSourceType::DXIL;
+        VertexDesc.Code                = VertexSource.Data();
+        VertexDesc.CodeSize            = VertexSource.Size();
+        VertexDesc.DebugName           = "XEN.Shaders.Shadow.vs";
+        const RHI::ShaderHandle Vertex = _Device->CreateShader(VertexDesc);
+
+        // Just the light's view-projection (b0, in FrameData's ViewProjection
+        // slot) and the model matrix (b1): no textures, no material.
+        RHI::PipelineLayoutDesc LayoutDesc;
+        LayoutDesc.Binding(MaterialSlot::Frame, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All)
+          .Binding(MaterialSlot::Object, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All);
+        LayoutDesc.DebugName = "XEN.Shaders.Shadow";
+        _ShadowLayout        = _Device->CreatePipelineLayout(LayoutDesc);
+
+        if (Vertex.IsValid() && _ShadowLayout.IsValid()) {
+            RHI::GraphicsPipelineDesc PipelineDesc;
+            PipelineDesc.VertexShader   = Vertex;  // no fragment shader: depth only
+            PipelineDesc.PipelineLayout = _ShadowLayout;
+            PipelineDesc.Topology       = RHI::PrimitiveTopology::TriangleList;
+            PipelineDesc.Layout.Binding(0, sizeof(MeshVertex), RHI::VertexInputRate::Vertex)
+              .Attribute(0, 0, RHI::Format::RGB32_FLOAT, offsetof(MeshVertex, Position));
+
+            // Both faces: the receiver-side normal offset already handles
+            // self-shadowing, and culling either face would make a
+            // one-sided plane (a ground quad) stop casting from below.
+            PipelineDesc.Rasterizer.Cull               = RHI::CullMode::None;
+            PipelineDesc.DepthStencil.DepthTestEnable  = true;
+            PipelineDesc.DepthStencil.DepthWriteEnable = true;
+            PipelineDesc.DepthStencil.DepthCompare     = RHI::CompareOp::Less;
+            PipelineDesc.ColorAttachmentCount          = 0;
+            PipelineDesc.DepthFormat                   = RHI::Format::D32_FLOAT;
+            PipelineDesc.DebugName                     = "XEN.Shaders.Shadow";
+            _ShadowPipeline                            = _Device->CreateGraphicsPipeline(PipelineDesc);
+        }
+
+        if (Vertex.IsValid()) _Device->DestroyShader(Vertex);
+
+        if (!_ShadowPipeline.IsValid()) {
+            LOG_WARN("failed to create the shadow pipeline - directional lights will not cast shadows");
+            if (_ShadowLayout.IsValid()) _Device->DestroyPipelineLayout(_ShadowLayout);
+            _ShadowLayout = {};
+        }
     }
 
     void MeshRenderer::Shutdown() {
@@ -399,6 +499,11 @@ namespace Xen {
         ReleaseBakedEnvironment();
         _Baker.Shutdown();
 
+        if (_ShadowPipeline.IsValid()) _Device->DestroyPipeline(_ShadowPipeline);
+        if (_ShadowLayout.IsValid()) _Device->DestroyPipelineLayout(_ShadowLayout);
+        if (_ShadowSampler.IsValid()) _Device->DestroySampler(_ShadowSampler);
+        if (_ShadowMap.IsValid()) _Device->DestroyTexture(_ShadowMap);
+        if (_ShadowFallback.IsValid()) _Device->DestroyTexture(_ShadowFallback);
         if (_SkyPipeline.IsValid()) _Device->DestroyPipeline(_SkyPipeline);
         if (_Pipeline.IsValid()) _Device->DestroyPipeline(_Pipeline);
         if (_Layout.IsValid()) _Device->DestroyPipelineLayout(_Layout);
@@ -410,6 +515,12 @@ namespace Xen {
         if (_DefaultEnvironmentMap.IsValid()) _Device->DestroyTexture(_DefaultEnvironmentMap);
         if (_BrdfLUT.IsValid()) _Device->DestroyTexture(_BrdfLUT);
 
+        _ShadowPipeline        = {};
+        _ShadowLayout          = {};
+        _ShadowSampler         = {};
+        _ShadowMap             = {};
+        _ShadowMapSize         = 0;
+        _ShadowFallback        = {};
         _SkyPipeline           = {};
         _Pipeline              = {};
         _Layout                = {};
@@ -468,6 +579,177 @@ namespace Xen {
         if (_Device) ResolveEnvironment(S);
     }
 
+    MeshRenderer::ShadowState MeshRenderer::RenderShadowPass(const Scene& S,
+                                                             const CameraComponent& Camera,
+                                                             const DirectionalLightComponent& Light,
+                                                             const Float3& LightDirection,
+                                                             MeshCache& Meshes) {
+        using namespace DirectX;
+
+        ShadowState Result;
+        if (!_ShadowPipeline.IsValid() || !Light.GetCastShadows() ||
+            Camera.GetProjectionMode() != ProjectionMode::Perspective) {
+            return Result;
+        }
+
+        // The light's orientation only (eye at the origin): every quantity
+        // below is measured in this space, and the final view-projection is
+        // this times an orthographic projection whose window is offset to
+        // where the camera's frustum actually is.
+        const XMVECTOR Direction = XMVector3Normalize(XMLoadFloat3(&LightDirection));
+        const XMVECTOR Up        = std::fabs(XMVectorGetY(Direction)) > 0.99f ? XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f)
+                                                                              : XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+        const XMMATRIX LightRotation = XMMatrixLookToRH(XMVectorZero(), Direction, Up);
+
+        // Casters: every mesh the main pass would draw. Their extent along
+        // the light direction is what stretches the depth range back toward
+        // the light - a tall object outside the view volume can still throw
+        // its shadow into it.
+        struct Caster {
+            Float4x4 Model;
+            RHI::BufferHandle Vertices;
+            RHI::BufferHandle Indices;
+            u32 IndexCount;
+            RHI::IndexType IndexType;
+        };
+        std::vector<Caster> Casters;
+        f32 NearestCasterDistance = std::numeric_limits<f32>::max();
+
+        S.ForEachActor([&](Actor& A) {
+            auto* MeshComp     = A.GetComponent<MeshComponent>();
+            auto* MaterialComp = A.GetComponent<PBRMaterialComponent>();
+            if (!MeshComp || !MaterialComp) return;
+
+            const MeshHandle Mesh = MeshComp->GetMesh();
+            if (!Mesh.IsValid()) return;
+
+            const RHI::BufferHandle VertexBuffer = Meshes.GetVertexBuffer(Mesh);
+            const RHI::BufferHandle IndexBuffer  = Meshes.GetIndexBuffer(Mesh);
+            const MeshInfo Info                  = Meshes.GetInfo(Mesh);
+            if (!VertexBuffer.IsValid() || !IndexBuffer.IsValid() || Info.IndexCount == 0) return;
+
+            Caster C {};
+            C.Model      = A.GetWorldTransform().ToMatrix();
+            C.Vertices   = VertexBuffer;
+            C.Indices    = IndexBuffer;
+            C.IndexCount = Info.IndexCount;
+            C.IndexType  = Info.IndexType;
+            Casters.push_back(C);
+
+            const XMMATRIX Model      = XMLoadFloat4x4(&C.Model);
+            const XMMATRIX ToLight    = Model * LightRotation;
+            for (u32 Corner = 0; Corner < 8; ++Corner) {
+                const XMVECTOR Local = XMVectorSet((Corner & 1) ? Info.BoundsMax.x : Info.BoundsMin.x,
+                                                   (Corner & 2) ? Info.BoundsMax.y : Info.BoundsMin.y,
+                                                   (Corner & 4) ? Info.BoundsMax.z : Info.BoundsMin.z,
+                                                   1.0f);
+                // Light-space z is negative in front of the light; its
+                // negation is the distance along the light direction.
+                NearestCasterDistance =
+                  std::min(NearestCasterDistance, -XMVectorGetZ(XMVector3Transform(Local, ToLight)));
+            }
+        });
+        if (Casters.empty()) return Result;
+
+        // The camera's view frustum out to the shadow distance, wrapped in
+        // the tightest sphere (in view space, on the camera's axis). A sphere
+        // rather than the frustum's own bounding box, so the map's size in
+        // world units doesn't change as the camera turns - that, plus the
+        // texel snapping below, keeps shadow edges from crawling.
+        const f32 NearPlane   = Camera.GetNearPlane();
+        const f32 FarDistance = std::min(Camera.GetFarPlane(), Light.GetShadowDistance());
+        if (FarDistance <= NearPlane) return Result;
+
+        const f32 TanHalfFov = std::tan(XMConvertToRadians(Camera.GetFieldOfView()) * 0.5f);
+        const f32 K          = std::sqrt(1.0f + Camera.GetAspectRatio() * Camera.GetAspectRatio()) * TanHalfFov;
+
+        f32 CenterDepth;  // distance in front of the camera
+        f32 Radius;
+        if (K * K >= (FarDistance - NearPlane) / (FarDistance + NearPlane)) {
+            CenterDepth = FarDistance;
+            Radius      = FarDistance * K;
+        } else {
+            CenterDepth = 0.5f * (FarDistance + NearPlane) * (1.0f + K * K);
+            const f32 Span = FarDistance - NearPlane;
+            const f32 Sum  = FarDistance + NearPlane;
+            Radius         = 0.5f * std::sqrt(Span * Span + 2.0f * (FarDistance * FarDistance + NearPlane * NearPlane) * K * K +
+                                              Sum * Sum * K * K * K * K);
+        }
+        Radius = std::ceil(Radius * 16.0f) / 16.0f;
+
+        const Float4x4 ViewMatrix = Camera.GetViewMatrix();
+        const XMMATRIX InverseView = XMMatrixInverse(nullptr, XMLoadFloat4x4(&ViewMatrix));
+        const XMVECTOR CenterWorld = XMVector3Transform(XMVectorSet(0.0f, 0.0f, -CenterDepth, 1.0f), InverseView);
+        XMVECTOR CenterLight       = XMVector3Transform(CenterWorld, LightRotation);
+
+        const u32 Resolution = std::clamp<u32>(Light.GetShadowResolution(), 256, 8192);
+        const f32 TexelSize  = 2.0f * Radius / CAST<f32>(Resolution);
+        const f32 CenterX    = std::floor(XMVectorGetX(CenterLight) / TexelSize) * TexelSize;
+        const f32 CenterY    = std::floor(XMVectorGetY(CenterLight) / TexelSize) * TexelSize;
+
+        const f32 SphereCenterDistance = -XMVectorGetZ(CenterLight);
+        const f32 NearDistance = std::min(SphereCenterDistance - Radius, NearestCasterDistance);
+        const f32 FarShadowPlane = SphereCenterDistance + Radius;
+
+        const XMMATRIX Projection =
+          XMMatrixOrthographicOffCenterRH(CenterX - Radius, CenterX + Radius, CenterY - Radius, CenterY + Radius, NearDistance, FarShadowPlane);
+        const XMMATRIX LightViewProjection = LightRotation * Projection;
+
+        if (!_ShadowMap.IsValid() || _ShadowMapSize != Resolution) {
+            if (_ShadowMap.IsValid()) _Device->DestroyTexture(_ShadowMap);
+
+            RHI::TextureDesc Desc;
+            Desc.Width     = Resolution;
+            Desc.Height    = Resolution;
+            Desc.Fmt       = RHI::Format::D32_FLOAT;
+            Desc.Usage     = RHI::TextureUsage::DepthTarget | RHI::TextureUsage::Sampled;
+            Desc.DebugName = "XEN.PBR.ShadowMap";
+            _ShadowMap     = _Device->CreateTexture(Desc);
+            _ShadowMapSize = _ShadowMap.IsValid() ? Resolution : 0;
+        }
+        if (!_ShadowMap.IsValid()) return Result;
+
+        RHI::RenderPassDesc Pass;
+        Pass.HasDepthStencil          = true;
+        Pass.DepthStencil.Texture     = _ShadowMap;
+        Pass.DepthStencil.DepthLoad   = RHI::LoadOp::Clear;
+        Pass.DepthStencil.DepthStore  = RHI::StoreOp::Store;
+        Pass.DepthStencil.Clear.Depth = 1.0f;
+        Pass.DebugName                = "Shadow map";
+        _Commands.BeginRenderPass(Pass);
+        _Commands.BindPipeline(_ShadowPipeline);
+
+        // Shadow.hlsl reads the light's matrix where the camera's normally
+        // is, so the same constant-buffer layout serves both passes.
+        FrameConstants ShadowFrame {};
+        XMStoreFloat4x4(&ShadowFrame.ViewProjection, LightViewProjection);
+        _Commands.BindUniformBuffer(MaterialSlot::Frame, _Device->AllocateUniform(ShadowFrame));
+
+        for (const Caster& C : Casters) {
+            ObjectConstants Object {};
+            Object.Model = C.Model;
+            _Commands.BindUniformBuffer(MaterialSlot::Object, _Device->AllocateUniform(Object));
+            _Commands.BindVertexBuffer(0, C.Vertices);
+            _Commands.BindIndexBuffer(C.Indices, C.IndexType);
+            _Commands.DrawIndexed(C.IndexCount);
+        }
+
+        _Commands.EndRenderPass();
+
+        // Bias is authored in texels of the map (see DirectionalLightComponent)
+        // and converted here: the constant one to light-NDC depth, the normal
+        // offset to world units.
+        const f32 DepthRange = std::max(FarShadowPlane - NearDistance, 0.001f);
+        Result.Enabled       = true;
+        XMStoreFloat4x4(&Result.LightViewProjection, LightViewProjection);
+        Result.Params  = {1.0f,
+                          Light.GetShadowBias() * TexelSize / DepthRange,
+                          Light.GetShadowNormalBias() * TexelSize,
+                          Light.GetShadowSoftness()};
+        Result.Params2 = {1.0f / CAST<f32>(Resolution), FarDistance, FarDistance * 0.15f, 0.0f};
+        return Result;
+    }
+
     void MeshRenderer::Render(const Scene& S, const Viewport& Target) {
         if (!_Device) return;
 
@@ -490,13 +772,16 @@ namespace Xen {
         // skipped when it has nothing to draw, this needs its own Clear
         // again.
         Pass.ColorAttachments[0].Load = RHI::LoadOp::Load;
-        _Commands.BeginRenderPass(Pass);
-
         MeshCache* Meshes             = S.GetContext().Meshes;
         const CameraComponent* Camera = S.GetMainCamera();
+        const bool CanDraw            = Meshes && Camera;
 
-        if (Meshes && Camera) {
-            FrameConstants Frame {};
+        // The frame constants and the shadow pass come first: the shadow map
+        // is its own render pass, which has to be recorded before the main
+        // pass begins, and the main pass's constants need its light matrix.
+        FrameConstants Frame {};
+        ShadowState Shadow;
+        if (CanDraw) {
             Frame.ViewProjection = Camera->GetViewProjectionMatrix();
             {
                 // For Sky.hlsl: unproject a pixel back to a world-space ray.
@@ -516,9 +801,11 @@ namespace Xen {
             Float3 LightColor {1.0f, 1.0f, 1.0f};
             f32 LightIntensity = 1.0f;
 
-            const std::vector<Actor*> Lights = S.FindActorsWith<DirectionalLightComponent>();
+            const DirectionalLightComponent* LightComponent = nullptr;
+            const std::vector<Actor*> Lights                = S.FindActorsWith<DirectionalLightComponent>();
             if (!Lights.empty()) {
                 if (const auto* Light = Lights.front()->GetComponent<DirectionalLightComponent>()) {
+                    LightComponent = Light;
                     LightDir       = Light->GetDirection();
                     LightColor     = Light->GetColor();
                     LightIntensity = Light->GetIntensity();
@@ -527,6 +814,19 @@ namespace Xen {
             Frame.LightDirectionAndPad   = {LightDir.x, LightDir.y, LightDir.z, 0.0f};
             Frame.LightColorAndIntensity = {LightColor.x, LightColor.y, LightColor.z, LightIntensity};
 
+            // Only a real light casts shadows - the default downward one
+            // above is just a fallback so unlit scenes aren't black.
+            if (LightComponent) Shadow = RenderShadowPass(S, *Camera, *LightComponent, LightDir, *Meshes);
+            if (Shadow.Enabled) {
+                Frame.LightViewProjection = Shadow.LightViewProjection;
+                Frame.ShadowParams        = Shadow.Params;
+                Frame.ShadowParams2       = Shadow.Params2;
+            }
+        }
+
+        _Commands.BeginRenderPass(Pass);
+
+        if (CanDraw) {
             _Commands.BindPipeline(_Pipeline);
             _Commands.BindUniformBuffer(MaterialSlot::Frame, _Device->AllocateUniform(Frame));
 
@@ -545,6 +845,7 @@ namespace Xen {
                                   HasBakedEnvironment ? _IrradianceMap : _DefaultEnvironmentMap,
                                   _EnvironmentSampler);
             _Commands.BindTexture(MaterialSlot::BrdfLut, _BrdfLUT, _ClampSampler);
+            _Commands.BindTexture(MaterialSlot::ShadowMap, Shadow.Enabled ? _ShadowMap : _ShadowFallback, _ShadowSampler);
 
             S.ForEachActor([&](Actor& A) {
                 auto* MeshComp     = A.GetComponent<MeshComponent>();

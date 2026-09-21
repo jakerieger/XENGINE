@@ -14,6 +14,16 @@ cbuffer FrameData : register(XEN_FRAME_REGISTER) {
     float4 CameraPositionAndPad;           // xyz = CameraPosition
     float4 LightDirectionAndPad;           // xyz = LightDirection (points FROM the light TOWARD the surface)
     float4 LightColorAndIntensity;         // xyz = LightColor, w = LightIntensity
+
+    // Directional-light shadow map (see MeshRenderer's shadow pass). During
+    // that pass ViewProjection above IS the light's, so Shadow.hlsl needs
+    // nothing more; the fields below are what PBR.hlsl reads to look a
+    // surface up in the finished map.
+    row_major float4x4 LightViewProjection;
+    float4 ShadowParams;                   // x = 1 when a shadow map is bound (0 = everything is lit),
+                                           // y = constant depth bias (light NDC z), z = normal offset (world units),
+                                           // w = PCF radius in texels
+    float4 ShadowParams2;                  // x = 1 / shadow map size, y = shadow distance, z = fade-out length
 };
 
 #endif  // XEN_FRAMEDATA_HLSLI

@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <Common/Math.hpp>
 #include <Common/XenCommon.hpp>
 
 #include "RenderDevice.hpp"
@@ -37,6 +38,10 @@ namespace Xen {
         RHI::IndexType IndexType {RHI::IndexType::U32};
         /// Exact vertex + index buffer bytes resident on the GPU.
         u64 GpuBytes {0};
+        /// Axis-aligned bounds of the vertex positions, in the mesh's local
+        /// space (MeshRenderer fits its shadow volume around these).
+        Float3 BoundsMin {0.0f, 0.0f, 0.0f};
+        Float3 BoundsMax {0.0f, 0.0f, 0.0f};
     };
 
     /// @brief The fixed GPU vertex layout every mesh is uploaded as,

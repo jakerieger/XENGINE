@@ -93,8 +93,9 @@ namespace {
         void OnSceneUnloading(Scene& S) override { LOG_INFO("Scene unloading: %s", S.GetName().c_str()); }
     };
 
-    // A single textured mesh, one directional light and an environment map
-    // (no shadows yet). See MeshRenderer and Code/Shaders/PBR.hlsl.
+    // A single textured mesh over a ground plane, one shadow-casting
+    // directional light and an environment map. See MeshRenderer and
+    // Code/Shaders/PBR.hlsl.
     void BuildScene(const EngineContext& Ctx) {
         using namespace DirectX;
 
@@ -114,6 +115,15 @@ namespace {
         MonkeActor->AddComponent<RotatingComponent>();
         MonkeActor->SetPosition(Float3 {0.0f, 1.0f, 0.0f});
 
+        // A floor for the monkey's shadow to land on.
+        const ActorHandle GroundHandle = MainScene.Spawn("Ground");
+        Actor* GroundActor             = MainScene.Get(GroundHandle);
+        GroundActor->AddComponent<MeshComponent>(ASSET("meshes/plane.gltf"));
+        auto* GroundMaterial = GroundActor->AddComponent<PBRMaterialComponent>();
+        GroundMaterial->SetAlbedo(Float3 {0.55f, 0.55f, 0.58f});
+        GroundMaterial->SetRoughness(0.85f);
+        GroundActor->SetScale(Float3 {200.0f, 1.0f, 200.0f});
+
         const ActorHandle CameraHandle = MainScene.Spawn("MainCamera");
         Actor* CameraActor             = MainScene.Get(CameraHandle);
         auto* Camera                   = CameraActor->AddComponent<CameraComponent>();
@@ -127,10 +137,12 @@ namespace {
         const ActorHandle LightHandle = MainScene.Spawn("Light");
         Actor* LightActor             = MainScene.Get(LightHandle);
         LightActor->AddComponent<DirectionalLightComponent>();
-        // Angled so the cube's faces shade differently instead of a single
-        // flat-lit silhouette - pitched down and yawed off-axis.
+        // Pitched down (a negative pitch tilts the unrotated -Z forward
+        // toward -Y) and yawed around so the light travels toward the camera:
+        // the floor is lit, and the monkey's shadow falls in front of it
+        // where the camera can see it.
         const XMVECTOR LightRotation =
-          XMQuaternionRotationRollPitchYaw(XMConvertToRadians(45.0f), XMConvertToRadians(-30.0f), 0.0f);
+          XMQuaternionRotationRollPitchYaw(XMConvertToRadians(-45.0f), XMConvertToRadians(150.0f), 0.0f);
         Quat LightRotationOut;
         XMStoreFloat4(&LightRotationOut, LightRotation);
         LightActor->SetRotation(LightRotationOut);
@@ -142,7 +154,7 @@ namespace {
         const ActorHandle EnvironmentHandle = MainScene.Spawn("Environment");
         Actor* EnvironmentActor             = MainScene.Get(EnvironmentHandle);
         auto* Environment                   = EnvironmentActor->AddComponent<EnvironmentComponent>();
-        Environment->SetMapAsset(ASSET("xen.hdr.spring.hdr"));
+        Environment->SetMapAsset(ASSET("xen.hdr.daysky.hdr"));
 
         const auto ScenePath = Generated::GameSettings().ContentDirs[0] / "scenes" / "main.xscene";
         SceneSerializer::SaveToFile(MainScene, ScenePath);
@@ -166,10 +178,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
 #endif
 
         Game.Run();
-    } catch (const EngineException& Ex) {
-        LOG_CRIT("%s", Ex.what());
-        return 1;
-    }
+    } catch (...) { return 1; }
 
     return 0;
 }

@@ -1,6 +1,7 @@
 // Metallic-roughness Cook-Torrance PBR: one directional light plus image-based
 // lighting from baked environment cube maps (see EnvironmentBaker) and a baked
-// BRDF LUT (see BRDFIntegrate.hlsl), no shadows yet. Binding slots follow
+// BRDF LUT (see BRDFIntegrate.hlsl), plus a PCF-filtered shadow map for the
+// light (see Shadow.hlsl / MeshRenderer's shadow pass). Binding slots follow
 // Include/MaterialBindings.hlsli's standardized scheme - see that file for
 // what each register means and why.
 //
@@ -47,6 +48,9 @@ SamplerState IrradianceSampler : register(XEN_IRRADIANCE_SAMPLER_REGISTER);
 
 Texture2D BrdfLUT : register(XEN_BRDF_LUT_TEX_REGISTER);
 SamplerState BrdfLUTSampler : register(XEN_BRDF_LUT_SAMPLER_REGISTER);
+
+Texture2D<float> ShadowMap : register(XEN_SHADOW_MAP_TEX_REGISTER);
+SamplerComparisonState ShadowSampler : register(XEN_SHADOW_MAP_SAMPLER_REGISTER);
 
 struct VSInput {
     float3 Position : TEXCOORD0;
@@ -155,6 +159,48 @@ float3 ApplyNormalMap(float3 TangentSpaceNormal, float3 WorldNormal, float3 Worl
     return normalize(mul(TangentSpaceNormal, TBN));
 }
 
+// Fraction of the directional light reaching this point: 1 = fully lit,
+// 0 = fully shadowed. The comparison sampler does the depth test and a 2x2
+// bilinear blend per tap; the 3x3 taps around it (spaced ShadowParams.w texels
+// apart) widen that into a soft edge.
+//
+// Acne is fought at the receiver, in two ways: the lookup point is pushed out
+// along the geometric normal (more for surfaces at a grazing angle to the
+// light, where a texel's depth varies most), and the compared depth is pulled
+// slightly toward the light. Both are sized in shadow-map texels by
+// MeshRenderer, so they stay right as the map's coverage or size changes.
+float ShadowVisibility(float3 WorldPosition, float3 GeometricNormal, float NdotL) {
+    if (ShadowParams.x < 0.5 || NdotL <= 0.0) return 1.0;
+
+    const float SinTheta = sqrt(saturate(1.0 - NdotL * NdotL));
+    const float3 Offset = GeometricNormal * ShadowParams.z * SinTheta;
+
+    const float4 LightClip = mul(float4(WorldPosition + Offset, 1.0), LightViewProjection);
+    const float3 Ndc = LightClip.xyz / LightClip.w;
+    const float2 UV = float2(Ndc.x * 0.5 + 0.5, 0.5 - Ndc.y * 0.5);
+
+    // Outside the map's footprint (or past its far plane) nothing is known to
+    // occlude the point, so it stays lit.
+    if (any(UV < 0.0) || any(UV > 1.0) || Ndc.z > 1.0) return 1.0;
+
+    const float Depth = Ndc.z - ShadowParams.y;
+    const float2 Step = ShadowParams2.x * ShadowParams.w;
+
+    float Sum = 0.0;
+    [unroll] for (int Y = -1; Y <= 1; ++Y) {
+        [unroll] for (int X = -1; X <= 1; ++X) {
+            Sum += ShadowMap.SampleCmpLevelZero(ShadowSampler, UV + float2(X, Y) * Step, Depth);
+        }
+    }
+    const float Visibility = Sum / 9.0;
+
+    // Fade out over the last stretch of the shadow distance rather than
+    // cutting off at the edge of the map.
+    const float Distance = length(CameraPositionAndPad.xyz - WorldPosition);
+    const float Fade = saturate((ShadowParams2.y - Distance) / max(ShadowParams2.z, 0.001));
+    return lerp(1.0, Visibility, Fade);
+}
+
 float4 PSMain(PSInput In) : SV_Target {
     // Every texture sample MULTIPLIES its matching constant factor (never
     // replaces it) - see MaterialBindings.hlsli. A material with no map
@@ -192,7 +238,12 @@ float4 PSMain(PSInput In) : SV_Target {
 
     const float NdotL       = max(dot(N, L), 0.0);
     const float3 Radiance   = LightColorAndIntensity.xyz * LightColorAndIntensity.w;
-    const float3 DirectLight = (KDiffuse * Albedo / PI + Specular) * Radiance * NdotL;
+
+    // Shadowing uses the interpolated geometric normal, not the normal-mapped
+    // one: acne is a property of the surface's actual slope.
+    const float3 GeometricNormal = normalize(In.WorldNormal);
+    const float Shadow = ShadowVisibility(In.WorldPosition, GeometricNormal, dot(GeometricNormal, L));
+    const float3 DirectLight = (KDiffuse * Albedo / PI + Specular) * Radiance * NdotL * Shadow;
 
     // Image-based lighting, split-sum style: the environment maps supply the
     // incoming light, BrdfLUT supplies how much of it this material reflects

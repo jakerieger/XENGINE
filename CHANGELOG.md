@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-21
+
+### Added
+
+- Directional-light shadows. `MeshRenderer` now renders a depth-only shadow pass (`Shadow.hlsl`, no pixel stage) into a single D32 shadow map before the main pass, and `PBR.hlsl` darkens the light's direct contribution by a PCF-filtered lookup (a comparison sampler plus 3x3 taps). The map is one orthographic cascade fitted to a bounding sphere of the camera's view frustum out to `ShadowDistance`, its origin snapped to whole texels so shadow edges don't crawl as the camera moves, and its depth range pulled back to reach every caster between the light and that volume. Acne is handled at the receiver - a normal offset scaled by the surface's angle to the light, plus a small constant depth bias - so casters render with no culling and no rasterizer bias. Only ambient/IBL light is unshadowed; a bright sun baked into the HDRI still lights shadowed areas.
+  - `DirectionalLightComponent` gains `CastShadows`, `ShadowDistance` (default 40), `ShadowResolution` (default 2048), `ShadowBias`, `ShadowNormalBias` and `ShadowSoftness`; the bias and softness values are in shadow-map texels so they stay right when the distance or resolution changes. Shadows need a perspective camera; a scene with no real light actor (the renderer's fallback light) has none.
+  - `MaterialSlot::ShadowMap` (t8/s8) is a new standardized slot, so `TextureSlotCount` is now 9. A frame with no shadow pass binds a 1x1 stand-in map instead of leaving the slot unbound.
+  - RHI: `SamplerDesc::Compare`/`CompareFunc` (D3D12 comparison filters), and `GraphicsPipelineDesc::FragmentShader` is now optional, for depth-only pipelines. `MeshInfo` carries local-space `BoundsMin`/`BoundsMax`, computed while decoding.
+  - `compile_engine_shaders.py` only compiles the stages a shader actually defines, so a vertex-only shader no longer needs a dummy `PSMain`.
+- The D3D12 debug layer's messages now go to the engine log (Debug builds only, where validation is on): warnings, errors and corruption at the matching log level, with the message ID. A warning repeated every frame is logged in full three times and then noted once as suppressed; errors and corruption are never suppressed. Previously they only reached an attached debugger.
+
+### Changed
+
+- Demo.PBR gains a ground plane for the shadow to land on, and its light now points down and toward the camera. Its old rotation (pitch +45 degrees) actually pointed the light upward - DirectXMath's positive pitch tilts -Z forward toward +Y - so a floor would have received no direct light at all.
+- The loading screen no longer has a progress bar, only the spinner, now centered. `LoadingProgress` is still passed to `Game::OnLoadingScreen` for games that draw their own; `LoadingScreen::Config::Track` is gone.
+
 ## 2026-09-20
 
 ### Added
@@ -7,7 +23,7 @@
 - A loading screen for launch and scene transitions, backed by real background loading. Previously every load was synchronous on the main thread - nothing pumped the window's messages or presented a frame, so the window sat unpainted and Windows marked it "Not Responding" (a Debug launch with an 8K HDRI is ~14 s, ~10 s of it AES + LZ4 unpacking). Now:
   - `AssetLoader` (`AssetLoader.hpp/.cpp`) unpacks and decodes assets on worker threads (up to 3, with a small bound on decoded-but-not-uploaded assets so an 8K HDRI can't pile up in RAM) while the main thread does the GPU half - creating and uploading the resource, inserting it into the cache - a few milliseconds' worth per frame via `Pump`. A worker's failure (missing or undecodable asset) is rethrown on the main thread exactly where the old synchronous load threw it. `TextureCache`/`MeshCache` are split at their existing seam for this (`DecodeAsset` - pure CPU, thread-safe - and `AdoptPreloaded` - GPU, main thread); `Acquire`/`Preload` share the same two halves.
   - `Game` has a real loading state: `ApplyPendingSceneChange` tears down the old scene, deserializes the new one, and begins a load; `TickFrame` runs `TickLoading` until it finishes (no `OnUpdate`/scene tick against a scene that doesn't exist yet), then `OnSceneLoaded`/`BeginPlay` as before - every `Acquire` is a cache hit. A scene change requested mid-load cancels it (workers stopped and joined, partially-loaded assets dropped) and starts the new one. `IsLoading()`, `GetLoadingScreen()`, and a `virtual bool OnLoadingScreen(const LoadingProgress&)` hook (return true if you drew your own) are the game-facing surface.
-  - `LoadingScreen` (`LoadingScreen.hpp/.cpp`): a background, a spinner and an eased progress bar, drawn straight into the swap chain by its own tiny embedded-HLSL pipeline - no pak asset, no font, no scene, so it works before anything is mounted and in release builds. It only appears once a load has run `ShowDelaySeconds` (0.3), so quick scene changes stay instant, and then stays at least `MinVisibleSeconds` (0.4), so it never flashes. The launch paints a background frame immediately, so the window is never a blank rectangle.
+  - `LoadingScreen` (`LoadingScreen.hpp/.cpp`): a background and a spinner (no progress bar; `LoadingProgress` is still passed to `OnLoadingScreen` for games that draw their own), drawn straight into the swap chain by its own tiny embedded-HLSL pipeline - no pak asset, no font, no scene, so it works before anything is mounted and in release builds. It only appears once a load has run `ShowDelaySeconds` (0.3), so quick scene changes stay instant, and then stays at least `MinVisibleSeconds` (0.4), so it never flashes. The launch paints a background frame immediately, so the window is never a blank rectangle.
   - While the loading screen is up, the scene's environment is baked under it (`MeshRenderer::PrepareEnvironment`, factored out of `Render`) instead of hitching the first real frame.
 
 ### Fixed

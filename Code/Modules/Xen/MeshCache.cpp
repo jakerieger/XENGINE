@@ -12,6 +12,7 @@
 
 #include <cgltf.h>
 
+#include <algorithm>
 #include <format>
 #include <ranges>
 #include <vector>
@@ -150,6 +151,20 @@ namespace Xen {
         Out.Info.IndexType   = UseU16 ? RHI::IndexType::U16 : RHI::IndexType::U32;
         Out.Info.GpuBytes    = Vertices.size() * sizeof(MeshVertex) +
                             (UseU16 ? Indices16.size() * sizeof(u16) : Indices.size() * sizeof(u32));
+        if (!Vertices.empty()) {
+            Float3 Min {Vertices[0].Position[0], Vertices[0].Position[1], Vertices[0].Position[2]};
+            Float3 Max = Min;
+            for (const MeshVertex& V : Vertices) {
+                Min.x = std::min(Min.x, V.Position[0]);
+                Min.y = std::min(Min.y, V.Position[1]);
+                Min.z = std::min(Min.z, V.Position[2]);
+                Max.x = std::max(Max.x, V.Position[0]);
+                Max.y = std::max(Max.y, V.Position[1]);
+                Max.z = std::max(Max.z, V.Position[2]);
+            }
+            Out.Info.BoundsMin = Min;
+            Out.Info.BoundsMax = Max;
+        }
         Out.Vertices         = std::move(Vertices);
         if (UseU16) Out.Indices16 = std::move(Indices16);
         else Out.Indices32 = std::move(Indices);

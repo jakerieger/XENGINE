@@ -11,9 +11,60 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdarg>
+#include <mutex>
 
 namespace Xen::RHI::D3D12Backend {
+
     namespace {
+        // The debug layer's own output goes to an attached debugger, which is
+        // nowhere when the game runs standalone - route it into the engine log
+        // instead. The layer repeats the same message every frame for as long as
+        // a condition holds (e.g. clearing a target created without an optimized
+        // clear value), so a given message ID is logged in full only a few times,
+        // then noted once as suppressed; corruption and errors are never
+        // suppressed. May be called from any thread the driver picks.
+        void CALLBACK OnDebugLayerMessage(D3D12_MESSAGE_CATEGORY,
+                                          const D3D12_MESSAGE_SEVERITY Severity,
+                                          const D3D12_MESSAGE_ID Id,
+                                          LPCSTR Description,
+                                          void*) {
+            constexpr u32 MaxLoggedPerMessage = 3;
+
+            const bool Serious = Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION || Severity == D3D12_MESSAGE_SEVERITY_ERROR;
+            if (!Serious) {
+                static std::mutex CountsMutex;
+                static std::unordered_map<i32, u32> Counts;
+
+                u32 Seen;
+                {
+                    std::lock_guard Lock(CountsMutex);
+                    Seen = ++Counts[CAST<i32>(Id)];
+                }
+                if (Seen > MaxLoggedPerMessage + 1) return;
+                if (Seen == MaxLoggedPerMessage + 1) {
+                    LOG_WARN("D3D12 (id %d): message repeated, further occurrences suppressed", CAST<i32>(Id));
+                    return;
+                }
+            }
+
+            switch (Severity) {
+                case D3D12_MESSAGE_SEVERITY_CORRUPTION: LOG_CRIT("D3D12 corruption (id %d): %s", CAST<i32>(Id), Description); break;
+                case D3D12_MESSAGE_SEVERITY_ERROR: LOG_ERR("D3D12 error (id %d): %s", CAST<i32>(Id), Description); break;
+                case D3D12_MESSAGE_SEVERITY_WARNING: LOG_WARN("D3D12 warning (id %d): %s", CAST<i32>(Id), Description); break;
+                default: LOG_INFO("D3D12 (id %d): %s", CAST<i32>(Id), Description); break;
+            }
+        }
+
+        // Needs ID3D12InfoQueue1 (Windows 11 / recent Windows 10 SDK runtimes);
+        // on an older runtime the messages simply stay in the debugger.
+        void RouteDebugLayerMessagesToLog(ID3D12Device* Device) {
+            ComPtr<ID3D12InfoQueue1> Queue;
+            if (FAILED(Device->QueryInterface(IID_PPV_ARGS(&Queue)))) return;
+
+            DWORD Cookie = 0;
+            Queue->RegisterMessageCallback(OnDebugLayerMessage, D3D12_MESSAGE_CALLBACK_FLAG_NONE, nullptr, &Cookie);
+        }
+
         constexpr u32 D3D12_UPLOAD_ALIGN = 256;  // constant/vertex buffer view alignment
 
         u64 AlignUp(const u64 Value, const u64 Align) {
@@ -177,6 +228,8 @@ namespace Xen::RHI::D3D12Backend {
             LOG_ERR("no D3D12-capable hardware adapter found");
             return false;
         }
+
+        if (Desc.EnableValidation) RouteDebugLayerMessagesToLog(_Device.Get());
 
         D3D12_COMMAND_QUEUE_DESC QueueDesc {};
         QueueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
@@ -1337,7 +1390,13 @@ namespace Xen::RHI::D3D12Backend {
         if (Samp.HeapIndex == UINT32_MAX) return {};
 
         D3D12_SAMPLER_DESC SamplerDesc_ {};
-        SamplerDesc_.Filter   = ToD3DFilter(Desc.MinFilter, Desc.MagFilter, Desc.MipFilter, Desc.MaxAnisotropy > 1);
+        SamplerDesc_.Filter =
+          ToD3DFilter(Desc.MinFilter, Desc.MagFilter, Desc.MipFilter, Desc.MaxAnisotropy > 1 && !Desc.Compare);
+        // The comparison variant of every D3D12_FILTER is the plain one with
+        // the reduction-type bits set to COMPARISON (0x80).
+        if (Desc.Compare) {
+            SamplerDesc_.Filter = CAST<D3D12_FILTER>(CAST<u32>(SamplerDesc_.Filter) | 0x80u);
+        }
         SamplerDesc_.AddressU = ToD3DAddressMode(Desc.AddressU);
         SamplerDesc_.AddressV = ToD3DAddressMode(Desc.AddressV);
         SamplerDesc_.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
@@ -1345,7 +1404,7 @@ namespace Xen::RHI::D3D12Backend {
         SamplerDesc_.MinLOD         = Desc.MinLod;
         SamplerDesc_.MaxLOD         = Desc.MaxLod;
         SamplerDesc_.MipLODBias     = Desc.MipLodBias;
-        SamplerDesc_.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+        SamplerDesc_.ComparisonFunc = Desc.Compare ? ToD3DCompareOp(Desc.CompareFunc) : D3D12_COMPARISON_FUNC_NEVER;
 
         D3D12_CPU_DESCRIPTOR_HANDLE Handle = _SamplerHeap->GetCPUDescriptorHandleForHeapStart();
         Handle.ptr += CAST<UINT64>(Samp.HeapIndex) * _SamplerDescriptorSize;
@@ -1510,7 +1569,9 @@ namespace Xen::RHI::D3D12Backend {
         const D3DShader* VS               = _Shaders.Get(Desc.VertexShader);
         const D3DShader* PS               = _Shaders.Get(Desc.FragmentShader);
         const D3DPipelineLayout* LayoutPtr = _Layouts.Get(Desc.PipelineLayout);
-        if (!VS || !PS || !LayoutPtr) return {};
+        // No fragment shader is a depth-only pipeline; an invalid handle for
+        // one that WAS given is still an error.
+        if (!VS || !LayoutPtr || (Desc.FragmentShader.IsValid() && !PS)) return {};
 
         std::vector<D3D12_INPUT_ELEMENT_DESC> InputElements;
         InputElements.reserve(Desc.Layout.AttributeCount);
@@ -1541,7 +1602,7 @@ namespace Xen::RHI::D3D12Backend {
         D3D12_GRAPHICS_PIPELINE_STATE_DESC PsoDesc {};
         PsoDesc.pRootSignature        = LayoutPtr->RootSignature.Get();
         PsoDesc.VS                    = {VS->Bytecode->GetBufferPointer(), VS->Bytecode->GetBufferSize()};
-        PsoDesc.PS                    = {PS->Bytecode->GetBufferPointer(), PS->Bytecode->GetBufferSize()};
+        if (PS) PsoDesc.PS = {PS->Bytecode->GetBufferPointer(), PS->Bytecode->GetBufferSize()};
         PsoDesc.InputLayout           = {InputElements.data(), CAST<UINT>(InputElements.size())};
         PsoDesc.PrimitiveTopologyType = ToD3DTopologyType(Desc.Topology);
         PsoDesc.SampleMask            = UINT_MAX;

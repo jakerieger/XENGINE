@@ -13,8 +13,8 @@ namespace Xen {
         // Embedded rather than loaded from a pak, for the same reason as
         // SpriteRenderer's: the loading screen has to work before any asset is
         // mounted. One quad (a triangle strip generated from SV_VertexID) per
-        // shape, in pixels: a rounded rectangle (the bar's track and fill) or
-        // a tapering arc (the spinner), antialiased with a one-pixel SDF edge.
+        // shape, in pixels: a rounded rectangle or a tapering arc (the
+        // spinner), antialiased with a one-pixel SDF edge.
         constexpr auto ShaderSource = R"(
 cbuffer Params : register(b0) {
     float4 Screen;  // xy = target size in pixels
@@ -107,15 +107,15 @@ float4 PSMain(VSOutput In) : SV_Target {
 
         if (Vertex.IsValid() && Fragment.IsValid() && _Layout.IsValid()) {
             RHI::GraphicsPipelineDesc PipelineDesc;
-            PipelineDesc.VertexShader                 = Vertex;
-            PipelineDesc.FragmentShader               = Fragment;
-            PipelineDesc.PipelineLayout               = _Layout;
-            PipelineDesc.Topology                     = RHI::PrimitiveTopology::TriangleStrip;
-            PipelineDesc.Rasterizer.Cull              = RHI::CullMode::None;
-            PipelineDesc.DepthStencil.DepthTestEnable = false;
+            PipelineDesc.VertexShader                  = Vertex;
+            PipelineDesc.FragmentShader                = Fragment;
+            PipelineDesc.PipelineLayout                = _Layout;
+            PipelineDesc.Topology                      = RHI::PrimitiveTopology::TriangleStrip;
+            PipelineDesc.Rasterizer.Cull               = RHI::CullMode::None;
+            PipelineDesc.DepthStencil.DepthTestEnable  = false;
             PipelineDesc.DepthStencil.DepthWriteEnable = false;
-            PipelineDesc.Blend.Attachments[0]         = RHI::BlendAttachmentState::AlphaBlend();
-            PipelineDesc.ColorAttachmentCount         = 1;
+            PipelineDesc.Blend.Attachments[0]          = RHI::BlendAttachmentState::AlphaBlend();
+            PipelineDesc.ColorAttachmentCount          = 1;
             // The swap chain itself is the target, not a Viewport.
             PipelineDesc.ColorFormats[0] = RHI::Format::BGRA8_UNORM;
             PipelineDesc.DebugName       = "LoadingScreen";
@@ -146,8 +146,7 @@ float4 PSMain(VSOutput In) : SV_Target {
     }
 
     void LoadingScreen::Reset() {
-        _DisplayedFraction = 0.0f;
-        _SpinnerAngle      = 0.0f;
+        _SpinnerAngle = 0.0f;
     }
 
     void LoadingScreen::DrawBackground() {
@@ -176,13 +175,6 @@ float4 PSMain(VSOutput In) : SV_Target {
         _Commands.BeginRenderPass(Pass);
 
         if (WithShapes) {
-            // Ease toward the target rather than jumping: assets finish in
-            // lumps (one big one is most of the load), and a bar that snaps
-            // looks broken where one that glides looks like it's working.
-            const f32 Target = std::clamp(Progress.Fraction, 0.0f, 1.0f);
-            _DisplayedFraction += (Target - _DisplayedFraction) * (1.0f - std::exp(-8.0f * DeltaTime));
-            _DisplayedFraction = std::clamp(_DisplayedFraction, 0.0f, Target);
-
             constexpr f32 TwoPi = 6.28318530718f;
             _SpinnerAngle       = std::fmod(_SpinnerAngle + 4.5f * DeltaTime, TwoPi);
 
@@ -220,39 +212,16 @@ float4 PSMain(VSOutput In) : SV_Target {
             const f32 CenterX = Width * 0.5f;
 
             // Spinner: a tapering three-quarter-turn arc.
-            const f32 SpinnerRadius = std::clamp(Height * 0.05f, 20.0f, 56.0f);
-            const f32 SpinnerY      = Height * 0.46f;
+            const f32 SpinnerRadius = std::clamp(Height * 0.03f, 20.0f, 56.0f);
             DrawShape(CenterX,
-                      SpinnerY,
+                      Height * 0.5f,
                       SpinnerRadius,
                       SpinnerRadius,
                       _Config.Accent,
                       1.0f,
-                      SpinnerRadius * 0.2f,
+                      SpinnerRadius * 0.1f,
                       _SpinnerAngle,
                       0.75f);
-
-            // Bar: a track, then the fill over it, clipped to the eased fraction.
-            const f32 BarWidth  = std::clamp(Width * 0.34f, 220.0f, 640.0f);
-            const f32 BarHeight = std::clamp(Height * 0.011f, 6.0f, 14.0f);
-            const f32 BarY      = Height * 0.46f + SpinnerRadius + Height * 0.06f;
-            const f32 Corner    = BarHeight * 0.5f;
-
-            DrawShape(CenterX, BarY, BarWidth * 0.5f, BarHeight * 0.5f, _Config.Track, 0.0f, Corner, 0.0f, 0.0f);
-
-            // Never narrower than the bar is tall: a rounded rect thinner than
-            // its own corner radius collapses into a sliver.
-            const f32 FillWidth = std::max(BarWidth * _DisplayedFraction, BarHeight);
-            const f32 FillLeft  = CenterX - BarWidth * 0.5f;
-            DrawShape(FillLeft + FillWidth * 0.5f,
-                      BarY,
-                      FillWidth * 0.5f,
-                      BarHeight * 0.5f,
-                      _Config.Accent,
-                      0.0f,
-                      Corner,
-                      0.0f,
-                      0.0f);
         }
 
         _Commands.EndRenderPass();

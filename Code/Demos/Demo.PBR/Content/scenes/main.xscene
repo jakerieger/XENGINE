@@ -69,6 +69,63 @@
       "ID": 2,
       "Parent": 0,
       "Properties": {
+        "Name": "Ground",
+        "Transform": {
+          "Position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Scale": [
+            200.0,
+            1.0,
+            200.0
+          ]
+        },
+        "Enabled": true
+      },
+      "Components": [
+        {
+          "Type": "MeshComponent",
+          "Properties": {
+            "MeshAsset": 7277390039894820148
+          }
+        },
+        {
+          "Type": "PBRMaterialComponent",
+          "Properties": {
+            "Albedo": [
+              0.550000011920929,
+              0.550000011920929,
+              0.5799999833106995
+            ],
+            "Metallic": 0.0,
+            "Roughness": 0.8500000238418579,
+            "AmbientOcclusion": 1.0,
+            "Emissive": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "AlbedoMap": 0,
+            "NormalMap": 0,
+            "MetallicRoughnessMap": 0,
+            "AmbientOcclusionMap": 0,
+            "EmissiveMap": 0
+          }
+        }
+      ]
+    },
+    {
+      "ID": 3,
+      "Parent": 0,
+      "Properties": {
         "Name": "MainCamera",
         "Transform": {
           "Position": [
@@ -106,7 +163,7 @@
       ]
     },
     {
-      "ID": 3,
+      "ID": 4,
       "Parent": 0,
       "Properties": {
         "Name": "Light",
@@ -117,10 +174,10 @@
             0.0
           ],
           "Rotation": [
-            0.36964380741119385,
-            -0.2391176074743271,
-            0.0990457609295845,
-            0.8923990726470947
+            -0.0990457609295845,
+            0.89239901304245,
+            0.36964377760887146,
+            0.2391176074743271
           ],
           "Scale": [
             1.0,
@@ -139,13 +196,19 @@
               1.0,
               1.0
             ],
-            "Intensity": 1.0
+            "Intensity": 1.0,
+            "CastShadows": true,
+            "ShadowDistance": 40.0,
+            "ShadowResolution": 2048,
+            "ShadowBias": 1.0,
+            "ShadowNormalBias": 1.5,
+            "ShadowSoftness": 1.0
           }
         }
       ]
     },
     {
-      "ID": 4,
+      "ID": 5,
       "Parent": 0,
       "Properties": {
         "Name": "Environment",
@@ -173,7 +236,7 @@
         {
           "Type": "EnvironmentComponent",
           "Properties": {
-            "Map": 2462894980171083987,
+            "Map": 9486073036069306617,
             "ShowBackground": true
           }
         }

@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <Common/Math.hpp>
 #include <Common/XenCommon.hpp>
 
 #include "EnvironmentBaker.hpp"
@@ -19,6 +20,8 @@ namespace Xen {
 
     class Scene;
     class CameraComponent;
+    class DirectionalLightComponent;
+    class MeshCache;
 
     class MeshRenderer {
     public:
@@ -40,7 +43,9 @@ namespace Xen {
 
         /// @brief Records and submits one frame's meshes into Target's color
         /// (and depth) target, lit by the scene's first
-        /// DirectionalLightComponent plus image-based lighting from its first
+        /// DirectionalLightComponent (which casts shadows onto them - one
+        /// shadow map rendered first, fitted to the camera's view out to the
+        /// light's ShadowDistance) plus image-based lighting from its first
         /// EnvironmentComponent (a dim placeholder sky if it has none), and
         /// viewed through the scene's main camera. Call between
         /// IRenderDevice::BeginFrame and EndFrame.
@@ -64,6 +69,34 @@ namespace Xen {
         /// - it depends on nothing but the pixel's own position, so there's
         /// no reason to ever redo it.
         bool BakeBrdfLut(const PAK::AssetRegistry& Assets);
+
+        /// @brief Builds the depth-only shadow pipeline. Optional - without
+        /// it (or its shader) the scene just has no shadows.
+        void CreateShadowPipeline(const PAK::AssetRegistry& Assets);
+
+        /// @brief What the shadow pass hands the main pass: whether a shadow
+        /// map was rendered this frame and how to look points up in it.
+        struct ShadowState {
+            bool Enabled {false};
+            Float4x4 LightViewProjection {};
+            Float4 Params {};   // see FrameData.hlsli's ShadowParams
+            Float4 Params2 {};  // see FrameData.hlsli's ShadowParams2
+        };
+
+        /// @brief Renders every mesh actor into the shadow map from Light's
+        /// point of view, into the current command buffer (before the main
+        /// pass begins). The map is a single orthographic cascade fitted to
+        /// the camera's view frustum out to the light's ShadowDistance, its
+        /// origin snapped to whole texels so shadows don't shimmer as the
+        /// camera moves, and its depth range widened to reach every caster
+        /// between the light and that volume. Returns Enabled = false (and
+        /// records nothing) when the light doesn't cast shadows, the camera
+        /// isn't a perspective one, or nothing would cast.
+        ShadowState RenderShadowPass(const Scene& S,
+                                     const CameraComponent& Camera,
+                                     const DirectionalLightComponent& Light,
+                                     const Float3& LightDirection,
+                                     MeshCache& Meshes);
 
         RHI::IRenderDevice* _Device {nullptr};
 
@@ -102,6 +135,20 @@ namespace Xen {
         // environment".
         RHI::TextureHandle _DefaultEnvironmentMap {};
         RHI::TextureHandle _BrdfLUT {};
+
+        // Directional-light shadows. _ShadowMap (D32_FLOAT, sampled + depth
+        // target) is created on the first frame something needs it and
+        // recreated if the light's ShadowResolution changes. The main
+        // pipeline always declares the shadow slot, so a frame with no shadow
+        // pass binds _ShadowFallback instead - a 1x1 map cleared to the far
+        // plane, i.e. "nothing occludes" - and the shader's Enabled flag
+        // skips the lookup anyway.
+        RHI::LayoutHandle _ShadowLayout {};
+        RHI::PipelineHandle _ShadowPipeline {};  // optional - see CreateShadowPipeline
+        RHI::SamplerHandle _ShadowSampler {};
+        RHI::TextureHandle _ShadowMap {};
+        u32 _ShadowMapSize {0};
+        RHI::TextureHandle _ShadowFallback {};
 
         // The scene's environment, baked lazily the first frame Render() sees
         // one (see ResolveEnvironment): _BakedSource is the raw TextureCache

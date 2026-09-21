@@ -45,7 +45,7 @@ namespace Xen {
         NODISCARD f32 GetRoughness() const { return _Roughness; }
         // Never fully 0: a perfectly smooth GGX distribution divides by a
         // near-zero denominator and the specular highlight degenerates to a
-        // single point that aliases badly with no shadow map to soften it.
+        // single point that aliases badly.
         void SetRoughness(const f32 Roughness) { _Roughness = std::clamp(Roughness, 0.045f, 1.0f); }
 
         NODISCARD f32 GetAmbientOcclusion() const { return _AmbientOcclusion; }
