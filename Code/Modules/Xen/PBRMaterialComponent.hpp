@@ -16,8 +16,8 @@ namespace Xen {
     REGISTER_COMPONENT(PBRMaterialComponent)
 
     /// @brief Metallic-roughness PBR material: the scalar factors a Cook-
-    /// Torrance BRDF needs, plus five optional texture maps (albedo/normal/
-    /// metallic-roughness/ambient-occlusion/emissive) at the standardized
+    /// Torrance BRDF needs, plus six optional texture maps (albedo/normal/
+    /// roughness/metallic/ambient-occlusion/emissive) at the standardized
     /// slots MeshRenderer's pipeline binds - see MaterialBindings.hpp and
     /// Code/Shaders/Include/MaterialBindings.hlsli. A texture's sampled
     /// value always multiplies its matching scalar factor (glTF's own
@@ -25,7 +25,10 @@ namespace Xen {
     /// so leaving a map unassigned and just using the scalar is fully
     /// supported, not a degraded path: MeshRenderer binds a white (or
     /// flat-normal) placeholder texture for any channel with no map, which
-    /// multiplies through as the identity.
+    /// multiplies through as the identity. Roughness and metallic are
+    /// independent single-channel maps rather than glTF's packed G/B texture
+    /// - a material can supply either, both, or neither without needing to
+    /// author (or re-pack) a combined texture.
     class PBRMaterialComponent final : public IComponent {
     public:
         XEN_COMPONENT_TYPE(PBRMaterialComponent)
@@ -62,9 +65,13 @@ namespace Xen {
         void SetNormalMapAsset(AssetID ID) { SetChannelAsset(_NormalMap, ID); }
         NODISCARD TextureHandle GetNormalMap() const { return _NormalMap.Handle; }
 
-        NODISCARD AssetID GetMetallicRoughnessMapAsset() const { return _MetallicRoughnessMap.Asset; }
-        void SetMetallicRoughnessMapAsset(AssetID ID) { SetChannelAsset(_MetallicRoughnessMap, ID); }
-        NODISCARD TextureHandle GetMetallicRoughnessMap() const { return _MetallicRoughnessMap.Handle; }
+        NODISCARD AssetID GetRoughnessMapAsset() const { return _RoughnessMap.Asset; }
+        void SetRoughnessMapAsset(AssetID ID) { SetChannelAsset(_RoughnessMap, ID); }
+        NODISCARD TextureHandle GetRoughnessMap() const { return _RoughnessMap.Handle; }
+
+        NODISCARD AssetID GetMetallicMapAsset() const { return _MetallicMap.Asset; }
+        void SetMetallicMapAsset(AssetID ID) { SetChannelAsset(_MetallicMap, ID); }
+        NODISCARD TextureHandle GetMetallicMap() const { return _MetallicMap.Handle; }
 
         NODISCARD AssetID GetAmbientOcclusionMapAsset() const { return _AmbientOcclusionMap.Asset; }
         void SetAmbientOcclusionMapAsset(AssetID ID) { SetChannelAsset(_AmbientOcclusionMap, ID); }
@@ -92,9 +99,9 @@ namespace Xen {
             // Albedo/emissive are authored as perceptual (sRGB-encoded)
             // color, like any other color image, and need the GPU to
             // linearize them on sample before they hit the lighting math in
-            // PBR.hlsl. Normal/metallic-roughness/occlusion store raw
-            // vector/scalar data - per glTF's own convention - and must NOT
-            // be decoded, or they come out wrong. See TextureCache::Acquire.
+            // PBR.hlsl. Normal/roughness/metallic/occlusion store raw
+            // vector/scalar data and must NOT be decoded, or they come out
+            // wrong. See TextureCache::Acquire.
             bool Srgb {false};
         };
 
@@ -104,7 +111,8 @@ namespace Xen {
 
         TextureChannel _AlbedoMap {.Srgb = true};
         TextureChannel _NormalMap;
-        TextureChannel _MetallicRoughnessMap;
+        TextureChannel _RoughnessMap;
+        TextureChannel _MetallicMap;
         TextureChannel _AmbientOcclusionMap;
         TextureChannel _EmissiveMap {.Srgb = true};
 

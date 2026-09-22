@@ -5,6 +5,7 @@
 #pragma once
 
 #include <Common/XenCommon.hpp>
+
 #include "Input.hpp"
 #include "EngineConfig.hpp"
 

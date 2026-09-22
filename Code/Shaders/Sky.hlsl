@@ -10,7 +10,6 @@
 
 #include "Include/Fullscreen.hlsli"
 #include "Include/FrameData.hlsli"
-#include "Include/Tonemap.hlsli"
 
 TextureCube EnvironmentMap : register(XEN_ENVIRONMENT_TEX_REGISTER);
 SamplerState EnvironmentSampler : register(XEN_ENVIRONMENT_SAMPLER_REGISTER);
@@ -26,8 +25,8 @@ float4 PSMain(VSOutput In) : SV_Target {
     const float4 World = mul(float4(Ndc, 1.0, 1.0), InvViewProjection);
     const float3 Dir   = normalize(World.xyz / World.w - CameraPositionAndPad.xyz);
 
-    // Same exposure/gamma as every lit surface, so the sky and the objects
-    // in front of it agree.
+    // Linear HDR, same as PBR.hlsl - the post-process composite pass is what
+    // exposes and tonemaps the sky and every lit surface together.
     const float3 Radiance = EnvironmentMap.SampleLevel(EnvironmentSampler, Dir, 0).rgb;
-    return float4(TonemapAndEncode(Radiance), 1.0);
+    return float4(Radiance, 1.0);
 }

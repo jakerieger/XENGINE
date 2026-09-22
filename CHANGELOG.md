@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-22
+
+### Added
+
+- Bloom and exposure control. `MeshRenderer` now renders the scene (PBR + sky) into a private linear-HDR target (`RGBA16F`) instead of tonemapping per-pixel straight into the Viewport's LDR color target; a new `PostProcess` runs after it, every pass a fullscreen triangle like `EnvironmentBaker`'s bake passes (no compute shaders anywhere in this engine yet):
+  - Bloom is the "physically based" mip-chain technique from Call of Duty: Advanced Warfare's SIGGRAPH 2014 presentation: a soft-thresholded bright pass (`BloomDownsample.hlsl`, Unity's quadratic-knee curve) seeds a chain of progressively half-sized mips of one texture, downsampled with a 4-tap box filter; a second pass (`BloomUpsample.hlsl`) blends them back up into each other with a 3x3 tent filter and additive blending, leaving mip 0 a multi-scale glow. Levels stop at 6 or an 8-texel side, whichever comes first.
+  - The composite pass (`PostProcessComposite.hlsl`) adds the bloom result back in, multiplies by exposure, then tonemaps with the ACES filmic curve (replacing the old Reinhard) and gamma-encodes - `Include/Tonemap.hlsli`'s new home for both. It's alpha-blended over whatever was already in the Viewport's color target using the scene render's own alpha (1 only where `PBR.hlsl`/`Sky.hlsl` actually wrote a pixel), so 2D sprites drawn earlier in the frame are left alone exactly as the old direct-render-with-Load did.
+  - New `PostProcessComponent` (scene-wide, "first one found" rule like `EnvironmentComponent`/`DirectionalLightComponent`) exposes `Exposure`, `BloomEnabled`, `BloomThreshold`, `BloomSoftKnee` and `BloomIntensity`. A scene with none renders with `PostProcess::Settings`'s defaults (exposure 1, bloom on).
+  - `PBR.hlsl`/`Sky.hlsl` no longer tonemap - they write plain linear HDR color (alpha 1), which is what makes the offscreen target's alpha channel double as a "did this pixel get drawn" mask for the composite's blend.
+- Demo.PBR's light is now a bit brighter (intensity 3) and its `PostProcessComponent` lowers the bloom threshold slightly, so the monkey's own specular highlights bloom visibly, not just the HDRI's sun.
+
 ## 2026-09-21
 
 ### Added

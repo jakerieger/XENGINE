@@ -16,9 +16,6 @@
 
 #pragma region Macros
 
-#define KB(n) ((size_t)(n) * 1024)
-#define MB(n) ((size_t)(n) * 1024 * 1024)
-#define GB(n) ((size_t)(n) * 1024 * 1024 * 1024)
 #define ASSERT_BASE_OF(Base, T) static_assert(std::is_base_of_v<Base, T>, "T must derive from " #Base ".");
 #define NODISCARD [[nodiscard]]
 #define NORETURN [[noreturn]]

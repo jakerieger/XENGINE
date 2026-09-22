@@ -284,11 +284,12 @@ namespace Xen {
             OnRender();
             _SpriteRenderer.Render(_SpriteBatcher, *_Textures, _MainViewport);
 
-            // Runs after sprites, on top of them, depth-tested amongst
-            // itself - a no-op if this game has no PBR shader asset (see
-            // the constructor). See MeshRenderer::Render for why its render
-            // pass loads rather than clears color: it depends on the sprite
-            // pass above having already cleared this frame.
+            // Runs after sprites, on top of them - a no-op if this game has
+            // no PBR shader asset (see the constructor). MeshRenderer draws
+            // into its own offscreen HDR target and composites that onto
+            // _MainViewport's color target last (exposure, bloom, tonemap -
+            // see PostProcess.hpp), blended so only the pixels it actually
+            // covered overwrite what the sprite pass above already drew.
             if (_MeshRenderer.IsInitialized()) _MeshRenderer.Render(*_ActiveScene, _MainViewport);
 
             // Standalone-game presentation: copy the viewport's color target

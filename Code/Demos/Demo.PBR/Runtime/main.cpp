@@ -13,16 +13,13 @@
 #include <Xen/PBRMaterialComponent.hpp>
 #include <Xen/DirectionalLightComponent.hpp>
 #include <Xen/EnvironmentComponent.hpp>
+#include <Xen/PostProcessComponent.hpp>
 #include <Xen/XenGameSettings.h>
 
 #include <imgui.h>
 
 namespace {
     using namespace Xen;
-
-    f32 ToMB(const u64 Bytes) {
-        return CAST<f32>(Bytes) / (1024.0f * 1024.0f);
-    }
 
     class XenPBRDemo final : public Game {
         using Game::Game;
@@ -62,20 +59,26 @@ namespace {
                 ImGui::Text("Asset Caches");
                 const TextureCache& Textures = GetTextures();
                 const MeshCache& Meshes      = GetMeshes();
-                ImGui::Text("  Textures: %llu (%.2f MB)",
+                ImGui::Text("  Textures: %llu (%0.2f MB)",
                             CAST<u64>(Textures.GetResidentCount()),
                             ToMB(Textures.GetResidentBytes()));
-                ImGui::Text("  Meshes:   %llu (%.2f MB)",
+                ImGui::Text("  Meshes:   %llu (%0.2f MB)",
                             CAST<u64>(Meshes.GetResidentCount()),
                             ToMB(Meshes.GetResidentBytes()));
 
                 ImGui::Separator();
                 ImGui::Text("Memory");
-                const RHI::MemoryStats& Mem = GetRenderDevice().GetMemoryStats();
-                ImGui::Text("  GPU allocated: %.2f MB", ToMB(Mem.GpuAllocatedBytes));
-                ImGui::Text("  GPU reserved:  %.2f MB", ToMB(Mem.GpuReservedBytes));
-                ImGui::Text("  GPU usage:     %.2f / %.2f MB", ToMB(Mem.GpuUsageBytes), ToMB(Mem.GpuBudgetBytes));
-                ImGui::Text("  Process RAM:   %.2f MB", ToMB(Mem.ProcessRamBytes));
+                // clang-format off
+                const auto& [GpuAllocatedBytes,
+                             GpuReservedBytes,
+                             GpuUsageBytes,
+                             GpuBudgetBytes,
+                             ProcessRamBytes] = GetRenderDevice().GetMemoryStats();
+                // clang-format on
+                ImGui::Text("  GPU allocated: %0.2f MB", ToMB(GpuAllocatedBytes));
+                ImGui::Text("  GPU reserved:  %0.2f MB", ToMB(GpuReservedBytes));
+                ImGui::Text("  GPU usage:     %0.2f / %0.2f MB", ToMB(GpuUsageBytes), ToMB(GpuBudgetBytes));
+                ImGui::Text("  Process RAM:   %0.2f MB", ToMB(ProcessRamBytes));
             }
             ImGui::End();
         }
@@ -108,8 +111,14 @@ namespace {
         auto* Material = MonkeActor->AddComponent<PBRMaterialComponent>();
 
         Material->SetAlbedoMapAsset(ASSET("textures/pbr_gold_rough_albedo.png"));
-        Material->SetMetallicRoughnessMapAsset(ASSET("textures/pbr_gold_rough_rm.png"));
         Material->SetNormalMapAsset(ASSET("textures/pbr_gold_rough_normal.png"));
+        // Roughness varies across the surface (wear/scratches), so it gets a
+        // map; metallic is uniform for this material, so it's left as the
+        // scalar factor below with no MetallicMap assigned at all -
+        // roughness and metallic are independent maps now, not a combined
+        // texture, so a material only needs to author (or assign) the ones
+        // that actually vary.
+        Material->SetRoughnessMapAsset(ASSET("textures/pbr_gold_rough_roughness.png"));
         Material->SetMetallic(1.0f);
 
         MonkeActor->AddComponent<RotatingComponent>();
@@ -136,7 +145,10 @@ namespace {
 
         const ActorHandle LightHandle = MainScene.Spawn("Light");
         Actor* LightActor             = MainScene.Get(LightHandle);
-        LightActor->AddComponent<DirectionalLightComponent>();
+        // A bit stronger than a neutral 1.0 so the monkey's specular
+        // highlights - not just the HDRI's own sun - cross the bloom
+        // threshold too.
+        LightActor->AddComponent<DirectionalLightComponent>()->SetIntensity(3.0f);
         // Pitched down (a negative pitch tilts the unrotated -Z forward
         // toward -Y) and yawed around so the light travels toward the camera:
         // the floor is lit, and the monkey's shadow falls in front of it
@@ -154,7 +166,17 @@ namespace {
         const ActorHandle EnvironmentHandle = MainScene.Spawn("Environment");
         Actor* EnvironmentActor             = MainScene.Get(EnvironmentHandle);
         auto* Environment                   = EnvironmentActor->AddComponent<EnvironmentComponent>();
-        Environment->SetMapAsset(ASSET("xen.hdr.daysky.hdr"));
+        Environment->SetMapAsset(ASSET("ibl/maps/sky_spring.hdr"));
+
+        // Bloom on defaults would be nearly invisible here - the HDRI's sun
+        // and the sky near it are the only things bright enough to cross the
+        // threshold. A slightly stronger sun and a lower threshold make it
+        // show without needing an artificially bright light.
+        const ActorHandle PostFxHandle       = MainScene.Spawn("PostProcess");
+        Actor* PostFxActor                   = MainScene.Get(PostFxHandle);
+        auto* PostFx                         = PostFxActor->AddComponent<PostProcessComponent>();
+        PostFx->GetSettings().BloomThreshold = 0.8f;
+        PostFx->GetSettings().BloomIntensity = 0.12f;
 
         const auto ScenePath = Generated::GameSettings().ContentDirs[0] / "scenes" / "main.xscene";
         SceneSerializer::SaveToFile(MainScene, ScenePath);

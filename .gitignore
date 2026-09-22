@@ -9,12 +9,7 @@ vcpkg_installed/
 packages/
 imgui.ini
 
-*.ps
-*.vs
-*.cs
-*.gltf
-*.glb
-*.hdr
+Engine/*
 
 # claude build caches
 build*/

@@ -11,7 +11,6 @@
 #include "Include/Common.hlsli"
 #include "Include/FrameData.hlsli"
 #include "Include/MaterialBindings.hlsli"
-#include "Include/Tonemap.hlsli"
 
 cbuffer ObjectData : register(XEN_OBJECT_REGISTER) {
     row_major float4x4 Model;
@@ -29,8 +28,14 @@ SamplerState AlbedoSampler : register(XEN_ALBEDO_SAMPLER_REGISTER);
 Texture2D NormalMap : register(XEN_NORMAL_TEX_REGISTER);
 SamplerState NormalSampler : register(XEN_NORMAL_SAMPLER_REGISTER);
 
-Texture2D MetallicRoughnessMap : register(XEN_METALROUGH_TEX_REGISTER);
-SamplerState MetallicRoughnessSampler : register(XEN_METALROUGH_SAMPLER_REGISTER);
+// Separate single-channel maps (.r), not glTF's packed G/B texture - either
+// may be unassigned (bound to the white placeholder) independently of the
+// other. See MaterialBindings.hlsli.
+Texture2D RoughnessMap : register(XEN_ROUGHNESS_TEX_REGISTER);
+SamplerState RoughnessSampler : register(XEN_ROUGHNESS_SAMPLER_REGISTER);
+
+Texture2D MetallicMap : register(XEN_METALLIC_TEX_REGISTER);
+SamplerState MetallicSampler : register(XEN_METALLIC_SAMPLER_REGISTER);
 
 Texture2D AmbientOcclusionMap : register(XEN_AO_TEX_REGISTER);
 SamplerState AmbientOcclusionSampler : register(XEN_AO_SAMPLER_REGISTER);
@@ -207,9 +212,8 @@ float4 PSMain(PSInput In) : SV_Target {
     // assigned is bound to a white (or flat-normal) placeholder by
     // MeshRenderer, so this is branch-free either way.
     const float3 Albedo   = AlbedoAndMetallic.xyz * AlbedoMap.Sample(AlbedoSampler, In.UV).rgb;
-    const float4 MR       = MetallicRoughnessMap.Sample(MetallicRoughnessSampler, In.UV);
-    const float Metallic  = AlbedoAndMetallic.w * MR.b;
-    const float Roughness = max(RoughnessAOAndPad.x * MR.g, 0.045);
+    const float Metallic  = AlbedoAndMetallic.w * MetallicMap.Sample(MetallicSampler, In.UV).r;
+    const float Roughness = max(RoughnessAOAndPad.x * RoughnessMap.Sample(RoughnessSampler, In.UV).r, 0.045);
     const float AO        = RoughnessAOAndPad.y * AmbientOcclusionMap.Sample(AmbientOcclusionSampler, In.UV).r;
     const float3 Emissive = EmissiveAndPad.xyz * EmissiveMap.Sample(EmissiveSampler, In.UV).rgb;
 
@@ -276,5 +280,11 @@ float4 PSMain(PSInput In) : SV_Target {
 
     float3 Color = Ambient + DirectLight + Emissive;
 
-    return float4(TonemapAndEncode(Color), 1.0);
+    // Linear HDR, untonemapped: MeshRenderer renders into an offscreen
+    // RGBA16F target, and the post-process composite pass (exposure, bloom,
+    // ACES + gamma - see Tonemap.hlsli) is what maps it down to the swap
+    // chain's LDR format. Alpha marks "a pixel this pass actually wrote" -
+    // the composite blends over whatever was in the target before by it, so
+    // it must be 1 here even though nothing downstream reads Color's alpha.
+    return float4(Color, 1.0);
 }

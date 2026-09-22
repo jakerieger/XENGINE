@@ -8,6 +8,7 @@
 #include "PBRMaterialComponent.hpp"
 #include "DirectionalLightComponent.hpp"
 #include "EnvironmentComponent.hpp"
+#include "PostProcessComponent.hpp"
 #include "CameraComponent.hpp"
 #include "Actor.hpp"
 #include "Scene.hpp"
@@ -43,6 +44,11 @@ namespace Xen {
             Float4 RoughnessAOAndPad;
             Float4 EmissiveAndPad;
         };
+
+        // The scene render's own target format (see MeshRenderer.hpp's
+        // _SceneColorTarget) - fixed, unlike TargetFormats.GetColorFormat(),
+        // which only ever governs the post-process composite pipeline now.
+        constexpr RHI::Format SceneColorFormat = RHI::Format::RGBA16_FLOAT;
     }  // namespace
 
     MeshRenderer::~MeshRenderer() {
@@ -132,7 +138,7 @@ namespace Xen {
         PipelineDesc.DepthStencil.DepthWriteEnable = true;
         PipelineDesc.DepthStencil.DepthCompare     = RHI::CompareOp::Less;
         PipelineDesc.ColorAttachmentCount          = 1;
-        PipelineDesc.ColorFormats[0]               = TargetFormats.GetColorFormat();
+        PipelineDesc.ColorFormats[0]               = SceneColorFormat;
         PipelineDesc.DepthFormat                   = TargetFormats.GetDepthFormat();
         PipelineDesc.DebugName                     = "XEN.Shaders.PBR";
 
@@ -178,7 +184,7 @@ namespace Xen {
                     SkyDesc.DepthStencil.DepthWriteEnable   = false;
                     SkyDesc.DepthStencil.DepthCompare       = RHI::CompareOp::LessEqual;
                     SkyDesc.ColorAttachmentCount            = 1;
-                    SkyDesc.ColorFormats[0]                 = TargetFormats.GetColorFormat();
+                    SkyDesc.ColorFormats[0]                 = SceneColorFormat;
                     SkyDesc.DepthFormat                     = TargetFormats.GetDepthFormat();
                     SkyDesc.DebugName                       = "XEN.Shaders.Sky";
                     _SkyPipeline                            = Device.CreateGraphicsPipeline(SkyDesc);
@@ -240,6 +246,13 @@ namespace Xen {
         // prefiltered, so it just keeps the placeholder sky (Render checks
         // IsInitialized before trying to bake).
         _Baker.Initialize(Device, Assets);
+
+        // Fatal: without it there's no path from the scene's linear HDR
+        // render to anything a swap chain can present.
+        if (!_PostProcess.Initialize(Device, Assets, TargetFormats.GetColorFormat())) {
+            Shutdown();
+            return false;
+        }
 
         return true;
     }
@@ -498,6 +511,8 @@ namespace Xen {
 
         ReleaseBakedEnvironment();
         _Baker.Shutdown();
+        _PostProcess.Shutdown();
+        if (_SceneColorTarget.IsValid()) _Device->DestroyTexture(_SceneColorTarget);
 
         if (_ShadowPipeline.IsValid()) _Device->DestroyPipeline(_ShadowPipeline);
         if (_ShadowLayout.IsValid()) _Device->DestroyPipelineLayout(_ShadowLayout);
@@ -531,7 +546,27 @@ namespace Xen {
         _ClampSampler          = {};
         _DefaultEnvironmentMap = {};
         _BrdfLUT               = {};
+        _SceneColorTarget      = {};
+        _SceneColorWidth       = 0;
+        _SceneColorHeight      = 0;
         _Device                = nullptr;
+    }
+
+    void MeshRenderer::EnsureSceneColorTarget(const u32 Width, const u32 Height) {
+        if (_SceneColorTarget.IsValid() && _SceneColorWidth == Width && _SceneColorHeight == Height) return;
+
+        if (_SceneColorTarget.IsValid()) _Device->DestroyTexture(_SceneColorTarget);
+
+        RHI::TextureDesc Desc;
+        Desc.Width     = Width;
+        Desc.Height    = Height;
+        Desc.Fmt       = SceneColorFormat;
+        Desc.Usage     = RHI::TextureUsage::ColorTarget | RHI::TextureUsage::Sampled;
+        Desc.DebugName = "XEN.PBR.SceneColor";
+
+        _SceneColorTarget = _Device->CreateTexture(Desc);
+        _SceneColorWidth  = Width;
+        _SceneColorHeight = Height;
     }
 
     MeshRenderer::EnvironmentState MeshRenderer::ResolveEnvironment(const Scene& S) {
@@ -753,25 +788,18 @@ namespace Xen {
     void MeshRenderer::Render(const Scene& S, const Viewport& Target) {
         if (!_Device) return;
 
+        EnsureSceneColorTarget(Target.GetWidth(), Target.GetHeight());
+
         _Commands.Reset();
         _Commands.PushDebugGroup("Meshes");
 
-        RHI::RenderPassDesc Pass = RHI::RenderPassDesc::ColorAndDepthTarget(Target.GetColorTarget(),
-                                                                            Target.GetDepthTarget(),
-                                                                            0.02f,
-                                                                            0.02f,
-                                                                            0.03f,
-                                                                            1.0f);
-        Pass.DebugName           = "Meshes";
-        // Color is Load, not this factory's default Clear: Game::TickFrame
-        // runs SpriteRenderer::Render() first, unconditionally, every frame
-        // regardless of sprite count, and that pass already cleared this
-        // same color target - clearing twice would just be redundant, not
-        // wrong, but this Load is a real coupling to that ordering, not an
-        // independently safe default. If SpriteRenderer's pass is ever
-        // skipped when it has nothing to draw, this needs its own Clear
-        // again.
-        Pass.ColorAttachments[0].Load = RHI::LoadOp::Load;
+        // Cleared every frame, alpha included: alpha is what tells
+        // PostProcess's composite pass which pixels of Target to touch at
+        // all (see PostProcess.hpp), so an untouched pixel here has to read
+        // back as 0, not whatever the last frame's render left behind.
+        RHI::RenderPassDesc Pass = RHI::RenderPassDesc::ColorAndDepthTarget(
+          _SceneColorTarget, Target.GetDepthTarget(), 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+        Pass.DebugName                = "Meshes";
         MeshCache* Meshes             = S.GetContext().Meshes;
         const CameraComponent* Camera = S.GetMainCamera();
         const bool CanDraw            = Meshes && Camera;
@@ -885,7 +913,8 @@ namespace Xen {
                 };
                 BindChannel(MaterialSlot::Albedo, MaterialComp->GetAlbedoMap(), _WhiteTexture);
                 BindChannel(MaterialSlot::Normal, MaterialComp->GetNormalMap(), _FlatNormalTexture);
-                BindChannel(MaterialSlot::MetallicRoughness, MaterialComp->GetMetallicRoughnessMap(), _WhiteTexture);
+                BindChannel(MaterialSlot::Roughness, MaterialComp->GetRoughnessMap(), _WhiteTexture);
+                BindChannel(MaterialSlot::Metallic, MaterialComp->GetMetallicMap(), _WhiteTexture);
                 BindChannel(MaterialSlot::AmbientOcclusion, MaterialComp->GetAmbientOcclusionMap(), _WhiteTexture);
                 BindChannel(MaterialSlot::Emissive, MaterialComp->GetEmissiveMap(), _WhiteTexture);
 
@@ -905,6 +934,19 @@ namespace Xen {
 
         _Commands.EndRenderPass();
         _Commands.PopDebugGroup();
+
+        // Settings come from the scene's first PostProcessComponent, the
+        // same "first one found" rule as the light and environment; a scene
+        // with none renders with PostProcess::Settings's defaults.
+        PostProcess::Settings Settings;
+        const std::vector<Actor*> PostProcessActors = S.FindActorsWith<PostProcessComponent>();
+        if (!PostProcessActors.empty()) {
+            if (const auto* PP = PostProcessActors.front()->GetComponent<PostProcessComponent>()) {
+                Settings = PP->GetSettings();
+            }
+        }
+        _PostProcess.Render(
+          _Commands, _SceneColorTarget, _SceneColorWidth, _SceneColorHeight, Target.GetColorTarget(), Settings);
 
         _Device->Submit(_Commands);
     }

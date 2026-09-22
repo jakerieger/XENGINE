@@ -5,7 +5,6 @@
 #pragma once
 
 #include <Common/XenCommon.hpp>
-
 #include <ini.h>
 
 namespace Xen {

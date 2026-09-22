@@ -57,6 +57,10 @@ add_library(Xen STATIC
         MeshRenderer.hpp
         PBRMaterialComponent.cpp
         PBRMaterialComponent.hpp
+        PostProcess.cpp
+        PostProcess.hpp
+        PostProcessComponent.cpp
+        PostProcessComponent.hpp
         Reflection.hpp
         RenderDevice.hpp
         RadianceHdr.cpp

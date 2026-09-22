@@ -196,7 +196,7 @@
               1.0,
               1.0
             ],
-            "Intensity": 1.0,
+            "Intensity": 3.0,
             "CastShadows": true,
             "ShadowDistance": 40.0,
             "ShadowResolution": 2048,
@@ -238,6 +238,44 @@
           "Properties": {
             "Map": 9486073036069306617,
             "ShowBackground": true
+          }
+        }
+      ]
+    },
+    {
+      "ID": 6,
+      "Parent": 0,
+      "Properties": {
+        "Name": "PostProcess",
+        "Transform": {
+          "Position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Enabled": true
+      },
+      "Components": [
+        {
+          "Type": "PostProcessComponent",
+          "Properties": {
+            "Exposure": 1.0,
+            "BloomEnabled": true,
+            "BloomThreshold": 0.800000011920929,
+            "BloomSoftKnee": 0.5,
+            "BloomIntensity": 0.11999999731779099
           }
         }
       ]

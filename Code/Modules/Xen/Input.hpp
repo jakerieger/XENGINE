@@ -5,9 +5,9 @@
 #pragma once
 
 #include <Common/XenCommon.hpp>
+#include <Common/Platform.hpp>
 #include "EngineConfig.hpp"
 
-#include <Windows.h>
 #include <array>
 #include <unordered_map>
 

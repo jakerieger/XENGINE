@@ -5,6 +5,7 @@
 #pragma once
 
 #include <Common/XenCommon.hpp>
+#include <Common/Platform.hpp>
 
 #include "AssetLoader.hpp"
 #include "AssetSettings.hpp"
@@ -25,10 +26,6 @@
 
 #include <chrono>
 #include <filesystem>
-
-#ifndef _WINDOWS_
-    #include <Windows.h>
-#endif
 
 namespace Xen {
     /// @brief Root object. Owns engine services, the active scene, and the
@@ -219,8 +216,8 @@ namespace Xen {
             AssetLoader Loader;
             std::chrono::steady_clock::time_point Start;
             std::chrono::steady_clock::time_point VisibleSince;
-            bool Visible {false};      // the loading screen has appeared
-            bool AssetsDone {false};   // every asset is resident; waiting out the minimum on-screen time
+            bool Visible {false};     // the loading screen has appeared
+            bool AssetsDone {false};  // every asset is resident; waiting out the minimum on-screen time
         };
         std::unique_ptr<LoadState> _Load;
 

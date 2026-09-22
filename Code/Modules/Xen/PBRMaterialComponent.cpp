@@ -19,9 +19,8 @@ namespace Xen {
                    _AlbedoMap.Asset,
                    {.Category = "Material Maps", .Asset = AssetKind::Texture, .Srgb = true});
         R.Property("NormalMap", _NormalMap.Asset, {.Category = "Material Maps", .Asset = AssetKind::Texture});
-        R.Property("MetallicRoughnessMap",
-                   _MetallicRoughnessMap.Asset,
-                   {.Category = "Material Maps", .Asset = AssetKind::Texture});
+        R.Property("RoughnessMap", _RoughnessMap.Asset, {.Category = "Material Maps", .Asset = AssetKind::Texture});
+        R.Property("MetallicMap", _MetallicMap.Asset, {.Category = "Material Maps", .Asset = AssetKind::Texture});
         R.Property("AmbientOcclusionMap",
                    _AmbientOcclusionMap.Asset,
                    {.Category = "Material Maps", .Asset = AssetKind::Texture});
@@ -36,7 +35,8 @@ namespace Xen {
     void PBRMaterialComponent::BeginPlay() {
         AcquireChannel(_AlbedoMap);
         AcquireChannel(_NormalMap);
-        AcquireChannel(_MetallicRoughnessMap);
+        AcquireChannel(_RoughnessMap);
+        AcquireChannel(_MetallicMap);
         AcquireChannel(_AmbientOcclusionMap);
         AcquireChannel(_EmissiveMap);
         _Began = true;
@@ -47,7 +47,8 @@ namespace Xen {
 
         ReleaseChannel(_AlbedoMap);
         ReleaseChannel(_NormalMap);
-        ReleaseChannel(_MetallicRoughnessMap);
+        ReleaseChannel(_RoughnessMap);
+        ReleaseChannel(_MetallicMap);
         ReleaseChannel(_AmbientOcclusionMap);
         ReleaseChannel(_EmissiveMap);
     }

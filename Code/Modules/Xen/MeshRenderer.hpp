@@ -10,6 +10,7 @@
 #include <Common/XenCommon.hpp>
 
 #include "EnvironmentBaker.hpp"
+#include "PostProcess.hpp"
 #include "RenderDevice.hpp"
 #include "Viewport.hpp"
 
@@ -41,14 +42,19 @@ namespace Xen {
 
         NODISCARD bool IsInitialized() const { return _Device != nullptr; }
 
-        /// @brief Records and submits one frame's meshes into Target's color
-        /// (and depth) target, lit by the scene's first
-        /// DirectionalLightComponent (which casts shadows onto them - one
-        /// shadow map rendered first, fitted to the camera's view out to the
-        /// light's ShadowDistance) plus image-based lighting from its first
-        /// EnvironmentComponent (a dim placeholder sky if it has none), and
-        /// viewed through the scene's main camera. Call between
-        /// IRenderDevice::BeginFrame and EndFrame.
+        /// @brief Records and submits one frame's meshes, lit by the scene's
+        /// first DirectionalLightComponent (which casts shadows onto them -
+        /// one shadow map rendered first, fitted to the camera's view out to
+        /// the light's ShadowDistance) plus image-based lighting from its
+        /// first EnvironmentComponent (a dim placeholder sky if it has
+        /// none), viewed through the scene's main camera. Rendered into a
+        /// private linear-HDR target first, not Target's color target
+        /// directly - PostProcess's exposure/bloom/tonemap composite is what
+        /// finally lands in Target, blended over whatever was already there
+        /// (see PostProcess.hpp) using the scene's own coverage, so content
+        /// from outside this call (2D sprites) is left alone. Settings comes
+        /// from the scene's first PostProcessComponent, or defaults if it
+        /// has none. Call between IRenderDevice::BeginFrame and EndFrame.
         /// Target must have a depth buffer (Viewport::Initialize's
         /// WithDepth) - this renderer always depth-tests.
         void Render(const Scene& S, const Viewport& Target);
@@ -110,12 +116,12 @@ namespace Xen {
         // since PBR maps all want the same tiling/filtering behavior.
         RHI::SamplerHandle _Sampler {};
 
-        // Bound for whichever of a material's five channels has no map
-        // assigned, so every draw always binds all five textures and the
+        // Bound for whichever of a material's six channels has no map
+        // assigned, so every draw always binds all six textures and the
         // shader never branches on "is this map present" - see PBR.hlsl.
-        // White multiplies through as the identity for Albedo/
-        // MetallicRoughness/AmbientOcclusion/Emissive; flat-normal
-        // (0.5, 0.5, 1.0, decoding to (0,0,1)) is the identity for Normal.
+        // White multiplies through as the identity for Albedo/Roughness/
+        // Metallic/AmbientOcclusion/Emissive; flat-normal (0.5, 0.5, 1.0,
+        // decoding to (0,0,1)) is the identity for Normal.
         RHI::TextureHandle _WhiteTexture {};
         RHI::TextureHandle _FlatNormalTexture {};
 
@@ -171,5 +177,16 @@ namespace Xen {
         /// (the bake uses Submit), so only call it between BeginFrame and
         /// EndFrame.
         EnvironmentState ResolveEnvironment(const Scene& S);
+
+        // The scene render's own target: linear HDR (RGBA16F), sized to
+        // match Target's color target and recreated if that changes (see
+        // EnsureSceneColorTarget). Alpha marks "this pass wrote here" (1) vs
+        // untouched (0) - see PostProcess.hpp.
+        void EnsureSceneColorTarget(u32 Width, u32 Height);
+        RHI::TextureHandle _SceneColorTarget {};
+        u32 _SceneColorWidth {0};
+        u32 _SceneColorHeight {0};
+
+        PostProcess _PostProcess;
     };
 }  // namespace Xen
