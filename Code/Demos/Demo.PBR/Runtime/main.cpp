@@ -110,16 +110,11 @@ namespace {
         MonkeActor->AddComponent<MeshComponent>(ASSET("meshes/suzanne.glb"));
         auto* Material = MonkeActor->AddComponent<PBRMaterialComponent>();
 
-        Material->SetAlbedoMapAsset(ASSET("textures/pbr_gold_rough_albedo.png"));
-        Material->SetNormalMapAsset(ASSET("textures/pbr_gold_rough_normal.png"));
-        // Roughness varies across the surface (wear/scratches), so it gets a
-        // map; metallic is uniform for this material, so it's left as the
-        // scalar factor below with no MetallicMap assigned at all -
-        // roughness and metallic are independent maps now, not a combined
-        // texture, so a material only needs to author (or assign) the ones
-        // that actually vary.
-        Material->SetRoughnessMapAsset(ASSET("textures/pbr_gold_rough_roughness.png"));
-        Material->SetMetallic(1.0f);
+        Material->SetAlbedoMapAsset(ASSET("pbr/sand/albedo.png"));
+        Material->SetNormalMapAsset(ASSET("pbr/sand/normal.png"));
+        Material->SetRoughnessMapAsset(ASSET("pbr/sand/roughness.png"));
+        Material->SetAmbientOcclusionMapAsset(ASSET("pbr/sand/ao.png"));
+        Material->SetMetallic(0.1f);
 
         MonkeActor->AddComponent<RotatingComponent>();
         MonkeActor->SetPosition(Float3 {0.0f, 1.0f, 0.0f});
@@ -166,7 +161,7 @@ namespace {
         const ActorHandle EnvironmentHandle = MainScene.Spawn("Environment");
         Actor* EnvironmentActor             = MainScene.Get(EnvironmentHandle);
         auto* Environment                   = EnvironmentActor->AddComponent<EnvironmentComponent>();
-        Environment->SetMapAsset(ASSET("ibl/maps/sky_spring.hdr"));
+        Environment->SetMapAsset(ASSET("ibl/maps/sky_day.hdr"));
 
         // Bloom on defaults would be nearly invisible here - the HDRI's sun
         // and the sky near it are the only things bright enough to cross the
@@ -177,6 +172,7 @@ namespace {
         auto* PostFx                         = PostFxActor->AddComponent<PostProcessComponent>();
         PostFx->GetSettings().BloomThreshold = 0.8f;
         PostFx->GetSettings().BloomIntensity = 0.12f;
+        PostFx->GetSettings().BloomEnabled   = false;
 
         const auto ScenePath = Generated::GameSettings().ContentDirs[0] / "scenes" / "main.xscene";
         SceneSerializer::SaveToFile(MainScene, ScenePath);

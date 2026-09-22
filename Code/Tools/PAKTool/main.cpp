@@ -174,7 +174,10 @@ namespace {
                     CAST<u64>(SourceAssets.size()));
     }
 
-    int RunPack(const fs::path& ContentDir, const fs::path& OutputPath, const std::optional<fs::path>& PakIgnore) {
+    int RunPack(const fs::path& ContentDir,
+               const fs::path& OutputPath,
+               const std::optional<fs::path>& PakIgnore,
+               const bool Encrypt) {
         std::vector<std::string> IgnorePatterns;
         if (PakIgnore.has_value()) {
             std::ifstream IgnoreFile(*PakIgnore);
@@ -245,7 +248,9 @@ namespace {
         // every asset has been written, so this gets overwritten in place later.
         PakHeader::WriteEmpty(Out);
 
-        const PakSalt Salt                = GenerateSalt();
+        // Salt/KeyCheck stay zeroed and unused when Encrypt is off - nothing
+        // to derive a nonce from or check a key against.
+        const PakSalt Salt                = Encrypt ? GenerateSalt() : PakSalt {};
         const AesKeySchedule& KeySchedule = GetBuiltInKeySchedule();
 
         const std::unique_ptr<ICodec> Codec = CreateCodec(PakCodec::Lz4);
@@ -275,9 +280,9 @@ namespace {
 
             const std::vector<u8>& Plain = UseCompression ? Compressed : Original;
 
-            // Compress first, THEN encrypt.
+            // Compress first, THEN encrypt (skipped entirely without --encrypt).
             std::vector<u8> DataToWrite = Plain;
-            AesCtrXcryptInPlace(DataToWrite, KeySchedule, DeriveNonce(ID.Value, Salt, KeySchedule));
+            if (Encrypt) { AesCtrXcryptInPlace(DataToWrite, KeySchedule, DeriveNonce(ID.Value, Salt, KeySchedule)); }
 
             PakTableEntry Entry;
             Entry.ID               = ID.Value;
@@ -299,18 +304,19 @@ namespace {
             ManifestEntry.CompressedSize   = Entry.CompressedSize;
             ManifestEntry.Codec            = Entry.Codec;
             ManifestEntry.Compressed       = UseCompression;
-            ManifestEntry.Encrypted        = true;  // Every asset is AES-256-CTR encrypted unconditionally.
+            ManifestEntry.Encrypted        = Encrypt;
             Manifest.Assets.push_back(std::move(ManifestEntry));
 
             TotalUncompressed += Original.size();
             TotalStored += DataToWrite.size();
             if (!UseCompression) ++StoredRawCount;
 
-            std::printf("[PAKTool] packed '%s' %zu -> %zu bytes (%s)\n",
+            std::printf("[PAKTool] packed '%s' %zu -> %zu bytes (%s%s)\n",
                         CanonicalPath.c_str(),
                         Original.size(),
                         DataToWrite.size(),
-                        UseCompression ? "lz4+aes" : "stored+aes");
+                        UseCompression ? "lz4" : "stored",
+                        Encrypt ? "+aes" : "");
         }
 
         u64 TableOffset = Out.tellp();
@@ -321,8 +327,9 @@ namespace {
         PakHeader Header;
         Header.TableOffset     = TableOffset;
         Header.TableEntryCount = CAST<u32>(Table.size());
+        Header.Encrypted       = Encrypt;
         Header.Salt            = Salt;
-        Header.KeyCheck        = ComputeKeyCheck(Salt, KeySchedule);
+        Header.KeyCheck        = Encrypt ? ComputeKeyCheck(Salt, KeySchedule) : PakKeyCheck {};
         Out.seekp(0, std::ios::beg);
         Header.Write(Out);
 
@@ -335,13 +342,14 @@ namespace {
           TotalUncompressed > 0 ? 100.0 * (1.0 - CAST<f64>(TotalStored) / CAST<f64>(TotalUncompressed)) : 0.0;
 
         std::printf("[PAKTool] wrote '%s' (%zu assets, %zu stored raw, %llu -> %llu bytes, "
-                    "%.1f%% smaller)\n",
+                    "%.1f%% smaller, %s)\n",
                     OutputPath.string().c_str(),
                     Table.size(),
                     StoredRawCount,
                     CAST<u64>(TotalUncompressed),
                     CAST<u64>(TotalStored),
-                    Ratio);
+                    Ratio,
+                    Encrypt ? "encrypted" : "not encrypted");
         std::printf("[PAKTool] wrote manifest '%s'\n", ManifestPath.string().c_str());
 
         SelfVerify(OutputPath, Assets);
@@ -472,6 +480,7 @@ int main(int argc, char** argv) {
     fs::path PackContentDir;
     fs::path PackOutput = "Data1.xpak";
     std::optional<fs::path> PakIgnore;
+    bool PackEncrypt = false;
     CLI::App* PackCmd = App.add_subcommand("pack", "Pack a content directory into a .xpak file");
     PackCmd->add_option("content-dir", PackContentDir, "Root content directory to pack")
       ->required()
@@ -487,6 +496,11 @@ int main(int argc, char** argv) {
                    "with no '/' matches by filename at any depth (e.g. '*.psd', 'thumbs.db'); a pattern "
                    "with a '/' matches the full path from the content root (e.g. 'textures/temp/*').")
       ->check(CLI::ExistingFile);
+    PackCmd->add_flag("-e,--encrypt",
+                      PackEncrypt,
+                      "AES-256-CTR encrypt every packed asset. Off by default - encryption adds real time to "
+                      "both packing and load, which mostly buys nothing during development; enable it for a "
+                      "build you're distributing.");
 
     fs::path UnpackPak;
     fs::path UnpackOutputDir;
@@ -501,7 +515,7 @@ int main(int argc, char** argv) {
     CLI11_PARSE(App, argc, argv);
 
     try {
-        if (*PackCmd) return RunPack(PackContentDir, PackOutput, PakIgnore);
+        if (*PackCmd) return RunPack(PackContentDir, PackOutput, PakIgnore, PackEncrypt);
         if (*UnpackCmd) return RunUnpack(UnpackPak, UnpackOutputDir);
         if (*InfoCmd) return RunInfo(InfoPak);
     } catch (const EngineException& Ex) {

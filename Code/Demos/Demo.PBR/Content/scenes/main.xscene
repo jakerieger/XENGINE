@@ -42,17 +42,18 @@
               1.0,
               1.0
             ],
-            "Metallic": 1.0,
-            "Roughness": 0.5,
-            "AmbientOcclusion": 1.0,
+            "Metallic": 0.10000000149011612,
+            "Roughness": 0.800000011920929,
+            "AmbientOcclusion": 0.0,
             "Emissive": [
               0.0,
               0.0,
               0.0
             ],
-            "AlbedoMap": 13156857523636750588,
-            "NormalMap": 15353199290926578074,
-            "MetallicRoughnessMap": 5111910975383270524,
+            "AlbedoMap": 8517132713534949635,
+            "NormalMap": 0,
+            "RoughnessMap": 0,
+            "MetallicMap": 0,
             "AmbientOcclusionMap": 0,
             "EmissiveMap": 0
           }
@@ -115,7 +116,8 @@
             ],
             "AlbedoMap": 0,
             "NormalMap": 0,
-            "MetallicRoughnessMap": 0,
+            "RoughnessMap": 0,
+            "MetallicMap": 0,
             "AmbientOcclusionMap": 0,
             "EmissiveMap": 0
           }
@@ -236,7 +238,7 @@
         {
           "Type": "EnvironmentComponent",
           "Properties": {
-            "Map": 9486073036069306617,
+            "Map": 10438713344753301843,
             "ShowBackground": true
           }
         }
@@ -272,7 +274,7 @@
           "Type": "PostProcessComponent",
           "Properties": {
             "Exposure": 1.0,
-            "BloomEnabled": true,
+            "BloomEnabled": false,
             "BloomThreshold": 0.800000011920929,
             "BloomSoftKnee": 0.5,
             "BloomIntensity": 0.11999999731779099

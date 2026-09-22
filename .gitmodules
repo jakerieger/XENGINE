@@ -1,3 +1,6 @@
 [submodule "Code/Vendor/imgui"]
 	path = Code/Vendor/imgui
 	url = https://github.com/ocornut/imgui.git
+[submodule "EngineContent"]
+	path = EngineContent
+	url = git@github.com:jakerieger/XENGINE.EngineContent.git

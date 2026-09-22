@@ -25,6 +25,10 @@ namespace Xen::PAK::BinaryIO {
         return Value;
     }
 
+    void WriteU8(std::ostream& Out, const u8 Value) {
+        Out.write(RCAST<const char*>(&Value), 1);
+    }
+
     void WriteU16(std::ostream& Out, const u16 Value) {
         constexpr int Size = 2;
         u8 Bytes[Size];
@@ -44,6 +48,10 @@ namespace Xen::PAK::BinaryIO {
         u8 Bytes[Size];
         WriteBytes(Bytes, Size, Value);
         Out.write(RCAST<const char*>(Bytes), sizeof(Bytes));
+    }
+
+    u8 ReadU8(std::istream& In) {
+        return CAST<u8>(ReadBytes(In, 1));
     }
 
     u16 ReadU16(std::istream& In) {

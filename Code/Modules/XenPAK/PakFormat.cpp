@@ -15,6 +15,7 @@ namespace Xen::PAK {
         WriteU32(Out, FormatVersion);
         WriteU64(Out, TableOffset);
         WriteU32(Out, TableEntryCount);
+        WriteU8(Out, Encrypted ? 1 : 0);
         Out.write(RCAST<const char*>(Salt.data()), CAST<std::streamsize>(Salt.size()));
         Out.write(RCAST<const char*>(KeyCheck.data()), CAST<std::streamsize>(KeyCheck.size()));
     }
@@ -38,6 +39,7 @@ namespace Xen::PAK {
 
         Header.TableOffset     = ReadU64(In);
         Header.TableEntryCount = ReadU32(In);
+        Header.Encrypted       = ReadU8(In) != 0;
 
         In.read(RCAST<char*>(Header.Salt.data()), CAST<std::streamsize>(Header.Salt.size()));
         if (!In) { THROW_ENGINE_EXCEPTION(InvalidPakException, "failed to read salt"); }

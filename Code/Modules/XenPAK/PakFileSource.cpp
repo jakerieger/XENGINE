@@ -25,9 +25,12 @@ namespace Xen::PAK {
             THROW_ENGINE_EXCEPTION(EngineException, "failed to seek to table offset in: " + _PakPath.string());
         }
 
-        _Salt = Header.Salt;
+        _Encrypted = Header.Encrypted;
+        _Salt      = Header.Salt;
 
-        if (ComputeKeyCheck(_Salt, GetBuiltInKeySchedule()) != Header.KeyCheck) {
+        // Salt/KeyCheck are meaningless (zeroed) on a pak built without
+        // --encrypt - nothing to check the key against.
+        if (_Encrypted && ComputeKeyCheck(_Salt, GetBuiltInKeySchedule()) != Header.KeyCheck) {
             THROW_ENGINE_EXCEPTION(CryptoException, "key check failed - wrong decryption key for: " + _PakPath.string());
         }
 
@@ -65,8 +68,11 @@ namespace Xen::PAK {
             }
         }
 
-        // Compress and then encrypt (decrypt and then decompress)
-        AesCtrXcryptInPlace(Stored, GetBuiltInKeySchedule(), DeriveNonce(Entry.ID, _Salt, GetBuiltInKeySchedule()));
+        // Compress and then encrypt (decrypt and then decompress) - skipped
+        // entirely on a pak built without --encrypt (see _Encrypted).
+        if (_Encrypted) {
+            AesCtrXcryptInPlace(Stored, GetBuiltInKeySchedule(), DeriveNonce(Entry.ID, _Salt, GetBuiltInKeySchedule()));
+        }
 
         auto Data = std::make_unique<u8[]>(Entry.UncompressedSize);
 

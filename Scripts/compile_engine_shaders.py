@@ -48,7 +48,7 @@ class ShaderCompiler:
         # Scripts/ lives one level below the repo root.
         root = root or Path(__file__).resolve().parent.parent
         self.shader_sources = root / "Code" / "Shaders"
-        self.shader_output = root / "Engine" / "Shaders"
+        self.shader_output = root / "EngineContent" / "Shaders"
 
     def _invoke_dxc(self, shader_file: Path, stage: str) -> None:
         output = self.shader_output / ("xen.shader." + shader_file.stem.lower() + self.SUFFIXES[stage])

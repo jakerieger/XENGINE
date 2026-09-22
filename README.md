@@ -53,7 +53,7 @@ These are here for my own convenience.
     - EngineConfig.ini
     - InputConfig.ini
     - AudioConfig.ini
-- Engine/
+- EngineContent/
     - XEN.Shaders.xpak
     - XEN.Environment.xpak (contains IBL cubemaps, BRDF maps, etc...)
 - Bin64/

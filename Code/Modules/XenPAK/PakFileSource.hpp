@@ -43,6 +43,7 @@ namespace Xen::PAK {
         std::mutex _ReadMutex;
 
         std::unordered_map<AssetIDValue, PakTableEntry> _Table;
+        bool _Encrypted {true};
         PakSalt _Salt {};
     };
 }  // namespace Xen::PAK

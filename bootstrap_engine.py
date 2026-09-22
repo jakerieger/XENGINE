@@ -9,34 +9,31 @@ from pathlib import Path
 
 def pull_git_submodules() -> bool:
     imgui_path = Path(__file__).parent / "Code" / "Vendor" / "imgui"
-    if not any(imgui_path.iterdir()):
-        print("ImGui submodule not found. Pulling it...")
 
-        # Clone submodule
-        result = subprocess.run(["git", "submodule", "update", "--init", "--recursive"], capture_output=True)
-        if result.returncode != 0:
-            print(result.stderr)
-            return False
+    # Clone submodules (imgui, EngineContent)
+    result = subprocess.run(["git", "submodule", "update", "--init", "--recursive"], capture_output=True,
+                            stdout=sys.stdout, stderr=sys.stderr)
+    if result.returncode != 0:
+        return False
 
-        # Checkout 'docking' branch (used for the editor)
-        result = subprocess.run(["git", "checkout", "docking"], capture_output=True, cwd=imgui_path)
-        if result.returncode != 0:
-            print(result.stderr)
-            return False
+    # Checkout imgui 'docking' branch (used for the editor)
+    result = subprocess.run(["git", "checkout", "docking"], capture_output=True, cwd=imgui_path, stdout=sys.stdout,
+                            stderr=sys.stderr)
+    if result.returncode != 0:
+        return False
 
-        # Sparse checkout only necessary files (CMakeLists.txt glob's imgui sources so if the entire repo is checked
-        # out, it'll try to compile code for unsupported platforms, i.e. Android)
-        result = subprocess.run(["git", "sparse-checkout", "init", "--no-cone"], capture_output=True, cwd=imgui_path)
-        if result.returncode != 0:
-            print(result.stderr)
-            return False
-        result = subprocess.run(
-            ["git", "sparse-checkout", "set", "'/*.cpp'", "'/*.h'", "'/backends/imgui_impl_dx12.*'",
-             "'/backends/imgui_impl_win32.*'"],
-            capture_output=True, cwd=imgui_path)
-        if result.returncode != 0:
-            print(result.stderr)
-            return False
+    # Sparse checkout only necessary files (CMakeLists.txt glob's imgui sources so if the entire repo is checked
+    # out, it'll try to compile imgui code for unsupported platforms, i.e. Android)
+    result = subprocess.run(["git", "sparse-checkout", "init", "--no-cone"], capture_output=True, cwd=imgui_path,
+                            stdout=sys.stdout, stderr=sys.stderr)
+    if result.returncode != 0:
+        return False
+    result = subprocess.run(
+        ["git", "sparse-checkout", "set", "'/*.cpp'", "'/*.h'", "'/backends/imgui_impl_dx12.*'",
+         "'/backends/imgui_impl_win32.*'"],
+        capture_output=True, cwd=imgui_path, stdout=sys.stdout, stderr=sys.stderr)
+    if result.returncode != 0:
+        return False
 
     return True
 

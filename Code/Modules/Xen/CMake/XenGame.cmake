@@ -63,9 +63,9 @@ function(xen_configure_game TARGET)
         set(XEN_GEN_PAK_FILES "R\"(${ARG_PAK_FILENAME})\"")
     endif ()
 
-    set(XEN_ENGINE_SHADERS_PAK "R\"(Engine/XEN.Shaders.xpak)\"")
+    set(XEN_ENGINE_SHADERS_PAK "R\"(EngineContent/XEN.Shaders.xpak)\"")
 
-    set(XEN_ENGINE_ENVIRONMENT_PAK "R\"(Engine/XEN.Environment.xpak)\"")
+    set(XEN_ENGINE_ENVIRONMENT_PAK "R\"(EngineContent/XEN.Environment.xpak)\"")
 
     set(XEN_GEN_CONTENT_DIRS "")
     foreach (dir IN LISTS ARG_CONTENT_DIRS)
@@ -156,13 +156,29 @@ function(xen_package_game_content TARGET)
 
     set(out_dir "$<TARGET_FILE_DIR:${TARGET}>/..")
 
+    # AES-256-CTR encryption (PAKTool's --encrypt) costs real time in both
+    # directions - packing and every LoadFull - for content that, during
+    # development, is sitting right there on disk either way. Only worth
+    # paying for in a build meant to leave this machine, so it's on for
+    # Release and off everywhere else. Written as --encrypt=0/1 (CLI11
+    # accepts an explicit value for a flag) rather than the more obvious
+    # $<$<CONFIG:Release>:--encrypt>, which reads right but, for a
+    # POST_BUILD add_custom_command, evaluates to a literal empty ""
+    # argument in every other configuration instead of disappearing -
+    # add_custom_command doesn't drop empty generator-expression arguments
+    # the way e.g. target_compile_options does, and PAKTool would see (and
+    # reject) that stray "". $<CONFIG:Release> alone is itself a boolean
+    # generator expression (evaluates to 1 or 0), so this is always exactly
+    # one well-formed argument.
+    set(encrypt_flag "--encrypt=$<CONFIG:Release>")
+
     add_custom_command(
             TARGET ${TARGET} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory "${ARG_CONFIG_DIR}" "${out_dir}/Config"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${out_dir}/Engine"
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/Engine/Shaders" -o "${out_dir}/Engine/XEN.Shaders.xpak" -i "${CMAKE_SOURCE_DIR}/.pakignore"
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/Engine/Environment" -o "${out_dir}/Engine/XEN.Environment.xpak" -i "${CMAKE_SOURCE_DIR}/.pakignore"
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${ARG_CONTENT_DIR}" -o "${out_dir}/${ARG_PAK_FILENAME}" -i "${CMAKE_SOURCE_DIR}/.pakignore"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${out_dir}/EngineContent"
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Shaders" -o "${out_dir}/EngineContent/XEN.Shaders.xpak" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag}
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Environment" -o "${out_dir}/EngineContent/XEN.Environment.xpak" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag}
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${ARG_CONTENT_DIR}" -o "${out_dir}/${ARG_PAK_FILENAME}" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag}
             COMMENT "Packaging ${TARGET} content (Config, Engine shaders/environment, ${ARG_PAK_FILENAME})..."
             VERBATIM
     )
