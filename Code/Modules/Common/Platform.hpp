@@ -52,7 +52,7 @@ namespace Xen {
         char** Argv;
     };
 
-    inline bool GetCommandLineArguments(ProcessCommandLineArguments& Arguments) noexcept {
+    inline bool GetProcessCommandLineArguments(ProcessCommandLineArguments& Arguments) noexcept {
         if (!__p___argc() || !__p___argv()) return false;
         Arguments.Argc = *__p___argc();
         Arguments.Argv = *__p___argv();

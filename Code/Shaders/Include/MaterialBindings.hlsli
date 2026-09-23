@@ -69,3 +69,6 @@
 
 #define XEN_SHADOW_MAP_TEX_REGISTER      t9  // Directional-light shadow map (D32_FLOAT), sampled with a comparison sampler
 #define XEN_SHADOW_MAP_SAMPLER_REGISTER  s9  // SamplerComparisonState (LessEqual, clamp)
+
+#define XEN_SSAO_TEX_REGISTER      t10  // Screen-space ambient occlusion (R8_UNORM), sampled by screen UV (see SSAO.hpp)
+#define XEN_SSAO_SAMPLER_REGISTER  s10

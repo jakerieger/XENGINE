@@ -43,7 +43,11 @@ namespace Xen {
             DepthDesc.Width     = Width;
             DepthDesc.Height    = Height;
             DepthDesc.MipLevels = 1;
-            DepthDesc.Usage     = RHI::TextureUsage::DepthTarget;
+            // Sampled, not just DepthTarget: SSAO reads this back as a
+            // regular texture to reconstruct view-space position (see
+            // MeshRenderer's depth prepass) - the same DepthTarget|Sampled
+            // combination the shadow map already uses.
+            DepthDesc.Usage     = RHI::TextureUsage::DepthTarget | RHI::TextureUsage::Sampled;
             DepthDesc.DebugName = "Viewport Depth";
 
             _DepthTarget = Device.CreateTexture(DepthDesc);
@@ -99,7 +103,7 @@ namespace Xen {
             DepthDesc.Width     = Width;
             DepthDesc.Height    = Height;
             DepthDesc.MipLevels = 1;
-            DepthDesc.Usage     = RHI::TextureUsage::DepthTarget;
+            DepthDesc.Usage     = RHI::TextureUsage::DepthTarget | RHI::TextureUsage::Sampled;
             DepthDesc.DebugName = "Viewport Depth";
             _DepthTarget        = Device->CreateTexture(DepthDesc);
         }

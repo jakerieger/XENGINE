@@ -12,6 +12,7 @@
 #include "EnvironmentBaker.hpp"
 #include "PostProcess.hpp"
 #include "RenderDevice.hpp"
+#include "SSAO.hpp"
 #include "Viewport.hpp"
 
 namespace Xen {
@@ -78,9 +79,29 @@ namespace Xen {
         /// no reason to ever redo it.
         bool BakeBrdfLut(const PAK::AssetRegistry& Assets);
 
-        /// @brief Builds the depth-only shadow pipeline. Optional - without
-        /// it (or its shader) the scene just has no shadows.
-        void CreateShadowPipeline(const PAK::AssetRegistry& Assets);
+        /// @brief Builds the depth-only shadow pipeline and, from the same
+        /// loaded shader (Shadow.hlsl only ever transforms by whatever
+        /// ViewProjection FrameData holds - "the light's" is just where
+        /// MeshRenderer happens to put it during the shadow pass, not
+        /// something baked into the shader), the camera-space depth prepass
+        /// pipeline SSAO depends on. TargetDepthFormat is the prepass
+        /// pipeline's own format (Target's - see RenderDepthPrepass, it
+        /// writes into Target's own depth buffer, not a separate one the
+        /// way the shadow map is). Optional - without the shader neither
+        /// pipeline exists, so the scene just has no shadows and no SSAO.
+        void CreateShadowPipeline(const PAK::AssetRegistry& Assets, RHI::Format TargetDepthFormat);
+
+        /// @brief Depth-only pass from the camera's own view - every actor
+        /// the main pass would draw, before it draws them. Exists so SSAO
+        /// has a full scene depth to read before any shading happens (a
+        /// forward pass's own depth isn't finished until shading is, the
+        /// problem a deferred renderer's G-buffer doesn't have); the main
+        /// pass then reads this depth back with LoadOp::Load and a
+        /// LessEqual compare (not the usual Less) instead of clearing and
+        /// redoing the work, so this isn't pure overhead - it also caps the
+        /// main pass's overdraw the way any z-prepass does. No-op if the
+        /// prepass pipeline never built.
+        void RenderDepthPrepass(const Scene& S, const Float4x4& ViewProjection, MeshCache& Meshes);
 
         /// @brief What the shadow pass hands the main pass: whether a shadow
         /// map was rendered this frame and how to look points up in it.
@@ -157,6 +178,19 @@ namespace Xen {
         RHI::TextureHandle _ShadowMap {};
         u32 _ShadowMapSize {0};
         RHI::TextureHandle _ShadowFallback {};
+
+        // Camera-space depth prepass (see RenderDepthPrepass) - shares
+        // _ShadowLayout (identical shape: just Frame + Object, no textures)
+        // since it's built from the same shader, just a different PSO
+        // (normal back-face culling, not the shadow pass's cull-nothing).
+        RHI::PipelineHandle _DepthPrepassPipeline {};
+
+        // Screen-space ambient occlusion, computed from the depth prepass
+        // above and bound into the main pass's SSAO slot - see SSAO.hpp.
+        // Fed MeshRenderer's own _WhiteTexture (already used for every other
+        // "this channel isn't available" case) when disabled/unavailable,
+        // rather than SSAO owning a redundant fallback of its own.
+        SSAO _SSAO;
 
         // The scene's environment, baked lazily the first frame Render() sees
         // one (see ResolveEnvironment): _BakedSource is the raw TextureCache

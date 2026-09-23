@@ -9,6 +9,7 @@
 #include "DirectionalLightComponent.hpp"
 #include "EnvironmentComponent.hpp"
 #include "PostProcessComponent.hpp"
+#include "AmbientOcclusionComponent.hpp"
 #include "CameraComponent.hpp"
 #include "Actor.hpp"
 #include "Scene.hpp"
@@ -33,6 +34,7 @@ namespace Xen {
             Float4x4 LightViewProjection;
             Float4 ShadowParams;
             Float4 ShadowParams2;
+            Float4 InvScreenSizeAndPad;  // xy = 1 / render target size in pixels - PBR.hlsl's own SSAO screen UV
         };
 
         struct ObjectConstants {
@@ -136,7 +138,12 @@ namespace Xen {
         PipelineDesc.Rasterizer.Cull               = RHI::CullMode::Back;
         PipelineDesc.DepthStencil.DepthTestEnable  = true;
         PipelineDesc.DepthStencil.DepthWriteEnable = true;
-        PipelineDesc.DepthStencil.DepthCompare     = RHI::CompareOp::Less;
+        // LessEqual, not the more usual Less: the depth prepass (see
+        // RenderDepthPrepass) already wrote every one of these fragments'
+        // exact depth before this pass ever runs, so a fragment testing
+        // against its own already-written value has to pass, not fail as
+        // "not strictly closer than itself" would under Less.
+        PipelineDesc.DepthStencil.DepthCompare = RHI::CompareOp::LessEqual;
         PipelineDesc.ColorAttachmentCount          = 1;
         PipelineDesc.ColorFormats[0]               = SceneColorFormat;
         PipelineDesc.DepthFormat                   = TargetFormats.GetDepthFormat();
@@ -240,7 +247,12 @@ namespace Xen {
             return false;
         }
 
-        CreateShadowPipeline(Assets);
+        CreateShadowPipeline(Assets, TargetFormats.GetDepthFormat());
+
+        // Not fatal: without it a scene just renders with no ambient
+        // occlusion (Render binds _WhiteTexture into the SSAO slot instead
+        // - see MeshRenderer.hpp).
+        _SSAO.Initialize(Device, Assets);
 
         // Not fatal: without the baker a scene's environment can't be
         // prefiltered, so it just keeps the placeholder sky (Render checks
@@ -452,10 +464,10 @@ namespace Xen {
                _ShadowFallback.IsValid();
     }
 
-    void MeshRenderer::CreateShadowPipeline(const PAK::AssetRegistry& Assets) {
+    void MeshRenderer::CreateShadowPipeline(const PAK::AssetRegistry& Assets, const RHI::Format TargetDepthFormat) {
         constexpr AssetID VertexAsset = ASSET("xen.shader.shadow.vs");
         if (!Assets.Contains(VertexAsset)) {
-            LOG_WARN("shadow shader not found - directional lights will not cast shadows");
+            LOG_WARN("shadow shader not found - directional lights will not cast shadows or have SSAO");
             return;
         }
         const PAK::AssetBuffer VertexSource = Assets.Load(VertexAsset);
@@ -469,20 +481,26 @@ namespace Xen {
         const RHI::ShaderHandle Vertex = _Device->CreateShader(VertexDesc);
 
         // Just the light's view-projection (b0, in FrameData's ViewProjection
-        // slot) and the model matrix (b1): no textures, no material.
+        // slot) and the model matrix (b1): no textures, no material. Shared
+        // by both pipelines below - the shader (and so this layout) has no
+        // idea whether it's about to be used for the light's shadow map or
+        // the camera's own depth prepass.
         RHI::PipelineLayoutDesc LayoutDesc;
         LayoutDesc.Binding(MaterialSlot::Frame, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All)
           .Binding(MaterialSlot::Object, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All);
         LayoutDesc.DebugName = "XEN.Shaders.Shadow";
         _ShadowLayout        = _Device->CreatePipelineLayout(LayoutDesc);
 
+        RHI::VertexLayout VertexLayout;
+        VertexLayout.Binding(0, sizeof(MeshVertex), RHI::VertexInputRate::Vertex)
+          .Attribute(0, 0, RHI::Format::RGB32_FLOAT, offsetof(MeshVertex, Position));
+
         if (Vertex.IsValid() && _ShadowLayout.IsValid()) {
             RHI::GraphicsPipelineDesc PipelineDesc;
             PipelineDesc.VertexShader   = Vertex;  // no fragment shader: depth only
             PipelineDesc.PipelineLayout = _ShadowLayout;
             PipelineDesc.Topology       = RHI::PrimitiveTopology::TriangleList;
-            PipelineDesc.Layout.Binding(0, sizeof(MeshVertex), RHI::VertexInputRate::Vertex)
-              .Attribute(0, 0, RHI::Format::RGB32_FLOAT, offsetof(MeshVertex, Position));
+            PipelineDesc.Layout         = VertexLayout;
 
             // Both faces: the receiver-side normal offset already handles
             // self-shadowing, and culling either face would make a
@@ -497,11 +515,39 @@ namespace Xen {
             _ShadowPipeline                            = _Device->CreateGraphicsPipeline(PipelineDesc);
         }
 
+        // The depth prepass: same shader and vertex layout, but a real
+        // camera view - ordinary back-face culling applies, and the target
+        // is whatever format Target's own depth buffer actually is.
+        if (Vertex.IsValid() && _ShadowLayout.IsValid()) {
+            RHI::GraphicsPipelineDesc PipelineDesc;
+            PipelineDesc.VertexShader                  = Vertex;
+            PipelineDesc.PipelineLayout                = _ShadowLayout;
+            PipelineDesc.Topology                      = RHI::PrimitiveTopology::TriangleList;
+            PipelineDesc.Layout                        = VertexLayout;
+            PipelineDesc.Rasterizer.Cull                = RHI::CullMode::Back;
+            PipelineDesc.DepthStencil.DepthTestEnable  = true;
+            PipelineDesc.DepthStencil.DepthWriteEnable = true;
+            PipelineDesc.DepthStencil.DepthCompare     = RHI::CompareOp::Less;
+            PipelineDesc.ColorAttachmentCount          = 0;
+            PipelineDesc.DepthFormat                   = TargetDepthFormat;
+            PipelineDesc.DebugName                     = "XEN.Shaders.DepthPrepass";
+            _DepthPrepassPipeline                      = _Device->CreateGraphicsPipeline(PipelineDesc);
+        }
+
         if (Vertex.IsValid()) _Device->DestroyShader(Vertex);
 
+        if (!_DepthPrepassPipeline.IsValid()) {
+            LOG_WARN("failed to create the depth prepass pipeline - SSAO will be unavailable");
+        }
         if (!_ShadowPipeline.IsValid()) {
             LOG_WARN("failed to create the shadow pipeline - directional lights will not cast shadows");
-            if (_ShadowLayout.IsValid()) _Device->DestroyPipelineLayout(_ShadowLayout);
+        }
+
+        // _ShadowLayout is shared by both pipelines above - only tear it
+        // down once neither one is left referencing it, or whichever one DID
+        // build would be left pointing at a destroyed layout.
+        if (!_ShadowPipeline.IsValid() && !_DepthPrepassPipeline.IsValid() && _ShadowLayout.IsValid()) {
+            _Device->DestroyPipelineLayout(_ShadowLayout);
             _ShadowLayout = {};
         }
     }
@@ -512,9 +558,11 @@ namespace Xen {
         ReleaseBakedEnvironment();
         _Baker.Shutdown();
         _PostProcess.Shutdown();
+        _SSAO.Shutdown();
         if (_SceneColorTarget.IsValid()) _Device->DestroyTexture(_SceneColorTarget);
 
         if (_ShadowPipeline.IsValid()) _Device->DestroyPipeline(_ShadowPipeline);
+        if (_DepthPrepassPipeline.IsValid()) _Device->DestroyPipeline(_DepthPrepassPipeline);
         if (_ShadowLayout.IsValid()) _Device->DestroyPipelineLayout(_ShadowLayout);
         if (_ShadowSampler.IsValid()) _Device->DestroySampler(_ShadowSampler);
         if (_ShadowMap.IsValid()) _Device->DestroyTexture(_ShadowMap);
@@ -531,6 +579,7 @@ namespace Xen {
         if (_BrdfLUT.IsValid()) _Device->DestroyTexture(_BrdfLUT);
 
         _ShadowPipeline        = {};
+        _DepthPrepassPipeline  = {};
         _ShadowLayout          = {};
         _ShadowSampler         = {};
         _ShadowMap             = {};
@@ -785,6 +834,44 @@ namespace Xen {
         return Result;
     }
 
+    void MeshRenderer::RenderDepthPrepass(const Scene& S, const Float4x4& ViewProjection, MeshCache& Meshes) {
+        if (!_DepthPrepassPipeline.IsValid()) return;
+
+        // BindPipeline first: it's what may change the root signature (a
+        // different pipeline layout than whatever was bound last - see
+        // CmdType::BindPipeline), which invalidates every previously-bound
+        // root argument. Binding Frame before it, the way this read until
+        // now, recorded that bind against the wrong (stale) root signature -
+        // exactly what RenderShadowPass already gets right, which is what
+        // this should have matched from the start.
+        _Commands.BindPipeline(_DepthPrepassPipeline);
+
+        FrameConstants Frame {};
+        Frame.ViewProjection = ViewProjection;
+        _Commands.BindUniformBuffer(MaterialSlot::Frame, _Device->AllocateUniform(Frame));
+
+        S.ForEachActor([&](Actor& A) {
+            auto* MeshComp     = A.GetComponent<MeshComponent>();
+            auto* MaterialComp = A.GetComponent<PBRMaterialComponent>();
+            if (!MeshComp || !MaterialComp) return;
+
+            const MeshHandle Mesh = MeshComp->GetMesh();
+            if (!Mesh.IsValid()) return;
+
+            const RHI::BufferHandle VertexBuffer = Meshes.GetVertexBuffer(Mesh);
+            const RHI::BufferHandle IndexBuffer  = Meshes.GetIndexBuffer(Mesh);
+            const MeshInfo Info                  = Meshes.GetInfo(Mesh);
+            if (!VertexBuffer.IsValid() || !IndexBuffer.IsValid() || Info.IndexCount == 0) return;
+
+            ObjectConstants Object {};
+            Object.Model = A.GetWorldTransform().ToMatrix();
+            _Commands.BindUniformBuffer(MaterialSlot::Object, _Device->AllocateUniform(Object));
+            _Commands.BindVertexBuffer(0, VertexBuffer);
+            _Commands.BindIndexBuffer(IndexBuffer, Info.IndexType);
+            _Commands.DrawIndexed(Info.IndexCount);
+        });
+    }
+
     void MeshRenderer::Render(const Scene& S, const Viewport& Target, const f32 DeltaTime) {
         if (!_Device) return;
 
@@ -850,7 +937,65 @@ namespace Xen {
                 Frame.ShadowParams        = Shadow.Params;
                 Frame.ShadowParams2       = Shadow.Params2;
             }
+
+            Frame.InvScreenSizeAndPad = {1.0f / CAST<f32>(Target.GetWidth()), 1.0f / CAST<f32>(Target.GetHeight()), 0.0f, 0.0f};
         }
+
+        // Camera-space depth prepass + SSAO, both before the main pass
+        // begins - see MeshRenderer.hpp's own comment on RenderDepthPrepass
+        // for why a forward renderer needs the depth done this early at all.
+        // Neither touches _SceneColorTarget; both use Target's own depth
+        // buffer, which the main pass below then reads back with Load
+        // instead of clearing it.
+        RHI::TextureHandle AoTexture;
+        if (CanDraw) {
+            {
+                RHI::RenderPassDesc PrepassDesc;
+                PrepassDesc.HasDepthStencil          = true;
+                PrepassDesc.DepthStencil.Texture     = Target.GetDepthTarget();
+                PrepassDesc.DepthStencil.DepthLoad   = RHI::LoadOp::Clear;
+                PrepassDesc.DepthStencil.DepthStore  = RHI::StoreOp::Store;
+                PrepassDesc.DepthStencil.Clear.Depth = 1.0f;
+                PrepassDesc.DebugName                = "Depth prepass";
+                _Commands.PushDebugGroup("Depth prepass");
+                _Commands.BeginRenderPass(PrepassDesc);
+                RenderDepthPrepass(S, Frame.ViewProjection, *Meshes);
+                _Commands.EndRenderPass();
+                _Commands.PopDebugGroup();
+            }
+
+            // Settings come from the scene's first AmbientOcclusionComponent,
+            // the same "first one found" rule as PostProcessComponent; a
+            // scene with none uses SSAO::Settings's defaults (on).
+            SSAO::Settings AoSettings;
+            const std::vector<Actor*> AoActors = S.FindActorsWith<AmbientOcclusionComponent>();
+            if (!AoActors.empty()) {
+                if (const auto* Ao = AoActors.front()->GetComponent<AmbientOcclusionComponent>()) {
+                    AoSettings = Ao->GetSettings();
+                }
+            }
+            const Float3 CameraPosition = {
+              Frame.CameraPositionAndPad.x, Frame.CameraPositionAndPad.y, Frame.CameraPositionAndPad.z};
+            AoTexture = _SSAO.Render(_Commands,
+                                     Target.GetDepthTarget(),
+                                     Frame.ViewProjection,
+                                     Frame.InvViewProjection,
+                                     CameraPosition,
+                                     Target.GetWidth(),
+                                     Target.GetHeight(),
+                                     AoSettings);
+        }
+
+        // LoadOp::Load, not the default Clear this helper would otherwise
+        // pick: the depth prepass above already fully populated Target's
+        // depth buffer, and the main pipeline's DepthCompare is LessEqual
+        // specifically so re-testing every fragment against that already-
+        // written value here passes instead of failing (see Initialize).
+        // Only when the prepass actually ran (CanDraw) - otherwise nothing
+        // cleared Target's depth buffer this frame at all, and Load would
+        // read back whatever a previous frame (or nothing, on the very
+        // first one) left there.
+        if (CanDraw) Pass.DepthStencil.DepthLoad = RHI::LoadOp::Load;
 
         _Commands.BeginRenderPass(Pass);
 
@@ -874,6 +1019,10 @@ namespace Xen {
                                   _EnvironmentSampler);
             _Commands.BindTexture(MaterialSlot::BrdfLut, _BrdfLUT, _ClampSampler);
             _Commands.BindTexture(MaterialSlot::ShadowMap, Shadow.Enabled ? _ShadowMap : _ShadowFallback, _ShadowSampler);
+            // White (fully unoccluded) when SSAO is off/unavailable -
+            // multiplies through as the identity, the same convention as
+            // every material channel's own placeholder.
+            _Commands.BindTexture(MaterialSlot::SSAO, AoTexture.IsValid() ? AoTexture : _WhiteTexture, _ClampSampler);
 
             S.ForEachActor([&](Actor& A) {
                 auto* MeshComp     = A.GetComponent<MeshComponent>();

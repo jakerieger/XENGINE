@@ -18,6 +18,8 @@ add_library(Xen STATIC
         Actor.cpp
         Actor.hpp
         ActorHandle.hpp
+        AmbientOcclusionComponent.cpp
+        AmbientOcclusionComponent.hpp
         AntiAliasingComponent.cpp
         AntiAliasingComponent.hpp
         AssetLoader.cpp
@@ -83,6 +85,8 @@ add_library(Xen STATIC
         SpriteRenderer.hpp
         SpriteBatcher.cpp
         SpriteBatcher.hpp
+        SSAO.cpp
+        SSAO.hpp
         TextureCache.cpp
         TextureCache.hpp
         Transform.hpp

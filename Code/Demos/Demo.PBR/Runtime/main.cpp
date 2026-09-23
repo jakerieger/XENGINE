@@ -105,32 +105,30 @@ namespace {
         Scene MainScene("Main");
         MainScene.SetContext(Ctx);
 
-        const ActorHandle MonkeHandle = MainScene.Spawn("Monke");
-        Actor* MonkeActor             = MainScene.Get(MonkeHandle);
-        MonkeActor->AddComponent<MeshComponent>(ASSET("meshes/suzanne.glb"));
-        auto* Material = MonkeActor->AddComponent<PBRMaterialComponent>();
+        const ActorHandle TestMeshHandle = MainScene.Spawn("TestMesh");
+        Actor* TestMeshActor             = MainScene.Get(TestMeshHandle);
+        TestMeshActor->AddComponent<MeshComponent>(ASSET("meshes/teapot.glb"));
 
-        Material->SetAlbedoMapAsset(ASSET("pbr/steel_worn/albedo.png"));
-        Material->SetNormalMapAsset(ASSET("pbr/steel_worn/normal.png"));
-        Material->SetRoughnessMapAsset(ASSET("pbr/steel_worn/roughness.png"));
-        Material->SetMetallicMapAsset(ASSET("pbr/steel_worn/metalness.png"));
+        auto* Material = TestMeshActor->AddComponent<PBRMaterialComponent>();
+        Material->SetAlbedoMapAsset(ASSET("pbr/marble/albedo.png"));
+        Material->SetNormalMapAsset(ASSET("pbr/marble/normal.png"));
+        Material->SetRoughnessMapAsset(ASSET("pbr/marble/roughness.png"));
+        Material->SetMetallic(0.1f);
 
-        MonkeActor->AddComponent<RotatingComponent>();
-        MonkeActor->SetPosition(Float3 {0.0f, 1.0f, 0.0f});
+        TestMeshActor->AddComponent<RotatingComponent>();
+        TestMeshActor->SetPosition(Float3 {0.0f, 0.25f, 0.0f});
+        TestMeshActor->SetScale(Float3 {0.5f, 0.5f, 0.5f});
 
-        // A floor for the monkey's shadow to land on.
+        // A floor for the TestMeshy's shadow to land on.
         const ActorHandle GroundHandle = MainScene.Spawn("Ground");
         Actor* GroundActor             = MainScene.Get(GroundHandle);
         GroundActor->AddComponent<MeshComponent>(ASSET("meshes/plane.glb"));
+
         auto* GroundMaterial = GroundActor->AddComponent<PBRMaterialComponent>();
-
-        // GroundMaterial->SetAlbedo(Float3 {0.55f, 0.55f, 0.58f});
-        // GroundMaterial->SetRoughness(0.85f);
-
-        GroundMaterial->SetAlbedoMapAsset(ASSET("pbr/checker_tiles/albedo.png"));
-        GroundMaterial->SetNormalMapAsset(ASSET("pbr/checker_tiles/normal.png"));
-        GroundMaterial->SetRoughnessMapAsset(ASSET("pbr/checker_tiles/roughness.png"));
-        GroundMaterial->SetMetallic(0.1f);
+        GroundMaterial->SetAlbedoMapAsset(ASSET("pbr/checkered_tile/albedo.png"));
+        GroundMaterial->SetNormalMapAsset(ASSET("pbr/checkered_tile/normal.png"));
+        GroundMaterial->SetRoughnessMapAsset(ASSET("pbr/checkered_tile/roughness.png"));
+        GroundMaterial->SetMetallic(0.01f);
 
         GroundActor->SetScale(Float3 {200.0f, 1.0f, 200.0f});
 
@@ -141,7 +139,7 @@ namespace {
         Camera->SetFieldOfView(60.0f);
         // In front of the origin along +Z, looking down -Z (this engine's
         // canonical forward, matching glTF's convention) at an unrotated
-        // Transform - the cube at the origin ends up straight ahead.
+        // Transform - the TestMesh at the origin ends up straight ahead.
         CameraActor->SetPosition(Float3 {0.0f, 1.0f, 4.0f});
 
         const ActorHandle LightHandle = MainScene.Spawn("Light");
@@ -149,19 +147,19 @@ namespace {
         auto* Light                   = LightActor->AddComponent<DirectionalLightComponent>();
         Light->SetIntensity(1.0f);
         // The single-cascade shadow map is fitted to the camera's whole view
-        // frustum out to this distance, not to the monkey specifically - the
+        // frustum out to this distance, not to the TestMeshy specifically - the
         // engine default (40) is sized for a typical outdoor scene, but this
         // demo's camera sits only ~4 units from a ~2-unit-wide subject, so
         // most of that range bought nothing but coarser texels where it
         // actually mattered: 2048 texels over the ~94-unit diameter that
-        // covers left the monkey barely 40-50 texels wide, blocky enough to
+        // covers left the TestMeshy barely 40-50 texels wide, blocky enough to
         // read as jagged, shadow-map-texel-aligned edges that visibly didn't
         // track the mesh's own smooth rotation. Tightened to roughly triple
         // the effective resolution where this scene actually needs it.
         Light->SetShadowDistance(15.0f);
         // Pitched down (a negative pitch tilts the unrotated -Z forward
         // toward -Y) and yawed around so the light travels toward the camera:
-        // the floor is lit, and the monkey's shadow falls in front of it
+        // the floor is lit, and the TestMeshy's shadow falls in front of it
         // where the camera can see it.
         const XMVECTOR LightRotation =
           XMQuaternionRotationRollPitchYaw(XMConvertToRadians(-45.0f), XMConvertToRadians(150.0f), 0.0f);
@@ -197,7 +195,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
 
     try {
         Xen::ProcessCommandLineArguments Arguments {};
-        if (!Xen::GetCommandLineArguments(Arguments)) {
+        if (!Xen::GetProcessCommandLineArguments(Arguments)) {
             LOG_ERR("Failed to get command line arguments");
             return 1;
         }

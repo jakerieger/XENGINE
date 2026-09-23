@@ -6,11 +6,11 @@
       "ID": 1,
       "Parent": 0,
       "Properties": {
-        "Name": "Monke",
+        "Name": "TestMesh",
         "Transform": {
           "Position": [
             0.0,
-            1.0,
+            0.25,
             0.0
           ],
           "Rotation": [
@@ -20,9 +20,9 @@
             1.0
           ],
           "Scale": [
-            1.0,
-            1.0,
-            1.0
+            0.5,
+            0.5,
+            0.5
           ]
         },
         "Enabled": true
@@ -31,7 +31,7 @@
         {
           "Type": "MeshComponent",
           "Properties": {
-            "MeshAsset": 15982838138958006166
+            "MeshAsset": 8564983877344598785
           }
         },
         {
@@ -42,7 +42,7 @@
               1.0,
               1.0
             ],
-            "Metallic": 1.0,
+            "Metallic": 0.10000000149011612,
             "Roughness": 0.5,
             "AmbientOcclusion": 1.0,
             "Emissive": [
@@ -50,10 +50,10 @@
               0.0,
               0.0
             ],
-            "AlbedoMap": 270406709330068935,
-            "NormalMap": 17976109761329214697,
-            "RoughnessMap": 14857189857277308910,
-            "MetallicMap": 4546434162801252056,
+            "AlbedoMap": 12393900096279940194,
+            "NormalMap": 13653318787207807468,
+            "RoughnessMap": 354123816808205629,
+            "MetallicMap": 0,
             "AmbientOcclusionMap": 0,
             "EmissiveMap": 0
           }
@@ -106,7 +106,7 @@
               1.0,
               1.0
             ],
-            "Metallic": 0.10000000149011612,
+            "Metallic": 0.009999999776482582,
             "Roughness": 0.5,
             "AmbientOcclusion": 1.0,
             "Emissive": [
@@ -114,9 +114,9 @@
               0.0,
               0.0
             ],
-            "AlbedoMap": 10026088232644811230,
-            "NormalMap": 8807296700188146216,
-            "RoughnessMap": 12810263040750370745,
+            "AlbedoMap": 5223724406591900508,
+            "NormalMap": 2526438315296008954,
+            "RoughnessMap": 11078029622843380923,
             "MetallicMap": 0,
             "AmbientOcclusionMap": 0,
             "EmissiveMap": 0

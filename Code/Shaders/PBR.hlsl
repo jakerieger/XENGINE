@@ -57,6 +57,12 @@ SamplerState BrdfLUTSampler : register(XEN_BRDF_LUT_SAMPLER_REGISTER);
 Texture2D<float> ShadowMap : register(XEN_SHADOW_MAP_TEX_REGISTER);
 SamplerComparisonState ShadowSampler : register(XEN_SHADOW_MAP_SAMPLER_REGISTER);
 
+// Screen-space ambient occlusion (see SSAO.hpp) - sampled by screen position,
+// not UV, since it's a full-screen texture unrelated to this surface's own
+// texture coordinates.
+Texture2D<float> SSAOMap : register(XEN_SSAO_TEX_REGISTER);
+SamplerState SSAOSampler : register(XEN_SSAO_SAMPLER_REGISTER);
+
 struct VSInput {
     float3 Position : TEXCOORD0;
     float3 Normal   : TEXCOORD1;
@@ -331,8 +337,18 @@ float4 PSMain(PSInput In) : SV_Target {
     // environment regardless of whether the sun itself is occluded here.
     const float AmbientShadow = lerp(1.0 - ShadowParams2.w, 1.0, Shadow);
 
+    // Screen-space ambient occlusion (see SSAO.hpp): unlike AmbientShadow
+    // above, this models real geometric visibility of the environment, not
+    // one light's own shadow ray, so it legitimately darkens both diffuse
+    // and specular ambient - a mirror in a corner still shows less of the
+    // sky than one out in the open. Sampled by screen position, not this
+    // surface's UV; white (1.0, no occlusion) wherever SSAO is off or
+    // unavailable (see MeshRenderer.cpp).
+    const float2 ScreenUV = In.Position.xy * InvScreenSizeAndPad.xy;
+    const float SSAOTerm  = SSAOMap.SampleLevel(SSAOSampler, ScreenUV, 0);
+
     const float3 Irradiance = IrradianceMap.SampleLevel(IrradianceSampler, N, 0).rgb;
-    const float3 DiffuseIBL = Irradiance * Albedo * KDiffuseIndirect * AO * AmbientShadow;
+    const float3 DiffuseIBL = Irradiance * Albedo * KDiffuseIndirect * AO * AmbientShadow * SSAOTerm;
 
     uint EnvWidth, EnvHeight, EnvLevels;
     EnvironmentMap.GetDimensions(0, EnvWidth, EnvHeight, EnvLevels);
@@ -341,7 +357,7 @@ float4 PSMain(PSInput In) : SV_Target {
     const float3 R = reflect(-V, N);
     const float3 PrefilteredColor = EnvironmentMap.SampleLevel(EnvironmentSampler, R, EnvLod).rgb;
     const float2 EnvBRDF = BrdfLUT.SampleLevel(BrdfLUTSampler, float2(NdotV, Roughness), 0).rg;
-    const float3 SpecularIBL = PrefilteredColor * (F0 * EnvBRDF.x + EnvBRDF.y) * AO;
+    const float3 SpecularIBL = PrefilteredColor * (F0 * EnvBRDF.x + EnvBRDF.y) * AO * SSAOTerm;
 
     const float3 Ambient = DiffuseIBL + SpecularIBL;
 

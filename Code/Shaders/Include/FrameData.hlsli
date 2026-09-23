@@ -24,6 +24,8 @@ cbuffer FrameData : register(XEN_FRAME_REGISTER) {
                                            // y = constant depth bias (light NDC z), z = normal offset (world units),
                                            // w = PCF radius in texels
     float4 ShadowParams2;                  // x = 1 / shadow map size, y = shadow distance, z = fade-out length
+
+    float4 InvScreenSizeAndPad;  // xy = 1 / render target size in pixels - PBR.hlsl's own SSAO screen UV (SV_Position.xy * this)
 };
 
 #endif  // XEN_FRAMEDATA_HLSLI
