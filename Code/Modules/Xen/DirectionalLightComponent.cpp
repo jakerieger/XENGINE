@@ -38,6 +38,14 @@ namespace Xen {
                    {.ToolTip  = "Blur radius of the shadow edge, in shadow-map texels.",
                     .Category = "Shadows",
                     .Min      = 0.0f});
+        R.Property("ShadowAmbientDarkening",
+                   _ShadowAmbientDarkening,
+                   {.ToolTip  = "How much a shadowed point's diffuse image-based lighting is darkened (0 = "
+                                "physically pure, ambient is never blocked; 1 = fully removed in shadow). Not "
+                                "applied to specular reflections.",
+                    .Category = "Shadows",
+                    .Min      = 0.0f,
+                    .Max      = 1.0f});
     }
 
     Float3 DirectionalLightComponent::GetDirection() const {

@@ -34,10 +34,30 @@ namespace Xen {
             }
             return Total;
         }
+
+        // Matches D3D12RenderDevice::CreateTexture's own resolution of
+        // TextureDesc::MipLevels == 0 ("the full chain") exactly - computed
+        // here too (rather than relying on that sentinel) so TextureCache
+        // knows up front how many levels MipGenerator needs to fill in.
+        u32 ComputeMipLevels(const u32 Width, const u32 Height) {
+            u32 Levels  = 1;
+            u32 MaxSide = std::max(Width, Height);
+            while (MaxSide > 1) {
+                MaxSide >>= 1;
+                ++Levels;
+            }
+            return Levels;
+        }
     }  // namespace
+
+    TextureCache::TextureCache(PAK::AssetRegistry& Assets, RHI::IRenderDevice& Device, const Config& Cfg)
+        : _Assets(&Assets), _Device(&Device), _Config(Cfg) {
+        if (_Config.GenerateMips) _MipGen.Initialize(Device, Assets);
+    }
 
     TextureCache::~TextureCache() {
         Clear();
+        _MipGen.Shutdown();
     }
 
     DecodedTexture TextureCache::DecodeAsset(const AssetID ID, const bool Srgb) const {
@@ -56,9 +76,11 @@ namespace Xen {
         // definition, there's no sRGB flavor of it to pick). It always comes
         // with a full mip pyramid, built on the CPU in DecodeImage (see
         // MipTail): an environment map is the source EnvironmentBaker filters
-        // by sample density, which needs its lower mips. GenerateMips is a
-        // separate knob for LDR sprite/material content.
-        const bool WithMips = Out.IsHdr || _Config.GenerateMips;
+        // by sample density, which needs its lower mips. GenerateMips (GPU-
+        // side, see MipGenerator) is the separate path for LDR sprite/
+        // material content - only meaningful if the generator actually
+        // initialized, or UploadEntry will fall back to a single mip.
+        const bool WithMips = Out.IsHdr || (_Config.GenerateMips && _MipGen.IsInitialized());
         Out.Info.GpuBytes   = ComputeTextureBytes(Out.Info.Width, Out.Info.Height, Out.IsHdr ? 8 : 4, WithMips);
         return Out;
     }
@@ -83,17 +105,24 @@ namespace Xen {
         const bool Srgb              = Decoded.Srgb;
         std::vector<u8>& Pixels      = Decoded.Pixels;
         std::vector<std::vector<u8>>& MipTail = Decoded.MipTail;
-        const bool WithMips          = IsHdr || _Config.GenerateMips;
+
+        // GPU-generated mips (MipGenerator) need the generator actually
+        // initialized - without it, a texture that asked for mips just gets
+        // one, same as a game that left GenerateMips off entirely.
+        const bool GenerateOnGpu = !IsHdr && _Config.GenerateMips && _MipGen.IsInitialized();
+        const u32 Levels = IsHdr ? CAST<u32>(MipTail.size()) + 1
+                            : (GenerateOnGpu ? ComputeMipLevels(E.Info.Width, E.Info.Height) : 1);
 
         RHI::TextureDesc Desc;
-        Desc.Type   = RHI::TextureType::Texture2D;
-        Desc.Fmt    = IsHdr ? RHI::Format::RGBA16_FLOAT : (Srgb ? RHI::Format::RGBA8_SRGB : RHI::Format::RGBA8_UNORM);
-        Desc.Width  = E.Info.Width;
-        Desc.Height = E.Info.Height;
-        // 0 means the full chain; 1 means no mips at all - except an HDR
-        // image, whose chain length is exactly what DecodeImage generated.
-        Desc.MipLevels = IsHdr ? CAST<u32>(MipTail.size()) + 1 : (WithMips ? 0 : 1);
+        Desc.Type      = RHI::TextureType::Texture2D;
+        Desc.Fmt       = IsHdr ? RHI::Format::RGBA16_FLOAT : (Srgb ? RHI::Format::RGBA8_SRGB : RHI::Format::RGBA8_UNORM);
+        Desc.Width     = E.Info.Width;
+        Desc.Height    = E.Info.Height;
+        Desc.MipLevels = Levels;
         Desc.Usage     = RHI::TextureUsage::Sampled | RHI::TextureUsage::CopyDst;
+        // MipGenerator renders into mips 1.. as color targets - see
+        // TextureCache.hpp's Config::GenerateMips.
+        if (GenerateOnGpu) Desc.Usage = Desc.Usage | RHI::TextureUsage::ColorTarget;
 
         E.Handle = _Device->CreateTexture(Desc);
         if (!E.Handle.IsValid()) {
@@ -118,6 +147,8 @@ namespace Xen {
             MipUpload.Height   = std::max(E.Info.Height >> Level, 1u);
             _Device->UploadTexture(E.Handle, MipUpload);
         }
+
+        if (GenerateOnGpu) _MipGen.Generate(E.Handle, E.Info.Width, E.Info.Height, Levels, Srgb);
 
         E.RefCount = InitialRefCount;
 

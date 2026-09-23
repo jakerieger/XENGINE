@@ -1,4 +1,4 @@
-project(Xen2D)
+project(XENGINE)
 
 add_library(XenPAK STATIC
         Aes.cpp

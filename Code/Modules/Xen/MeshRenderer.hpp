@@ -56,8 +56,10 @@ namespace Xen {
         /// from the scene's first PostProcessComponent, or defaults if it
         /// has none. Call between IRenderDevice::BeginFrame and EndFrame.
         /// Target must have a depth buffer (Viewport::Initialize's
-        /// WithDepth) - this renderer always depth-tests.
-        void Render(const Scene& S, const Viewport& Target);
+        /// WithDepth) - this renderer always depth-tests. DeltaTime is
+        /// passed straight through to PostProcess::Render, which needs the
+        /// real frame time for auto exposure's eye-adaptation ramp.
+        void Render(const Scene& S, const Viewport& Target, f32 DeltaTime);
 
         /// @brief Bakes the scene's environment (the prefiltered/irradiance
         /// cube maps) now instead of on the first Render that sees it. The

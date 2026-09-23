@@ -226,7 +226,7 @@ def write_gltf(path: Path, vertices, indices):
     zs = [p[2] for p, _, _, _ in vertices]
 
     gltf = {
-        "asset": {"version": "2.0", "generator": "Xen2D generate_primitive_meshes.py"},
+        "asset": {"version": "2.0", "generator": "XENGINE generate_primitive_meshes.py"},
         "buffers": [
             {
                 "byteLength": len(buffer_bytes),

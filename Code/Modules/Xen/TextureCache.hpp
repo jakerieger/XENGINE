@@ -6,6 +6,7 @@
 
 #include <Common/XenCommon.hpp>
 
+#include "MipGenerator.hpp"
 #include "RenderDevice.hpp"
 
 #include <XenPAK/AssetID.hpp>
@@ -51,12 +52,20 @@ namespace Xen {
             /// say - and expect the memory.
             bool RetainPixels {false};
 
-            /// @brief Generate a mip chain on upload.
+            /// @brief Generate a mip chain on upload (see MipGenerator - a
+            /// GPU box-downsample pass per level, right after the texture's
+            /// mip 0 uploads).
             ///
-            /// Off by default: sprites drawn near 1:1 gain nothing from mips,
-            /// and mipping an atlas bleeds neighbouring tiles into the lower
-            /// levels. Turn it on for heavily minified or zoomed-out content.
-            bool GenerateMips {false};
+            /// On by default: without it, any texture minified on screen -
+            /// which a 3D material usually is, at some distance or angle -
+            /// aliases, since a single mip has nothing to average a pixel's
+            /// footprint over. The one real cost is VRAM (roughly a third
+            /// more than mip 0 alone) and a one-time GPU pass per texture at
+            /// load. The one real caveat: mipping a sprite atlas bleeds
+            /// neighbouring tiles into its lower levels, which only matters
+            /// if that atlas is ever drawn minified (a zoomed-out camera, a
+            /// minimap) - turn it off for a cache built over one.
+            bool GenerateMips {true};
 
             /// @brief Widest an HDR (.hdr environment map) image is kept on
             /// the GPU; a wider one is box-downsampled by powers of two while
@@ -69,8 +78,10 @@ namespace Xen {
             Config() {}
         };
 
-        explicit TextureCache(PAK::AssetRegistry& Assets, RHI::IRenderDevice& Device, const Config& Cfg = {})
-            : _Assets(&Assets), _Device(&Device), _Config(Cfg) {}
+        /// @brief Also initializes the GPU mip generator (see MipGenerator)
+        /// used when Cfg.GenerateMips is on - not fatal if its shader is
+        /// missing, a texture that asked for mips just keeps one.
+        explicit TextureCache(PAK::AssetRegistry& Assets, RHI::IRenderDevice& Device, const Config& Cfg = {});
         ~TextureCache();
 
         TextureCache(const TextureCache&)            = delete;
@@ -148,6 +159,7 @@ namespace Xen {
         PAK::AssetRegistry* _Assets {nullptr};
         RHI::IRenderDevice* _Device {nullptr};
         Config _Config {};
+        MipGenerator _MipGen;
 
         std::unordered_map<u32, std::vector<u8>> _PixelsByHandle;
         std::unordered_map<PAK::AssetIDValue, Entry> _Entries;

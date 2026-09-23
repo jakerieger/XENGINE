@@ -315,7 +315,15 @@ namespace Xen::RHI::D3D12Backend {
         // RTV/DSV descriptors don't need to live in a shader-visible heap
         // anyway (only SRV/UAV/sampler descriptors bound via a root
         // descriptor table do).
-        static constexpr u32 OffscreenRtvHeapCapacity = 512;  // a mip-chained render target takes one slot per mip
+        // A mip-chained render target takes one slot per mip - and now that
+        // TextureCache can give an ordinary material texture ColorTarget
+        // usage for GPU mip generation (see MipGenerator), every such
+        // texture holds its own slots for its whole resident lifetime (the
+        // heap has no way to reclaim them just between uses). A content-
+        // heavy scene with many high-resolution textures needs real
+        // headroom here; RTV/DSV descriptors are CPU-only and cheap to
+        // over-provision (unlike the shader-visible SRV/sampler heaps).
+        static constexpr u32 OffscreenRtvHeapCapacity = 8192;
         static constexpr u32 OffscreenDsvHeapCapacity = 8;
         ComPtr<ID3D12DescriptorHeap> _OffscreenRtvHeap;
         ComPtr<ID3D12DescriptorHeap> _OffscreenDsvHeap;

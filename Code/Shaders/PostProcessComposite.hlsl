@@ -13,7 +13,8 @@
 #include "Include/Tonemap.hlsli"
 
 cbuffer Params : register(b0) {
-    float4 Params;  // x = exposure, y = bloom intensity (0 disables it), z/w unused
+    float4 Params;   // x = manual exposure (used only while auto exposure is off), y = bloom intensity (0 disables it), z/w unused
+    float4 Params2;  // x = auto exposure enabled (0/1), y = key value, z = metered-luminance min clamp, w = max clamp
 };
 
 Texture2D SceneTex : register(t0);
@@ -22,8 +23,27 @@ SamplerState SceneSampler : register(s0);
 Texture2D BloomTex : register(t1);
 SamplerState BloomSampler : register(s1);
 
+// The auto-exposure metering chain's final, eye-adaptation-smoothed 1x1
+// result (see PostProcess.hpp / LuminanceAdapt.hlsl) - always bound, same
+// convention as BloomTex above (SceneTex again when auto exposure is
+// unavailable, inert since Params2.x reads 0 then).
+Texture2D AdaptedLuminanceTex : register(t2);
+SamplerState AdaptedLuminanceSampler : register(s2);
+
 VSOutput VSMain(uint VertexID : SV_VertexID) {
     return FullscreenVertex(VertexID, 0.0);
+}
+
+// Photographic "auto-key" exposure: scale so the metered average luminance
+// lands on Params2.y (0.18 = "18% middle gray" by default), clamped first so
+// one bright window or a momentarily black frame can't swing this to an
+// extreme.
+float ComputeExposure() {
+    if (Params2.x < 0.5) return Params.x;
+
+    const float AvgLum = clamp(
+      AdaptedLuminanceTex.SampleLevel(AdaptedLuminanceSampler, float2(0.5, 0.5), 0).r, Params2.z, Params2.w);
+    return Params2.y / max(AvgLum, 1e-4);
 }
 
 float4 PSMain(VSOutput In) : SV_Target {
@@ -31,7 +51,7 @@ float4 PSMain(VSOutput In) : SV_Target {
     const float3 Bloom  = BloomTex.SampleLevel(BloomSampler, In.UV, 0).rgb;
 
     float3 Color = Scene.rgb + Bloom * Params.y;
-    Color *= Params.x;
+    Color *= ComputeExposure();
 
     return float4(TonemapAndEncode(Color), Scene.a);
 }

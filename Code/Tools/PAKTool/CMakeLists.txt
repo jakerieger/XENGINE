@@ -1,4 +1,4 @@
-project(Xen2D)
+project(XENGINE)
 
 add_executable(PAKTool main.cpp)
 

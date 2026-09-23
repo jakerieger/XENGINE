@@ -7,6 +7,7 @@
 #include "Game.hpp"
 
 #include <thread>
+#include "AntiAliasingComponent.hpp"
 #include "AssetPreloader.hpp"
 #include "SceneSerializer.hpp"
 #include "AssetSettings.hpp"
@@ -115,6 +116,12 @@ namespace Xen {
         if (!_MeshRenderer.Initialize(*_RenderDevice, *_Assets, _MainViewport)) {
             LOG_DBG("mesh renderer not initialized (no PBR shader asset found) - 3D rendering unavailable");
         }
+
+        // Not fatal either: no FXAA shader asset just means no anti-aliasing,
+        // same convention as _MeshRenderer above.
+        if (!_FXAA.Initialize(*_RenderDevice, *_Assets, _MainViewport.GetColorFormat())) {
+            LOG_DBG("FXAA not initialized (no shader asset found) - anti-aliasing unavailable");
+        }
     }
 
     Game::~Game() {
@@ -131,6 +138,7 @@ namespace Xen {
         _SpriteRenderer.Shutdown();
         _LoadingScreen.Shutdown();
         _MeshRenderer.Shutdown();
+        _FXAA.Shutdown();
         _MainViewport.Shutdown();
         _Meshes.reset();
         _Textures.reset();
@@ -290,13 +298,31 @@ namespace Xen {
             // _MainViewport's color target last (exposure, bloom, tonemap -
             // see PostProcess.hpp), blended so only the pixels it actually
             // covered overwrite what the sprite pass above already drew.
-            if (_MeshRenderer.IsInitialized()) _MeshRenderer.Render(*_ActiveScene, _MainViewport);
+            if (_MeshRenderer.IsInitialized()) _MeshRenderer.Render(*_ActiveScene, _MainViewport, DeltaTime);
 
-            // Standalone-game presentation: copy the viewport's color target
-            // into the back buffer. An editor wouldn't call this at all - it
-            // would sample _MainViewport.GetColorTarget() into an ImGui
-            // panel instead.
-            _RenderDevice->CopyToSwapChain(_MainViewport.GetColorTarget());
+            // Last: smooths whatever's left in the fully composited frame -
+            // see FXAA.hpp for why this runs at the Game level rather than
+            // inside MeshRenderer/PostProcess. Settings come from the
+            // scene's first AntiAliasingComponent, the same "first one
+            // found" rule as PostProcessComponent; a scene with none uses
+            // FXAA::Settings's defaults (on).
+            FXAA::Settings AaSettings;
+            const std::vector<Actor*> AaActors = _ActiveScene->FindActorsWith<AntiAliasingComponent>();
+            if (!AaActors.empty()) {
+                if (const auto* AA = AaActors.front()->GetComponent<AntiAliasingComponent>()) {
+                    AaSettings = AA->GetSettings();
+                }
+            }
+            const RHI::TextureHandle PresentTarget =
+              _FXAA.Render(_MainViewport.GetColorTarget(), _MainViewport.GetWidth(), _MainViewport.GetHeight(), AaSettings);
+
+            // Standalone-game presentation: copy the (possibly FXAA'd)
+            // viewport color target into the back buffer. An editor
+            // wouldn't call this at all - it would sample
+            // _MainViewport.GetColorTarget() into an ImGui panel instead
+            // (unaffected by FXAA, which never writes back into that
+            // texture - see FXAA::Render's own comment).
+            _RenderDevice->CopyToSwapChain(PresentTarget);
 
             // Overlay, drawn after everything else so debug windows are
             // always on top - see DebugUI::EndFrame for the back-buffer

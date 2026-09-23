@@ -778,6 +778,39 @@ namespace Xen::RHI::D3D12Backend {
                     break;
                 }
 
+                case CmdType::CopyTexture: {
+                    const auto& P = It.Payload<Cmd::CopyTexture>();
+                    D3DTexture* Src = _Textures.Get(P.Src);
+                    D3DTexture* Dst = _Textures.Get(P.Dst);
+                    if (!Src || !Dst) break;
+
+                    constexpr D3D12_RESOURCE_STATES ShaderReadable =
+                      D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+
+                    TransitionTexture(*Src, D3D12_RESOURCE_STATE_COPY_SOURCE);
+                    TransitionTexture(*Dst, D3D12_RESOURCE_STATE_COPY_DEST);
+
+                    D3D12_TEXTURE_COPY_LOCATION SrcLoc {};
+                    SrcLoc.pResource        = Src->Resource.Get();
+                    SrcLoc.Type             = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+                    SrcLoc.SubresourceIndex = P.SrcMip;
+
+                    D3D12_TEXTURE_COPY_LOCATION DstLoc {};
+                    DstLoc.pResource        = Dst->Resource.Get();
+                    DstLoc.Type             = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+                    DstLoc.SubresourceIndex = P.DstMip;
+
+                    _CmdList->CopyTextureRegion(&DstLoc, 0, 0, 0, &SrcLoc, nullptr);
+
+                    // Left sample-ready, matching every other texture op in
+                    // this backend (UploadTexture, the end of an offscreen
+                    // render pass) - the very next command in the same
+                    // buffer is typically a draw that reads one of these.
+                    TransitionTexture(*Src, ShaderReadable);
+                    TransitionTexture(*Dst, ShaderReadable);
+                    break;
+                }
+
                 // Not exercised by Stage 1's sprite-only workload; every DEFAULT-heap
                 // buffer settles into one resting state at creation and is never
                 // revisited (see RestingBufferState), which is what lets the general
@@ -1147,11 +1180,31 @@ namespace Xen::RHI::D3D12Backend {
 
     TextureHandle D3D12RenderDevice::CreateTexture(const TextureDesc& Desc) {
         D3DTexture Tex;
-        Tex.Format    = ToDXGIFormat(Desc.Fmt);
-        Tex.Width     = Desc.Width;
-        Tex.Height    = Desc.Height;
-        Tex.MipLevels = Desc.MipLevels == 0 ? 0 : Desc.MipLevels;
-        Tex.Usage     = Desc.Usage;
+        Tex.Format = ToDXGIFormat(Desc.Fmt);
+        Tex.Width  = Desc.Width;
+        Tex.Height = Desc.Height;
+
+        // 0 means "the full chain" (see TextureDesc::MipLevels) - resolved
+        // here rather than left as a sentinel, since every other use of
+        // Tex.MipLevels downstream (the resource desc, the RTV/SRV view
+        // creation loops) needs the real count, not 0. Previously this
+        // computed a full chain of exactly 1 level (0 fell through
+        // ResDesc.MipLevels' own "0 means 1" default) - never noticed
+        // because nothing requested MipLevels=0 until GenerateMips-on-upload
+        // existed to exercise it.
+        if (Desc.MipLevels == 0) {
+            u32 Levels  = 1;
+            u32 MaxSide = std::max(Desc.Width, Desc.Height);
+            while (MaxSide > 1) {
+                MaxSide >>= 1;
+                ++Levels;
+            }
+            Tex.MipLevels = Levels;
+        } else {
+            Tex.MipLevels = Desc.MipLevels;
+        }
+
+        Tex.Usage = Desc.Usage;
         Tex.Type      = Desc.Type;
         // A cube is always exactly six slices; an array is whatever was asked for.
         Tex.Layers = Desc.Type == TextureType::TextureCube ? 6 : std::max<u32>(Desc.ArrayLayers, 1);
@@ -1177,7 +1230,7 @@ namespace Xen::RHI::D3D12Backend {
         ResDesc.Width            = Desc.Width;
         ResDesc.Height           = Desc.Height;
         ResDesc.DepthOrArraySize = CAST<UINT16>(Tex.Layers);
-        ResDesc.MipLevels        = CAST<UINT16>(Tex.MipLevels == 0 ? 1 : Tex.MipLevels);
+        ResDesc.MipLevels        = CAST<UINT16>(Tex.MipLevels);
         Tex.Mips                 = ResDesc.MipLevels;
         ResDesc.Format           = ResourceFormat;
         ResDesc.SampleDesc.Count = std::max<u32>(Desc.SampleCount, 1);

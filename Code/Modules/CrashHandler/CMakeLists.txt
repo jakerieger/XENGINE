@@ -1,1 +1,1 @@
-project(Xen2D)
+project(XENGINE)

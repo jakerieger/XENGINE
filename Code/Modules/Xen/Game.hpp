@@ -11,6 +11,7 @@
 #include "AssetSettings.hpp"
 #include "DebugUI.hpp"
 #include "EngineConfig.hpp"
+#include "FXAA.hpp"
 #include "LoadingScreen.hpp"
 #include "MeshCache.hpp"
 #include "MeshRenderer.hpp"
@@ -198,6 +199,13 @@ namespace Xen {
         // 2D-only game's content is not an error) and Render() no-ops while
         // uninitialized, so a game with no 3D content pays nothing for this.
         MeshRenderer _MeshRenderer;
+
+        // Runs after _MeshRenderer, on the fully composited frame (2D and 3D
+        // together) - not owned by MeshRenderer/PostProcess the way bloom is,
+        // since it applies to the whole Viewport regardless of whether this
+        // game has any 3D content at all. Same soft-failure convention as
+        // above: no shader asset just means no anti-aliasing.
+        FXAA _FXAA;
 
         // Declared after _RenderDevice (destroyed before it, in reverse
         // declaration order) so DebugUI::~DebugUI's WaitIdle() call still

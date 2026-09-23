@@ -42,6 +42,13 @@ namespace Xen {
         NODISCARD const Float3& GetAlbedo() const { return _Albedo; }
         void SetAlbedo(const Float3& Albedo) { _Albedo = Albedo; }
 
+        // Defaults to 1 (fully metallic), not 0 - matching glTF's own
+        // metallicFactor default, and, more importantly, the "a map always
+        // MULTIPLIES this" convention every other channel already follows
+        // with its own default (Albedo white, AO 1): a scalar default of 0
+        // silently zeroed out any assigned MetallicMap regardless of its
+        // content (0 * anything == 0), which read as "the map does nothing,
+        // only SetMetallic works" - it wasn't the map, it was this default.
         NODISCARD f32 GetMetallic() const { return _Metallic; }
         void SetMetallic(const f32 Metallic) { _Metallic = std::clamp(Metallic, 0.0f, 1.0f); }
 
@@ -83,7 +90,7 @@ namespace Xen {
 
     private:
         Float3 _Albedo {1.0f, 1.0f, 1.0f};
-        f32 _Metallic {0.0f};
+        f32 _Metallic {1.0f};
         f32 _Roughness {0.5f};
         f32 _AmbientOcclusion {1.0f};
         Float3 _Emissive {0.0f, 0.0f, 0.0f};

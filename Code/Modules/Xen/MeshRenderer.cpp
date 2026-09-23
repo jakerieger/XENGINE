@@ -781,11 +781,11 @@ namespace Xen {
                           Light.GetShadowBias() * TexelSize / DepthRange,
                           Light.GetShadowNormalBias() * TexelSize,
                           Light.GetShadowSoftness()};
-        Result.Params2 = {1.0f / CAST<f32>(Resolution), FarDistance, FarDistance * 0.15f, 0.0f};
+        Result.Params2 = {1.0f / CAST<f32>(Resolution), FarDistance, FarDistance * 0.15f, Light.GetShadowAmbientDarkening()};
         return Result;
     }
 
-    void MeshRenderer::Render(const Scene& S, const Viewport& Target) {
+    void MeshRenderer::Render(const Scene& S, const Viewport& Target, const f32 DeltaTime) {
         if (!_Device) return;
 
         EnsureSceneColorTarget(Target.GetWidth(), Target.GetHeight());
@@ -945,8 +945,13 @@ namespace Xen {
                 Settings = PP->GetSettings();
             }
         }
-        _PostProcess.Render(
-          _Commands, _SceneColorTarget, _SceneColorWidth, _SceneColorHeight, Target.GetColorTarget(), Settings);
+        _PostProcess.Render(_Commands,
+                           _SceneColorTarget,
+                           _SceneColorWidth,
+                           _SceneColorHeight,
+                           Target.GetColorTarget(),
+                           DeltaTime,
+                           Settings);
 
         _Device->Submit(_Commands);
     }

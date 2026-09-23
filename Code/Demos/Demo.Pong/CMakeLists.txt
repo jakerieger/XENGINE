@@ -1,4 +1,4 @@
-project(Xen2D)
+project(XENGINE)
 
 include(XenGame)
 xen_add_game_executable(Demo.Pong

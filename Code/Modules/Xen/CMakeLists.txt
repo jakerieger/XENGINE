@@ -1,4 +1,4 @@
-project(Xen2D)
+project(XENGINE)
 
 file(GLOB_RECURSE IMGUI_SOURCES
         ${VENDOR_ROOT}/imgui/*.h
@@ -18,6 +18,8 @@ add_library(Xen STATIC
         Actor.cpp
         Actor.hpp
         ActorHandle.hpp
+        AntiAliasingComponent.cpp
+        AntiAliasingComponent.hpp
         AssetLoader.cpp
         AssetLoader.hpp
         AssetPreloader.cpp
@@ -43,6 +45,8 @@ add_library(Xen STATIC
         EnvironmentComponent.hpp
         FPPlayerController.cpp
         FPPlayerController.hpp
+        FXAA.cpp
+        FXAA.hpp
         Game.cpp
         Game.hpp
         Input.hpp
@@ -55,6 +59,8 @@ add_library(Xen STATIC
         MeshComponent.hpp
         MeshRenderer.cpp
         MeshRenderer.hpp
+        MipGenerator.cpp
+        MipGenerator.hpp
         PBRMaterialComponent.cpp
         PBRMaterialComponent.hpp
         PostProcess.cpp

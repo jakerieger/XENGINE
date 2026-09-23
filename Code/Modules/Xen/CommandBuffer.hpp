@@ -51,6 +51,7 @@ namespace Xen::RHI {
 
         UpdateBuffer,  // trailing bytes follow the payload
         CopyBuffer,
+        CopyTexture,
         GenerateMips,
         PipelineBarrier,
 
@@ -169,6 +170,20 @@ namespace Xen::RHI {
         struct CopyBuffer {
             BufferHandle Src, Dst;
             u64 SrcOffset, DstOffset, Size;
+        };
+
+        /// @brief A whole-subresource copy (Src's SrcMip -> Dst's DstMip,
+        /// same dimensions). Src and Dst must be different textures - see
+        /// MipGenerator's own comment for why: this engine tracks a
+        /// texture's GPU resource state as one value for the whole resource,
+        /// not per subresource, so reading one mip via SRV while writing a
+        /// different mip of the *same* texture as a render target has no
+        /// correct state to transition it to. Copying the source mip out to
+        /// a separate texture first sidesteps that rather than requiring
+        /// real per-subresource barrier tracking.
+        struct CopyTexture {
+            TextureHandle Src, Dst;
+            u32 SrcMip, DstMip;
         };
 
         struct GenerateMips {
@@ -380,6 +395,14 @@ namespace Xen::RHI {
             P.Dst       = Dst;
             P.DstOffset = DstOffset;
             P.Size      = Size;
+        }
+
+        void CopyTexture(const TextureHandle Src, const u32 SrcMip, const TextureHandle Dst, const u32 DstMip) {
+            auto& P   = Emit<Cmd::CopyTexture>(CmdType::CopyTexture);
+            P.Src     = Src;
+            P.SrcMip  = SrcMip;
+            P.Dst     = Dst;
+            P.DstMip  = DstMip;
         }
 
         void GenerateMips(const TextureHandle Texture) {

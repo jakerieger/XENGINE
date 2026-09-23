@@ -110,11 +110,10 @@ namespace {
         MonkeActor->AddComponent<MeshComponent>(ASSET("meshes/suzanne.glb"));
         auto* Material = MonkeActor->AddComponent<PBRMaterialComponent>();
 
-        Material->SetAlbedoMapAsset(ASSET("pbr/sand/albedo.png"));
-        Material->SetNormalMapAsset(ASSET("pbr/sand/normal.png"));
-        Material->SetRoughnessMapAsset(ASSET("pbr/sand/roughness.png"));
-        Material->SetAmbientOcclusionMapAsset(ASSET("pbr/sand/ao.png"));
-        Material->SetMetallic(0.1f);
+        Material->SetAlbedoMapAsset(ASSET("pbr/steel_worn/albedo.png"));
+        Material->SetNormalMapAsset(ASSET("pbr/steel_worn/normal.png"));
+        Material->SetRoughnessMapAsset(ASSET("pbr/steel_worn/roughness.png"));
+        Material->SetMetallicMapAsset(ASSET("pbr/steel_worn/metalness.png"));
 
         MonkeActor->AddComponent<RotatingComponent>();
         MonkeActor->SetPosition(Float3 {0.0f, 1.0f, 0.0f});
@@ -122,10 +121,17 @@ namespace {
         // A floor for the monkey's shadow to land on.
         const ActorHandle GroundHandle = MainScene.Spawn("Ground");
         Actor* GroundActor             = MainScene.Get(GroundHandle);
-        GroundActor->AddComponent<MeshComponent>(ASSET("meshes/plane.gltf"));
+        GroundActor->AddComponent<MeshComponent>(ASSET("meshes/plane.glb"));
         auto* GroundMaterial = GroundActor->AddComponent<PBRMaterialComponent>();
-        GroundMaterial->SetAlbedo(Float3 {0.55f, 0.55f, 0.58f});
-        GroundMaterial->SetRoughness(0.85f);
+
+        // GroundMaterial->SetAlbedo(Float3 {0.55f, 0.55f, 0.58f});
+        // GroundMaterial->SetRoughness(0.85f);
+
+        GroundMaterial->SetAlbedoMapAsset(ASSET("pbr/checker_tiles/albedo.png"));
+        GroundMaterial->SetNormalMapAsset(ASSET("pbr/checker_tiles/normal.png"));
+        GroundMaterial->SetRoughnessMapAsset(ASSET("pbr/checker_tiles/roughness.png"));
+        GroundMaterial->SetMetallic(0.1f);
+
         GroundActor->SetScale(Float3 {200.0f, 1.0f, 200.0f});
 
         const ActorHandle CameraHandle = MainScene.Spawn("MainCamera");
@@ -140,10 +146,19 @@ namespace {
 
         const ActorHandle LightHandle = MainScene.Spawn("Light");
         Actor* LightActor             = MainScene.Get(LightHandle);
-        // A bit stronger than a neutral 1.0 so the monkey's specular
-        // highlights - not just the HDRI's own sun - cross the bloom
-        // threshold too.
-        LightActor->AddComponent<DirectionalLightComponent>()->SetIntensity(3.0f);
+        auto* Light                   = LightActor->AddComponent<DirectionalLightComponent>();
+        Light->SetIntensity(1.0f);
+        // The single-cascade shadow map is fitted to the camera's whole view
+        // frustum out to this distance, not to the monkey specifically - the
+        // engine default (40) is sized for a typical outdoor scene, but this
+        // demo's camera sits only ~4 units from a ~2-unit-wide subject, so
+        // most of that range bought nothing but coarser texels where it
+        // actually mattered: 2048 texels over the ~94-unit diameter that
+        // covers left the monkey barely 40-50 texels wide, blocky enough to
+        // read as jagged, shadow-map-texel-aligned edges that visibly didn't
+        // track the mesh's own smooth rotation. Tightened to roughly triple
+        // the effective resolution where this scene actually needs it.
+        Light->SetShadowDistance(15.0f);
         // Pitched down (a negative pitch tilts the unrotated -Z forward
         // toward -Y) and yawed around so the light travels toward the camera:
         // the floor is lit, and the monkey's shadow falls in front of it
@@ -154,27 +169,23 @@ namespace {
         XMStoreFloat4(&LightRotationOut, LightRotation);
         LightActor->SetRotation(LightRotationOut);
 
-        // An equirectangular .hdr environment - the engine-shipped ones live
-        // in Engine/Environment; Scripts/generate_test_hdri.py writes a small
-        // synthetic sky+sun one for testing. Also drawn as the scene's
-        // background (EnvironmentComponent::SetShowBackground to turn off).
         const ActorHandle EnvironmentHandle = MainScene.Spawn("Environment");
         Actor* EnvironmentActor             = MainScene.Get(EnvironmentHandle);
         auto* Environment                   = EnvironmentActor->AddComponent<EnvironmentComponent>();
-        Environment->SetMapAsset(ASSET("ibl/maps/sky_day.hdr"));
+        Environment->SetMapAsset(ASSET("ibl/maps/sky_spring.hdr"));
 
-        // Bloom on defaults would be nearly invisible here - the HDRI's sun
-        // and the sky near it are the only things bright enough to cross the
-        // threshold. A slightly stronger sun and a lower threshold make it
-        // show without needing an artificially bright light.
-        const ActorHandle PostFxHandle       = MainScene.Spawn("PostProcess");
-        Actor* PostFxActor                   = MainScene.Get(PostFxHandle);
-        auto* PostFx                         = PostFxActor->AddComponent<PostProcessComponent>();
-        PostFx->GetSettings().BloomThreshold = 0.8f;
-        PostFx->GetSettings().BloomIntensity = 0.12f;
-        PostFx->GetSettings().BloomEnabled   = false;
+        const ActorHandle PostFxHandle = MainScene.Spawn("PostProcess");
+        Actor* PostFxActor             = MainScene.Get(PostFxHandle);
+        auto* PostFx                   = PostFxActor->AddComponent<PostProcessComponent>();
 
-        const auto ScenePath = Generated::GameSettings().ContentDirs[0] / "scenes" / "main.xscene";
+        auto& FxSettings          = PostFx->GetSettings();
+        FxSettings.BloomThreshold = 0.8f;
+        FxSettings.BloomIntensity = 0.075f;
+        FxSettings.BloomEnabled   = true;
+
+        FxSettings.AutoExposureEnabled = true;
+
+        const auto ScenePath = Generated::GameSettings().ContentDirs.front() / "scenes" / "main.xscene";
         SceneSerializer::SaveToFile(MainScene, ScenePath);
 
         LOG_INFO("Scene saved: %s", ScenePath.string().c_str());
@@ -182,14 +193,16 @@ namespace {
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
-    // Must run before BuildMountConfig: the .exe lives in Bin64/ now, one
-    // level below Config/Data1.xpak/Engine/, and every relative path in the
-    // engine is still written as if the .exe were where it used to be. See
-    // FixContentWorkingDirectory's own comment for the full explanation.
     Xen::FixContentWorkingDirectory();
 
     try {
-        XenPBRDemo Game("Demo.PBR", BuildMountConfig(Generated::GameSettings(), __argc, __argv));
+        Xen::ProcessCommandLineArguments Arguments {};
+        if (!Xen::GetCommandLineArguments(Arguments)) {
+            LOG_ERR("Failed to get command line arguments");
+            return 1;
+        }
+
+        XenPBRDemo Game("Demo.PBR", BuildMountConfig(Generated::GameSettings(), Arguments.Argc, Arguments.Argv));
 
 #ifndef NDEBUG
         BuildScene(Game.GetContext());

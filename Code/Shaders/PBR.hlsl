@@ -164,17 +164,52 @@ float3 ApplyNormalMap(float3 TangentSpaceNormal, float3 WorldNormal, float3 Worl
     return normalize(mul(TangentSpaceNormal, TBN));
 }
 
+// Jorge Jimenez's interleaved gradient noise ("Next Generation Post
+// Processing in Call of Duty: Advanced Warfare") - a cheap, no-texture
+// per-pixel value in [0, 1) with no visible large-scale structure of its
+// own, unlike a low-frequency hash. Used below to rotate the PCF kernel a
+// different amount per screen pixel.
+float InterleavedGradientNoise(float2 ScreenPos) {
+    const float3 Magic = float3(0.06711056, 0.00583715, 52.9829189);
+    return frac(Magic.z * frac(dot(ScreenPos, Magic.xy)));
+}
+
 // Fraction of the directional light reaching this point: 1 = fully lit,
 // 0 = fully shadowed. The comparison sampler does the depth test and a 2x2
-// bilinear blend per tap; the 3x3 taps around it (spaced ShadowParams.w texels
-// apart) widen that into a soft edge.
+// bilinear blend per tap; the 5x5 taps around it (spaced ShadowParams.w
+// texels apart) widen that into a soft edge. 5x5 (25 taps), not the more
+// usual 3x3 (9): 9 discrete comparison outcomes averaged together is only a
+// 1/9-of-full-range staircase, which on an otherwise-smooth flat receiver
+// (a floor, not a curved caster) is fine detail enough to read as grainy
+// "acne" once anything darkens the shadow enough to actually look at it
+// closely - which DirectionalLightComponent::ShadowAmbientDarkening does on
+// purpose. 25 steps reads as a smooth gradient at the same cost this map
+// already affords (one small, dedicated depth target).
+//
+// The 5x5 grid is also rotated by a per-pixel angle (ScreenPos, via
+// InterleavedGradientNoise) rather than kept axis-aligned: a large flat
+// receiver viewed at a grazing/receding angle massively minifies the shadow
+// map (many texels per screen pixel, especially toward the horizon), and
+// this map has no mip chain to prefilter that the way a color texture would
+// (see MipGenerator) - sampling a small, FIXED, axis-aligned tap pattern
+// against that undersampled, regular texel grid is classic minification
+// aliasing, and on a regular grid that shows up as moire: coherent rippled
+// "rings" across the whole receiver, not random noise, and not localized to
+// any caster's shadow. Rotating the kernel per pixel doesn't add
+// information - it's still only 25 taps - but it turns that coherent,
+// eye-catching interference pattern into far-less-objectionable per-pixel
+// grain, the standard mitigation for this class of problem (and exactly
+// what would let a future TAA pass average away cleanly, unlike a fixed
+// grid). Properly solving the underlying aliasing - a receiver-adaptive
+// kernel radius, or real shadow-map filtering - is part of the broader
+// anti-aliasing work, not this fix.
 //
 // Acne is fought at the receiver, in two ways: the lookup point is pushed out
 // along the geometric normal (more for surfaces at a grazing angle to the
 // light, where a texel's depth varies most), and the compared depth is pulled
 // slightly toward the light. Both are sized in shadow-map texels by
 // MeshRenderer, so they stay right as the map's coverage or size changes.
-float ShadowVisibility(float3 WorldPosition, float3 GeometricNormal, float NdotL) {
+float ShadowVisibility(float3 WorldPosition, float3 GeometricNormal, float NdotL, float2 ScreenPos) {
     if (ShadowParams.x < 0.5 || NdotL <= 0.0) return 1.0;
 
     const float SinTheta = sqrt(saturate(1.0 - NdotL * NdotL));
@@ -189,15 +224,36 @@ float ShadowVisibility(float3 WorldPosition, float3 GeometricNormal, float NdotL
     if (any(UV < 0.0) || any(UV > 1.0) || Ndc.z > 1.0) return 1.0;
 
     const float Depth = Ndc.z - ShadowParams.y;
-    const float2 Step = ShadowParams2.x * ShadowParams.w;
+
+    // How much shadow-map UV this one screen pixel actually covers - large
+    // and grazing/distant on a big flat receiver (the far end of a ground
+    // plane), tiny dead ahead near the camera. A fixed tap spacing (just
+    // ShadowParams.w texels) undersamples the map wherever this exceeds it:
+    // neighboring screen pixels then land on wildly different combinations
+    // of the same handful of underlying texels, which is exactly the
+    // coherent large-wavelength ripple this fixes (confirmed by rotating the
+    // kernel - see InterleavedGradientNoise below - making no visible
+    // difference to it: that only redistributes samples *within* a fixed
+    // small neighborhood, and the aliasing here comes from the neighborhood
+    // itself being too small, not from which few texels inside it get read).
+    // Never smaller than the plain texel-spaced kernel, so this only ever
+    // widens it, never sharpens a well-sampled area.
+    const float2 PixelFootprint = fwidth(UV);
+    const float2 Step = max(ShadowParams2.x * ShadowParams.w, PixelFootprint * 0.5);
+
+    const float Angle = InterleavedGradientNoise(ScreenPos) * (2.0 * PI);
+    float SinA, CosA;
+    sincos(Angle, SinA, CosA);
 
     float Sum = 0.0;
-    [unroll] for (int Y = -1; Y <= 1; ++Y) {
-        [unroll] for (int X = -1; X <= 1; ++X) {
-            Sum += ShadowMap.SampleCmpLevelZero(ShadowSampler, UV + float2(X, Y) * Step, Depth);
+    [unroll] for (int Y = -2; Y <= 2; ++Y) {
+        [unroll] for (int X = -2; X <= 2; ++X) {
+            const float2 Tap = float2(X, Y);
+            const float2 Rotated = float2(Tap.x * CosA - Tap.y * SinA, Tap.x * SinA + Tap.y * CosA);
+            Sum += ShadowMap.SampleCmpLevelZero(ShadowSampler, UV + Rotated * Step, Depth);
         }
     }
-    const float Visibility = Sum / 9.0;
+    const float Visibility = Sum / 25.0;
 
     // Fade out over the last stretch of the shadow distance rather than
     // cutting off at the edge of the map.
@@ -246,7 +302,7 @@ float4 PSMain(PSInput In) : SV_Target {
     // Shadowing uses the interpolated geometric normal, not the normal-mapped
     // one: acne is a property of the surface's actual slope.
     const float3 GeometricNormal = normalize(In.WorldNormal);
-    const float Shadow = ShadowVisibility(In.WorldPosition, GeometricNormal, dot(GeometricNormal, L));
+    const float Shadow = ShadowVisibility(In.WorldPosition, GeometricNormal, dot(GeometricNormal, L), In.Position.xy);
     const float3 DirectLight = (KDiffuse * Albedo / PI + Specular) * Radiance * NdotL * Shadow;
 
     // Image-based lighting, split-sum style: the environment maps supply the
@@ -264,8 +320,19 @@ float4 PSMain(PSInput In) : SV_Target {
     const float3 FIndirect = FresnelSchlickRoughness(NdotV, F0, Roughness);
     const float3 KDiffuseIndirect = (1.0 - FIndirect) * (1.0 - Metallic);
 
+    // A cheap, deliberately non-physical "contact darkening": this light's
+    // shadow ray only ever tells us about direct light, not the sky's, so
+    // strictly this shouldn't touch ambient at all - but a single low-res
+    // dynamic shadow map is already a crude stand-in for real occlusion/GI,
+    // and without this a strong HDRI's ambient alone can keep a fully
+    // shadowed diffuse surface nearly as bright as a lit one (see
+    // DirectionalLightComponent::ShadowAmbientDarkening). Never applied to
+    // specular below - a reflective surface legitimately keeps showing the
+    // environment regardless of whether the sun itself is occluded here.
+    const float AmbientShadow = lerp(1.0 - ShadowParams2.w, 1.0, Shadow);
+
     const float3 Irradiance = IrradianceMap.SampleLevel(IrradianceSampler, N, 0).rgb;
-    const float3 DiffuseIBL = Irradiance * Albedo * KDiffuseIndirect * AO;
+    const float3 DiffuseIBL = Irradiance * Albedo * KDiffuseIndirect * AO * AmbientShadow;
 
     uint EnvWidth, EnvHeight, EnvLevels;
     EnvironmentMap.GetDimensions(0, EnvWidth, EnvHeight, EnvLevels);

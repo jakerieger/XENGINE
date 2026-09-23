@@ -42,18 +42,18 @@
               1.0,
               1.0
             ],
-            "Metallic": 0.10000000149011612,
-            "Roughness": 0.800000011920929,
-            "AmbientOcclusion": 0.0,
+            "Metallic": 1.0,
+            "Roughness": 0.5,
+            "AmbientOcclusion": 1.0,
             "Emissive": [
               0.0,
               0.0,
               0.0
             ],
-            "AlbedoMap": 8517132713534949635,
-            "NormalMap": 0,
-            "RoughnessMap": 0,
-            "MetallicMap": 0,
+            "AlbedoMap": 270406709330068935,
+            "NormalMap": 17976109761329214697,
+            "RoughnessMap": 14857189857277308910,
+            "MetallicMap": 4546434162801252056,
             "AmbientOcclusionMap": 0,
             "EmissiveMap": 0
           }
@@ -95,28 +95,28 @@
         {
           "Type": "MeshComponent",
           "Properties": {
-            "MeshAsset": 7277390039894820148
+            "MeshAsset": 5454276583223598648
           }
         },
         {
           "Type": "PBRMaterialComponent",
           "Properties": {
             "Albedo": [
-              0.550000011920929,
-              0.550000011920929,
-              0.5799999833106995
+              1.0,
+              1.0,
+              1.0
             ],
-            "Metallic": 0.0,
-            "Roughness": 0.8500000238418579,
+            "Metallic": 0.10000000149011612,
+            "Roughness": 0.5,
             "AmbientOcclusion": 1.0,
             "Emissive": [
               0.0,
               0.0,
               0.0
             ],
-            "AlbedoMap": 0,
-            "NormalMap": 0,
-            "RoughnessMap": 0,
+            "AlbedoMap": 10026088232644811230,
+            "NormalMap": 8807296700188146216,
+            "RoughnessMap": 12810263040750370745,
             "MetallicMap": 0,
             "AmbientOcclusionMap": 0,
             "EmissiveMap": 0
@@ -198,13 +198,14 @@
               1.0,
               1.0
             ],
-            "Intensity": 3.0,
+            "Intensity": 1.0,
             "CastShadows": true,
-            "ShadowDistance": 40.0,
+            "ShadowDistance": 15.0,
             "ShadowResolution": 2048,
-            "ShadowBias": 1.0,
-            "ShadowNormalBias": 1.5,
-            "ShadowSoftness": 1.0
+            "ShadowBias": 4.0,
+            "ShadowNormalBias": 3.0,
+            "ShadowSoftness": 1.0,
+            "ShadowAmbientDarkening": 0.6000000238418579
           }
         }
       ]
@@ -238,7 +239,7 @@
         {
           "Type": "EnvironmentComponent",
           "Properties": {
-            "Map": 10438713344753301843,
+            "Map": 2955621908222585242,
             "ShowBackground": true
           }
         }
@@ -274,10 +275,16 @@
           "Type": "PostProcessComponent",
           "Properties": {
             "Exposure": 1.0,
-            "BloomEnabled": false,
+            "AutoExposureEnabled": true,
+            "AutoExposureKey": 0.18000000715255737,
+            "AutoExposureMinLuminance": 0.029999999329447746,
+            "AutoExposureMaxLuminance": 16.0,
+            "AutoExposureAdaptUpSeconds": 0.30000001192092896,
+            "AutoExposureAdaptDownSeconds": 1.0,
+            "BloomEnabled": true,
             "BloomThreshold": 0.800000011920929,
             "BloomSoftKnee": 0.5,
-            "BloomIntensity": 0.11999999731779099
+            "BloomIntensity": 0.07500000298023224
           }
         }
       ]

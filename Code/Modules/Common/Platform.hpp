@@ -46,4 +46,16 @@ namespace Xen {
     constexpr f64 ToGB(const unsigned long long N) {
         return static_cast<f64>(N) / 1024.0 / 1024.0 / 1024.0;
     }
+
+    struct ProcessCommandLineArguments {
+        int Argc;
+        char** Argv;
+    };
+
+    inline bool GetCommandLineArguments(ProcessCommandLineArguments& Arguments) noexcept {
+        if (!__p___argc() || !__p___argv()) return false;
+        Arguments.Argc = *__p___argc();
+        Arguments.Argv = *__p___argv();
+        return true;
+    }
 }  // namespace Xen
