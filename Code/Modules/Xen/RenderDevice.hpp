@@ -8,6 +8,7 @@
 #include "RHI.hpp"
 
 #include <memory>
+#include <vector>
 
 namespace Xen::RHI {
     enum class Backend : u8 {
@@ -58,6 +59,20 @@ namespace Xen::RHI {
         // Only tallied for TriangleList/TriangleStrip draws - point/line
         // topologies leave this untouched, since they draw no triangles.
         u32 TriangleCount {0};
+    };
+
+    /// @brief One named GPU timing scope - a CommandBuffer::PushDebugGroup/
+    /// PopDebugGroup pair, measured with GPU timestamp queries rather than a
+    /// CPU clock (the two can diverge a lot: the CPU may have moved on to
+    /// recording next frame's commands long before the GPU actually executes
+    /// this one). See IRenderDevice::GetLastFrameGpuTimings.
+    struct GpuScopeTiming {
+        char Name[32] {};
+        f32 Milliseconds {0.0f};
+        // Nesting depth (0 = a top-level scope) - PushDebugGroup calls can
+        // nest (e.g. "SSAO" inside "Meshes"), purely for a debug UI to
+        // indent by; this backend doesn't otherwise care about nesting.
+        u32 Depth {0};
     };
 
     /// @brief Snapshot of GPU/RAM memory usage, queried on demand (not
@@ -179,6 +194,15 @@ namespace Xen::RHI {
         }
 
         NODISCARD virtual const FrameStats& GetLastFrameStats() const = 0;
+
+        /// @brief Every CommandBuffer::PushDebugGroup/PopDebugGroup scope's
+        /// GPU duration, from the most recently *resolved* frame - not
+        /// necessarily last frame: a GPU timestamp query can only be read
+        /// back once the GPU has actually finished that work, which a
+        /// backend may only guarantee a few frames after it was recorded
+        /// (the same latency IRenderDevice::BeginFrame's own frame-in-flight
+        /// wait already has). Empty before any frame has fully resolved.
+        NODISCARD virtual const std::vector<GpuScopeTiming>& GetLastFrameGpuTimings() const = 0;
 
         /// @brief Queried, not tracked per-frame - see MemoryStats.
         NODISCARD virtual MemoryStats GetMemoryStats() const = 0;

@@ -5,6 +5,9 @@ xen_add_game_executable(Demo.PBR
         Runtime/main.cpp
         Runtime/Source/RotatingComponent.cpp
         Runtime/Source/RotatingComponent.hpp
+        Runtime/Source/PbrDemo.cpp
+        Runtime/Source/PbrDemo.hpp
+        Runtime/Source/SceneBuilder.hpp
 )
 xen_configure_game(Demo.PBR
         PAK_FILENAME "Data1.xpak"

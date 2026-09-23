@@ -194,7 +194,12 @@ namespace Xen {
                                     const u32 Face,
                                     const RHI::PipelineHandle Pipeline,
                                     const BakeParams& Params) {
-            RHI::RenderPassDesc Pass = RHI::RenderPassDesc::ColorTarget(Target, 0.0f, 0.0f, 0.0f, 1.0f);
+            // Clear value is moot - every texel gets fully overwritten by the
+            // bake shader - so this takes ColorTarget's default (matching
+            // Target's own TextureDesc::OptimizedClear) rather than the
+            // arbitrary alpha=1 it used to pass, which only cost a slower
+            // clear path for no benefit (D3D12 debug-layer warning 820).
+            RHI::RenderPassDesc Pass = RHI::RenderPassDesc::ColorTarget(Target);
             Pass.ColorAttachments[0].MipLevel   = Mip;
             Pass.ColorAttachments[0].ArrayLayer = Face;  // a cube's slices are its faces
             Pass.DebugName                      = "Environment bake";

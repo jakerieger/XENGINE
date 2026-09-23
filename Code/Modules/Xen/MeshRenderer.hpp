@@ -9,11 +9,15 @@
 #include <Common/Math.hpp>
 #include <Common/XenCommon.hpp>
 
+#include "ActorHandle.hpp"
 #include "EnvironmentBaker.hpp"
 #include "PostProcess.hpp"
 #include "RenderDevice.hpp"
 #include "SSAO.hpp"
+#include "TAA.hpp"
 #include "Viewport.hpp"
+
+#include <unordered_map>
 
 namespace Xen {
     namespace PAK {
@@ -192,6 +196,27 @@ namespace Xen {
         // rather than SSAO owning a redundant fallback of its own.
         SSAO _SSAO;
 
+        // Temporal anti-aliasing (see TAA.hpp) - resolved after the main
+        // pass, before PostProcess, since it needs the linear-HDR scene
+        // color and motion vectors PostProcess doesn't otherwise touch.
+        TAA _TAA;
+
+        // Last frame's UNJITTERED view-projection (see FrameData.hlsli) -
+        // this frame's Frame.PrevViewProjection. _HasPrevViewProjection
+        // gates the very first frame (and any frame right after, since
+        // there's nothing meaningful to have "moved" from yet).
+        Float4x4 _PrevViewProjection {IdentityFloat4x4};
+        bool _HasPrevViewProjection {false};
+
+        // Last frame's per-actor Model matrix, keyed by the stable
+        // ActorHandle (not the Actor* - see ActorHandle.hpp) - this frame's
+        // ObjectConstants.PrevModel, so a moving/rotating actor gets a
+        // correct TAA motion vector, not just camera motion. An actor
+        // that's new this frame (no entry yet) falls back to its own
+        // current Model, i.e. "assumed stationary" for exactly one frame -
+        // a harmless, unnoticeable approximation next to an actual pop-in.
+        std::unordered_map<ActorHandle, Float4x4> _PrevModelMatrices;
+
         // The scene's environment, baked lazily the first frame Render() sees
         // one (see ResolveEnvironment): _BakedSource is the raw TextureCache
         // handle the two baked maps were made from, so a different (or
@@ -217,9 +242,13 @@ namespace Xen {
         // The scene render's own target: linear HDR (RGBA16F), sized to
         // match Target's color target and recreated if that changes (see
         // EnsureSceneColorTarget). Alpha marks "this pass wrote here" (1) vs
-        // untouched (0) - see PostProcess.hpp.
+        // untouched (0) - see PostProcess.hpp. _MotionVectorsTarget (RG16F)
+        // is the main pass's second render target (MRT) alongside it - see
+        // PBR.hlsl/Sky.hlsl's PSOutput - always the same size, so one Ensure
+        // call manages both.
         void EnsureSceneColorTarget(u32 Width, u32 Height);
         RHI::TextureHandle _SceneColorTarget {};
+        RHI::TextureHandle _MotionVectorsTarget {};
         u32 _SceneColorWidth {0};
         u32 _SceneColorHeight {0};
 

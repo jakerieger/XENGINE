@@ -7,7 +7,7 @@
 #include <Common/XenCommon.hpp>
 
 #include "Actor.hpp"
-#include "CameraComponent.hpp"
+#include "Components/CameraComponent.hpp"
 #include "EngineContext.hpp"
 
 #include <functional>

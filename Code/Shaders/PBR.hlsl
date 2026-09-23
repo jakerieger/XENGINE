@@ -14,6 +14,7 @@
 
 cbuffer ObjectData : register(XEN_OBJECT_REGISTER) {
     row_major float4x4 Model;
+    row_major float4x4 PrevModel;  // last frame's Model - TAA motion vectors for a moving/rotating actor (see PSOutput)
 };
 
 cbuffer MaterialData : register(XEN_MATERIAL_REGISTER) {
@@ -76,6 +77,12 @@ struct PSInput {
     float3 WorldNormal   : TEXCOORD1;
     float3 WorldTangent  : TEXCOORD2;
     float2 UV            : TEXCOORD3;
+    // TAA motion vectors (see PSOutput below) - both UNJITTERED, so the
+    // per-frame sub-pixel jitter that makes TAA work doesn't itself read as
+    // motion. PrevClip uses PrevModel, not Model, so a moving or rotating
+    // actor gets a correct velocity too, not just camera motion.
+    float4 CurrClip       : TEXCOORD4;
+    float4 PrevClip       : TEXCOORD5;
 };
 
 PSInput VSMain(VSInput In) {
@@ -93,7 +100,11 @@ PSInput VSMain(VSInput In) {
     // needs to see the real (possibly zero) vector, not an already-NaN one.
     Out.WorldTangent = mul(In.Tangent, (float3x3)Model);
     Out.UV           = In.UV;
-    Out.Position     = mul(WorldPos, ViewProjection);
+    Out.Position     = mul(WorldPos, ViewProjection);  // JITTERED - the pixel grid this actually rasterizes to
+
+    Out.CurrClip = mul(WorldPos, UnjitteredViewProjection);
+    const float4 PrevWorldPos = mul(float4(In.Position, 1.0), PrevModel);
+    Out.PrevClip = mul(PrevWorldPos, PrevViewProjection);
 
     return Out;
 }
@@ -268,7 +279,16 @@ float ShadowVisibility(float3 WorldPosition, float3 GeometricNormal, float NdotL
     return lerp(1.0, Visibility, Fade);
 }
 
-float4 PSMain(PSInput In) : SV_Target {
+struct PSOutput {
+    float4 Color    : SV_Target0;
+    // Screen-space UV displacement since last frame, for TAA's resolve pass
+    // to reproject history by (see TAA.hpp/TAAResolve.hlsl) - NDC delta
+    // halved (NDC spans [-1,1], UV spans [0,1]) with Y flipped (NDC Y is up,
+    // UV/texel Y is down).
+    float2 Velocity : SV_Target1;
+};
+
+PSOutput PSMain(PSInput In) {
     // Every texture sample MULTIPLIES its matching constant factor (never
     // replaces it) - see MaterialBindings.hlsli. A material with no map
     // assigned is bound to a white (or flat-normal) placeholder by
@@ -363,11 +383,19 @@ float4 PSMain(PSInput In) : SV_Target {
 
     float3 Color = Ambient + DirectLight + Emissive;
 
+    PSOutput Out;
+
     // Linear HDR, untonemapped: MeshRenderer renders into an offscreen
     // RGBA16F target, and the post-process composite pass (exposure, bloom,
     // ACES + gamma - see Tonemap.hlsli) is what maps it down to the swap
     // chain's LDR format. Alpha marks "a pixel this pass actually wrote" -
     // the composite blends over whatever was in the target before by it, so
     // it must be 1 here even though nothing downstream reads Color's alpha.
-    return float4(Color, 1.0);
+    Out.Color = float4(Color, 1.0);
+
+    const float2 CurrNdc = In.CurrClip.xy / In.CurrClip.w;
+    const float2 PrevNdc = In.PrevClip.xy / In.PrevClip.w;
+    Out.Velocity = (CurrNdc - PrevNdc) * float2(0.5, -0.5);
+
+    return Out;
 }

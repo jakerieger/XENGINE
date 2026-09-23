@@ -4,13 +4,14 @@
 
 #include "MeshRenderer.hpp"
 #include "MaterialBindings.hpp"
-#include "MeshComponent.hpp"
-#include "PBRMaterialComponent.hpp"
-#include "DirectionalLightComponent.hpp"
-#include "EnvironmentComponent.hpp"
-#include "PostProcessComponent.hpp"
-#include "AmbientOcclusionComponent.hpp"
-#include "CameraComponent.hpp"
+#include "Components/MeshComponent.hpp"
+#include "Components/PBRMaterialComponent.hpp"
+#include "Components/DirectionalLightComponent.hpp"
+#include "Components/EnvironmentComponent.hpp"
+#include "Components/PostProcessComponent.hpp"
+#include "Components/AmbientOcclusionComponent.hpp"
+#include "Components/AntiAliasingComponent.hpp"
+#include "Components/CameraComponent.hpp"
 #include "Actor.hpp"
 #include "Scene.hpp"
 
@@ -26,8 +27,11 @@ namespace Xen {
     namespace {
         // Matches Code/Shaders/Include/FrameData.hlsli exactly.
         struct FrameConstants {
-            Float4x4 ViewProjection;
-            Float4x4 InvViewProjection;
+            Float4x4 ViewProjection;              // JITTERED (see TAA.hpp) - what every pass rasterizes with
+            Float4x4 InvViewProjection;            // inverse of the JITTERED matrix - Sky's world-space view ray
+            Float4x4 UnjitteredViewProjection;     // this frame, no jitter - TAA's "current" motion-vector clip pos
+            Float4x4 InvUnjitteredViewProjection;  // inverse of the above - Sky's motion-vector ray reconstruction
+            Float4x4 PrevViewProjection;           // last frame, no jitter - TAA's "previous" motion-vector clip pos
             Float4 CameraPositionAndPad;
             Float4 LightDirectionAndPad;
             Float4 LightColorAndIntensity;
@@ -39,6 +43,7 @@ namespace Xen {
 
         struct ObjectConstants {
             Float4x4 Model;
+            Float4x4 PrevModel;  // last frame's Model - TAA motion vectors for a moving/rotating actor
         };
 
         struct MaterialConstants {
@@ -144,8 +149,11 @@ namespace Xen {
         // against its own already-written value has to pass, not fail as
         // "not strictly closer than itself" would under Less.
         PipelineDesc.DepthStencil.DepthCompare = RHI::CompareOp::LessEqual;
-        PipelineDesc.ColorAttachmentCount          = 1;
+        // Color plus TAA motion vectors (MRT - see PBR.hlsl's PSOutput,
+        // TAA.hpp): both written by the same draw, same render pass.
+        PipelineDesc.ColorAttachmentCount          = 2;
         PipelineDesc.ColorFormats[0]               = SceneColorFormat;
+        PipelineDesc.ColorFormats[1]               = RHI::Format::RG16_FLOAT;
         PipelineDesc.DepthFormat                   = TargetFormats.GetDepthFormat();
         PipelineDesc.DebugName                     = "XEN.Shaders.PBR";
 
@@ -190,8 +198,9 @@ namespace Xen {
                     SkyDesc.DepthStencil.DepthTestEnable    = true;
                     SkyDesc.DepthStencil.DepthWriteEnable   = false;
                     SkyDesc.DepthStencil.DepthCompare       = RHI::CompareOp::LessEqual;
-                    SkyDesc.ColorAttachmentCount            = 1;
+                    SkyDesc.ColorAttachmentCount            = 2;  // color + motion vectors (MRT) - same as _Pipeline
                     SkyDesc.ColorFormats[0]                 = SceneColorFormat;
+                    SkyDesc.ColorFormats[1]                 = RHI::Format::RG16_FLOAT;
                     SkyDesc.DepthFormat                     = TargetFormats.GetDepthFormat();
                     SkyDesc.DebugName                       = "XEN.Shaders.Sky";
                     _SkyPipeline                            = Device.CreateGraphicsPipeline(SkyDesc);
@@ -253,6 +262,12 @@ namespace Xen {
         // occlusion (Render binds _WhiteTexture into the SSAO slot instead
         // - see MeshRenderer.hpp).
         _SSAO.Initialize(Device, Assets);
+
+        // Not fatal: without it a scene with TAA picked just falls back to
+        // an unresolved (and un-jittered - see Render's UseTaa check)
+        // scene color, same as if AntiAliasingComponent::Technique were
+        // None.
+        _TAA.Initialize(Device, Assets, SceneColorFormat);
 
         // Not fatal: without the baker a scene's environment can't be
         // prefiltered, so it just keeps the placeholder sky (Render checks
@@ -559,7 +574,11 @@ namespace Xen {
         _Baker.Shutdown();
         _PostProcess.Shutdown();
         _SSAO.Shutdown();
+        _TAA.Shutdown();
         if (_SceneColorTarget.IsValid()) _Device->DestroyTexture(_SceneColorTarget);
+        if (_MotionVectorsTarget.IsValid()) _Device->DestroyTexture(_MotionVectorsTarget);
+        _PrevModelMatrices.clear();
+        _HasPrevViewProjection = false;
 
         if (_ShadowPipeline.IsValid()) _Device->DestroyPipeline(_ShadowPipeline);
         if (_DepthPrepassPipeline.IsValid()) _Device->DestroyPipeline(_DepthPrepassPipeline);
@@ -596,6 +615,7 @@ namespace Xen {
         _DefaultEnvironmentMap = {};
         _BrdfLUT               = {};
         _SceneColorTarget      = {};
+        _MotionVectorsTarget   = {};
         _SceneColorWidth       = 0;
         _SceneColorHeight      = 0;
         _Device                = nullptr;
@@ -605,6 +625,7 @@ namespace Xen {
         if (_SceneColorTarget.IsValid() && _SceneColorWidth == Width && _SceneColorHeight == Height) return;
 
         if (_SceneColorTarget.IsValid()) _Device->DestroyTexture(_SceneColorTarget);
+        if (_MotionVectorsTarget.IsValid()) _Device->DestroyTexture(_MotionVectorsTarget);
 
         RHI::TextureDesc Desc;
         Desc.Width     = Width;
@@ -614,6 +635,15 @@ namespace Xen {
         Desc.DebugName = "XEN.PBR.SceneColor";
 
         _SceneColorTarget = _Device->CreateTexture(Desc);
+
+        // TAA motion vectors (see TAA.hpp, PBR.hlsl/Sky.hlsl's PSOutput) -
+        // the main pass's second render target (MRT), same size as color.
+        // RG16F: a screen-space UV displacement is a tiny 2-component value,
+        // no need for RGBA32F precision.
+        Desc.Fmt              = RHI::Format::RG16_FLOAT;
+        Desc.DebugName        = "XEN.PBR.MotionVectors";
+        _MotionVectorsTarget  = _Device->CreateTexture(Desc);
+
         _SceneColorWidth  = Width;
         _SceneColorHeight = Height;
     }
@@ -886,10 +916,38 @@ namespace Xen {
         // back as 0, not whatever the last frame's render left behind.
         RHI::RenderPassDesc Pass = RHI::RenderPassDesc::ColorAndDepthTarget(
           _SceneColorTarget, Target.GetDepthTarget(), 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
-        Pass.DebugName                = "Meshes";
+        Pass.DebugName = "Meshes";
+
+        // TAA motion vectors (see PBR.hlsl/Sky.hlsl's PSOutput), written
+        // alongside color as this pass's second render target (MRT) - see
+        // EnsureSceneColorTarget. Cleared to zero velocity every frame, same
+        // reasoning as color's own alpha clear: a pixel nothing draws into
+        // should read back as "didn't move", not whatever the last frame's
+        // render left behind.
+        Pass.ColorAttachmentCount          = 2;
+        Pass.ColorAttachments[1].Texture   = _MotionVectorsTarget;
+        Pass.ColorAttachments[1].Load      = RHI::LoadOp::Clear;
+        Pass.ColorAttachments[1].Clear     = RHI::ClearValue {{0.0f, 0.0f, 0.0f, 0.0f}, 1.0f, 0};
+
         MeshCache* Meshes             = S.GetContext().Meshes;
         const CameraComponent* Camera = S.GetMainCamera();
         const bool CanDraw            = Meshes && Camera;
+
+        // Settings come from the scene's first AntiAliasingComponent, the
+        // same "first one found" rule as PostProcess/AO; a scene with none
+        // uses Technique's own default (TAA). Resolved before Frame is
+        // built: whether to jitter the projection at all has to be decided
+        // before ViewProjection is.
+        AntiAliasingTechnique AaTechnique = AntiAliasingTechnique::TAA;
+        TAA::Settings TaaSettings;
+        const std::vector<Actor*> AaActors = S.FindActorsWith<AntiAliasingComponent>();
+        if (!AaActors.empty()) {
+            if (const auto* AA = AaActors.front()->GetComponent<AntiAliasingComponent>()) {
+                AaTechnique = AA->GetTechnique();
+                TaaSettings = AA->GetTaaSettings();
+            }
+        }
+        const bool UseTaa = AaTechnique == AntiAliasingTechnique::TAA && TaaSettings.Enabled && _TAA.IsInitialized();
 
         // The frame constants and the shadow pass come first: the shadow map
         // is its own render pass, which has to be recorded before the main
@@ -897,13 +955,46 @@ namespace Xen {
         FrameConstants Frame {};
         ShadowState Shadow;
         if (CanDraw) {
-            Frame.ViewProjection = Camera->GetViewProjectionMatrix();
-            {
-                // For Sky.hlsl: unproject a pixel back to a world-space ray.
-                using namespace DirectX;
-                const XMMATRIX ViewProjection = XMLoadFloat4x4(&Frame.ViewProjection);
-                XMStoreFloat4x4(&Frame.InvViewProjection, XMMatrixInverse(nullptr, ViewProjection));
+            using namespace DirectX;
+
+            const Float4x4 ViewF = Camera->GetViewMatrix();
+            const Float4x4 ProjF = Camera->GetProjectionMatrix();
+            const XMMATRIX View  = XMLoadFloat4x4(&ViewF);
+            const XMMATRIX UnjitteredProj = XMLoadFloat4x4(&ProjF);
+
+            // TAA jitter: a sub-pixel offset added to the projection
+            // matrix's translation-of-x/y-by-z row (see TAA.hpp) - only
+            // when TAA will actually resolve it away; an unresolved
+            // jittered frame would just wobble. Applied to Proj alone,
+            // before composing with View: injecting it into the already-
+            // composed ViewProjection instead would scale it by world-space
+            // z rather than view-space z, which is wrong for any rotated
+            // camera (see TAA.hpp's own design notes on this).
+            XMMATRIX JitteredProj = UnjitteredProj;
+            if (UseTaa) {
+                const Float2 Jitter                       = _TAA.GetJitterOffset(Target.GetWidth(), Target.GetHeight());
+                XMFLOAT4X4 JitteredProjF;
+                XMStoreFloat4x4(&JitteredProjF, UnjitteredProj);
+                JitteredProjF.m[2][0] += Jitter.x;
+                JitteredProjF.m[2][1] += Jitter.y;
+                JitteredProj = XMLoadFloat4x4(&JitteredProjF);
             }
+
+            const XMMATRIX JitteredVP   = View * JitteredProj;
+            const XMMATRIX UnjitteredVP = View * UnjitteredProj;
+
+            XMStoreFloat4x4(&Frame.ViewProjection, JitteredVP);
+            XMStoreFloat4x4(&Frame.UnjitteredViewProjection, UnjitteredVP);
+            // For Sky.hlsl: unproject a pixel back to a world-space ray
+            // (JITTERED - matches every other pass this frame rasterizes
+            // with) and, separately, its own UNJITTERED motion-vector
+            // reconstruction (see PSOutput in Sky.hlsl).
+            XMStoreFloat4x4(&Frame.InvViewProjection, XMMatrixInverse(nullptr, JitteredVP));
+            XMStoreFloat4x4(&Frame.InvUnjitteredViewProjection, XMMatrixInverse(nullptr, UnjitteredVP));
+
+            Frame.PrevViewProjection = _HasPrevViewProjection ? _PrevViewProjection : Frame.UnjitteredViewProjection;
+            _PrevViewProjection      = Frame.UnjitteredViewProjection;
+            _HasPrevViewProjection   = true;
 
             const Float3 CamPos =
               Camera->GetOwner() ? Camera->GetOwner()->GetWorldTransform().Position : Float3 {0.0f, 0.0f, 0.0f};
@@ -1040,6 +1131,15 @@ namespace Xen {
                 ObjectConstants Object {};
                 Object.Model = A.GetWorldTransform().ToMatrix();
 
+                // TAA motion vectors (see PBR.hlsl's PSOutput): last frame's
+                // Model, keyed by this actor's stable handle - a new actor
+                // (no entry yet) falls back to its own current Model, i.e.
+                // "assumed stationary" for exactly one frame.
+                const ActorHandle Handle = A.GetHandle();
+                const auto PrevModelIt   = _PrevModelMatrices.find(Handle);
+                Object.PrevModel = PrevModelIt != _PrevModelMatrices.end() ? PrevModelIt->second : Object.Model;
+                _PrevModelMatrices[Handle] = Object.Model;
+
                 MaterialConstants Material {};
                 const Float3& Albedo       = MaterialComp->GetAlbedo();
                 Material.AlbedoAndMetallic = {Albedo.x, Albedo.y, Albedo.z, MaterialComp->GetMetallic()};
@@ -1084,6 +1184,18 @@ namespace Xen {
         _Commands.EndRenderPass();
         _Commands.PopDebugGroup();
 
+        // TAA resolve, before PostProcess: it needs the linear-HDR scene
+        // color and motion vectors just written above, and its own output
+        // (temporally antialiased, still linear HDR) is what PostProcess
+        // should tonemap instead - see TAA.hpp. A no-op (returns
+        // _SceneColorTarget unchanged) when TAA isn't this scene's chosen
+        // technique or its shader never loaded.
+        const RHI::TextureHandle ResolvedColor =
+          CanDraw && UseTaa
+            ? _TAA.Resolve(
+                _Commands, _SceneColorTarget, _MotionVectorsTarget, _SceneColorWidth, _SceneColorHeight, TaaSettings)
+            : _SceneColorTarget;
+
         // Settings come from the scene's first PostProcessComponent, the
         // same "first one found" rule as the light and environment; a scene
         // with none renders with PostProcess::Settings's defaults.
@@ -1095,7 +1207,7 @@ namespace Xen {
             }
         }
         _PostProcess.Render(_Commands,
-                           _SceneColorTarget,
+                           ResolvedColor,
                            _SceneColorWidth,
                            _SceneColorHeight,
                            Target.GetColorTarget(),

@@ -9,8 +9,17 @@
 #include "MaterialBindings.hlsli"
 
 cbuffer FrameData : register(XEN_FRAME_REGISTER) {
-    row_major float4x4 ViewProjection;
-    row_major float4x4 InvViewProjection;  // for reconstructing a world-space view ray per pixel (Sky.hlsl)
+    row_major float4x4 ViewProjection;     // JITTERED (see TAA.hpp) - what every pass actually rasterizes with
+    row_major float4x4 InvViewProjection;  // inverse of the JITTERED matrix above - Sky's world-space view ray
+
+    // TAA motion vectors (PBR.hlsl/Sky.hlsl's PSOutput.Velocity) need clip
+    // positions WITHOUT jitter - the sub-pixel wobble that makes TAA work
+    // must not itself register as motion, or every pixel would "move" a
+    // little every frame even when nothing actually does.
+    row_major float4x4 UnjitteredViewProjection;     // this frame, no jitter - the "current" clip position
+    row_major float4x4 InvUnjitteredViewProjection;  // inverse of the above - Sky's motion-vector ray reconstruction
+    row_major float4x4 PrevViewProjection;           // last frame, no jitter - the "previous" clip position
+
     float4 CameraPositionAndPad;           // xyz = CameraPosition
     float4 LightDirectionAndPad;           // xyz = LightDirection (points FROM the light TOWARD the surface)
     float4 LightColorAndIntensity;         // xyz = LightColor, w = LightIntensity

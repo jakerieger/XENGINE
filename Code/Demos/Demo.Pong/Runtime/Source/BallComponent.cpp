@@ -10,7 +10,7 @@
 #include "PlayerComponent.hpp"
 
 #include <Xen/Scene.hpp>
-#include <Xen/SpriteComponent.hpp>
+#include <Xen/Components/SpriteComponent.hpp>
 
 #include <algorithm>
 

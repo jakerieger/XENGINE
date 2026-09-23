@@ -240,6 +240,51 @@ namespace Xen::RHI::D3D12Backend {
         AllocatorDesc.pAdapter = Adapter.Get();
         if (FAILED(D3D12MA::CreateAllocator(&AllocatorDesc, &_Allocator))) return false;
 
+        // GPU timing (see GetLastFrameGpuTimings) - not fatal: a failure
+        // here just leaves _TimestampHeap null, and PushDebugGroup/
+        // PopDebugGroup's executors already check that before recording
+        // anything, so the engine runs exactly as it did with no timing at
+        // all.
+        {
+            D3D12_QUERY_HEAP_DESC TimestampHeapDesc {};
+            TimestampHeapDesc.Type  = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
+            TimestampHeapDesc.Count = MaxGpuTimestamps;
+
+            if (FAILED(_Device->CreateQueryHeap(&TimestampHeapDesc, IID_PPV_ARGS(&_TimestampHeap)))) {
+                LOG_WARN("failed to create GPU timestamp query heap - per-pass GPU timing will be unavailable");
+            } else if (FAILED(_Queue->GetTimestampFrequency(&_TimestampFrequency)) || _TimestampFrequency == 0) {
+                LOG_WARN("GetTimestampFrequency failed - per-pass GPU timing will be unavailable");
+                _TimestampHeap.Reset();
+            } else {
+                D3D12MA::ALLOCATION_DESC ReadbackAllocDesc {};
+                ReadbackAllocDesc.HeapType = D3D12_HEAP_TYPE_READBACK;
+
+                D3D12_RESOURCE_DESC ReadbackDesc {};
+                ReadbackDesc.Dimension        = D3D12_RESOURCE_DIMENSION_BUFFER;
+                ReadbackDesc.Width            = CAST<UINT64>(MaxGpuTimestamps) * sizeof(u64);
+                ReadbackDesc.Height           = 1;
+                ReadbackDesc.DepthOrArraySize = 1;
+                ReadbackDesc.MipLevels        = 1;
+                ReadbackDesc.SampleDesc.Count = 1;
+                ReadbackDesc.Layout           = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+                for (u32 i = 0; i < MaxFramesInFlight; ++i) {
+                    ComPtr<D3D12MA::Allocation> ReadbackAlloc;
+                    if (FAILED(_Allocator->CreateResource(&ReadbackAllocDesc,
+                                                          &ReadbackDesc,
+                                                          D3D12_RESOURCE_STATE_COPY_DEST,
+                                                          nullptr,
+                                                          &ReadbackAlloc,
+                                                          IID_PPV_ARGS(&_TimestampReadback[i])))) {
+                        LOG_WARN("failed to create a GPU timestamp readback buffer - per-pass GPU timing will be "
+                                 "unavailable");
+                        _TimestampHeap.Reset();
+                        break;
+                    }
+                }
+            }
+        }
+
         for (u32 i = 0; i < _FramesInFlight; ++i) {
             if (FAILED(
                   _Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_CmdAllocators[i]))))
@@ -506,6 +551,40 @@ namespace Xen::RHI::D3D12Backend {
         }
     }
 
+    void D3D12RenderDevice::ResolveGpuTimings(const u32 FrameIndex) {
+        _LastResolvedGpuTimings.clear();
+        if (!_TimestampHeap || !_TimestampReadback[FrameIndex]) return;
+
+        std::vector<PendingGpuScope>& Pending = _PendingGpuScopes[FrameIndex];
+        if (Pending.empty()) return;
+
+        void* Mapped = nullptr;
+        const D3D12_RANGE ReadRange {0, CAST<SIZE_T>(MaxGpuTimestamps) * sizeof(u64)};
+        if (FAILED(_TimestampReadback[FrameIndex]->Map(0, &ReadRange, &Mapped))) {
+            Pending.clear();
+            return;
+        }
+
+        const auto* Timestamps = RCAST<const u64*>(Mapped);
+        _LastResolvedGpuTimings.reserve(Pending.size());
+        for (const PendingGpuScope& Scope : Pending) {
+            const u64 StartTicks = Timestamps[Scope.StartIndex];
+            const u64 EndTicks   = Timestamps[Scope.EndIndex];
+            const u64 DeltaTicks = EndTicks > StartTicks ? EndTicks - StartTicks : 0;
+
+            GpuScopeTiming Timing {};
+            std::memcpy(Timing.Name, Scope.Name, sizeof(Timing.Name));
+            Timing.Milliseconds = CAST<f32>(CAST<f64>(DeltaTicks) / CAST<f64>(_TimestampFrequency) * 1000.0);
+            Timing.Depth         = Scope.Depth;
+            _LastResolvedGpuTimings.push_back(Timing);
+        }
+
+        const D3D12_RANGE WrittenRange {0, 0};  // read-only map - nothing to flush back
+        _TimestampReadback[FrameIndex]->Unmap(0, &WrittenRange);
+
+        Pending.clear();
+    }
+
     void D3D12RenderDevice::ExecuteUploadAndWait(const std::function<void(ID3D12GraphicsCommandList*)>& Record) {
         _UploadAllocator->Reset();
         _UploadCmdList->Reset(_UploadAllocator.Get(), nullptr);
@@ -566,6 +645,14 @@ namespace Xen::RHI::D3D12Backend {
 
         if (_SwapChain) _FrameIndex = _SwapChain->GetCurrentBackBufferIndex();
         WaitForFrame(_FrameIndex);
+
+        // Safe only now: this same ring slot's previous occupant (from
+        // MaxFramesInFlight frames ago) is exactly what WaitForFrame above
+        // just guaranteed the GPU has finished - the same guarantee that
+        // lets _CmdAllocators[_FrameIndex] be reset below.
+        ResolveGpuTimings(_FrameIndex);
+        _NextTimestampIndex = 0;
+        _ActiveGpuScopeStack.clear();  // should already be empty if every Push/Pop last frame balanced
 
         _CmdAllocators[_FrameIndex]->Reset();
         _CmdList->Reset(_CmdAllocators[_FrameIndex].Get(), nullptr);
@@ -821,11 +908,57 @@ namespace Xen::RHI::D3D12Backend {
                 case CmdType::CopyBuffer:
                 case CmdType::GenerateMips:
                 case CmdType::PipelineBarrier:
-                case CmdType::PushDebugGroup:
-                case CmdType::PopDebugGroup:
                 case CmdType::InsertDebugMarker:
                 default:
                     break;
+
+                // GPU timing (see GetLastFrameGpuTimings). _ActiveGpuScopeStack
+                // persists across every Submit() call this frame (SpriteRenderer's,
+                // MeshRenderer's, FXAA's, ...), reset only in BeginFrame - each of
+                // those already pushes and pops its own group in full before its own
+                // Submit() returns, so nesting across separate Submit() calls never
+                // actually happens, but nothing here would break if it did.
+                case CmdType::PushDebugGroup: {
+                    if (_TimestampHeap && _NextTimestampIndex + 1 < MaxGpuTimestamps) {
+                        const auto& Label = It.Payload<Cmd::DebugLabel>();
+                        const u8* Text    = It.Trailing<Cmd::DebugLabel>();
+
+                        // Recorded now, in Push order, so a nested display
+                        // reads as a normal depth-first tree (parent header
+                        // immediately followed by its children) rather than
+                        // Pop order (innermost-first). EndIndex is a
+                        // placeholder until the matching Pop patches it in.
+                        PendingGpuScope Entry {};
+                        const u32 CopyLen = std::min<u32>(Label.Length, CAST<u32>(sizeof(Entry.Name)) - 1);
+                        std::memcpy(Entry.Name, Text, CopyLen);
+                        Entry.Name[CopyLen] = '\0';
+                        Entry.StartIndex = _NextTimestampIndex;
+                        Entry.EndIndex   = _NextTimestampIndex;
+                        Entry.Depth      = CAST<u32>(_ActiveGpuScopeStack.size());
+
+                        std::vector<PendingGpuScope>& List = _PendingGpuScopes[_FrameIndex];
+                        const u32 ListIndex                = CAST<u32>(List.size());
+                        List.push_back(Entry);
+
+                        _CmdList->EndQuery(_TimestampHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, _NextTimestampIndex);
+                        ++_NextTimestampIndex;
+
+                        _ActiveGpuScopeStack.push_back(ListIndex);
+                    }
+                    break;
+                }
+                case CmdType::PopDebugGroup: {
+                    if (_TimestampHeap && !_ActiveGpuScopeStack.empty() && _NextTimestampIndex < MaxGpuTimestamps) {
+                        const u32 ListIndex = _ActiveGpuScopeStack.back();
+                        _ActiveGpuScopeStack.pop_back();
+
+                        _CmdList->EndQuery(_TimestampHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, _NextTimestampIndex);
+                        _PendingGpuScopes[_FrameIndex][ListIndex].EndIndex = _NextTimestampIndex;
+
+                        ++_NextTimestampIndex;
+                    }
+                    break;
+                }
             }
 
             ++_Stats.CommandsExecuted;
@@ -857,6 +990,21 @@ namespace Xen::RHI::D3D12Backend {
     }
 
     void D3D12RenderDevice::EndFrame() {
+        // Resolves every timestamp this frame's Push/PopDebugGroup calls
+        // recorded (0.._NextTimestampIndex) into this frame's readback
+        // buffer - the values aren't meaningful yet (the GPU hasn't
+        // necessarily executed any of this frame's commands until after
+        // ExecuteCommandLists below), just queued up for ResolveGpuTimings
+        // to read back once this ring slot comes around again.
+        if (_TimestampHeap && _NextTimestampIndex > 0) {
+            _CmdList->ResolveQueryData(_TimestampHeap.Get(),
+                                       D3D12_QUERY_TYPE_TIMESTAMP,
+                                       0,
+                                       _NextTimestampIndex,
+                                       _TimestampReadback[_FrameIndex].Get(),
+                                       0);
+        }
+
         _CmdList->Close();
         ID3D12CommandList* Lists[] = {_CmdList.Get()};
         _Queue->ExecuteCommandLists(1, Lists);
@@ -1073,7 +1221,15 @@ namespace Xen::RHI::D3D12Backend {
         D3D12_RESOURCE_STATES InitialState = RestState;
         if (AllocDesc.HeapType == D3D12_HEAP_TYPE_UPLOAD) InitialState = D3D12_RESOURCE_STATE_GENERIC_READ;
         else if (AllocDesc.HeapType == D3D12_HEAP_TYPE_READBACK) InitialState = D3D12_RESOURCE_STATE_COPY_DEST;
-        else if (HasInitial) InitialState = D3D12_RESOURCE_STATE_COPY_DEST;
+        // Not COPY_DEST here, even though that's the state this buffer is
+        // about to be used in (see the ExecuteUploadAndWait block below): a
+        // DEFAULT-heap buffer is always effectively created in COMMON
+        // regardless of what's requested (D3D12 debug-layer warning 1328),
+        // and buffers implicitly promote from COMMON to whatever state their
+        // next actual use needs (here, a copy destination) without an
+        // explicit transition into it - only the transition back out (the
+        // barrier below, COPY_DEST -> RestState) is real and necessary.
+        else if (HasInitial) InitialState = D3D12_RESOURCE_STATE_COMMON;
 
         const HRESULT Hr = _Allocator->CreateResource(&AllocDesc,
                                                       &ResDesc,
@@ -1247,8 +1403,27 @@ namespace Xen::RHI::D3D12Backend {
                                                     : WantsDepthTarget ? D3D12_RESOURCE_STATE_DEPTH_WRITE
                                                                        : D3D12_RESOURCE_STATE_COMMON;
 
+        // Lets the GPU allocate a color/depth target for its fast-clear path
+        // instead of a slower generic one on every LoadOp::Clear (D3D12
+        // debug-layer warnings 820/821 without this) - Format here is
+        // always the real RTV/DSV format (Tex.Format), never the typeless
+        // ResourceFormat a depth+sampled texture's underlying resource uses;
+        // a D3D12_CLEAR_VALUE always needs the view-compatible one.
+        D3D12_CLEAR_VALUE OptimizedClear {};
+        D3D12_CLEAR_VALUE* OptimizedClearPtr = nullptr;
+        if (WantsColorTarget) {
+            OptimizedClear.Format = Tex.Format;
+            std::memcpy(OptimizedClear.Color, Desc.OptimizedClear.Color, sizeof(OptimizedClear.Color));
+            OptimizedClearPtr = &OptimizedClear;
+        } else if (WantsDepthTarget) {
+            OptimizedClear.Format               = Tex.Format;
+            OptimizedClear.DepthStencil.Depth   = Desc.OptimizedClear.Depth;
+            OptimizedClear.DepthStencil.Stencil = CAST<UINT8>(Desc.OptimizedClear.Stencil);
+            OptimizedClearPtr                   = &OptimizedClear;
+        }
+
         const HRESULT Hr = _Allocator->CreateResource(
-          &AllocDesc, &ResDesc, InitialState, nullptr, &Tex.Allocation, IID_PPV_ARGS(&Tex.Resource));
+          &AllocDesc, &ResDesc, InitialState, OptimizedClearPtr, &Tex.Allocation, IID_PPV_ARGS(&Tex.Resource));
         if (FAILED(Hr)) return {};
 
         Tex.CurrentState = InitialState;

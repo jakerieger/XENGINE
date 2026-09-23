@@ -18,35 +18,21 @@ add_library(Xen STATIC
         Actor.cpp
         Actor.hpp
         ActorHandle.hpp
-        AmbientOcclusionComponent.cpp
-        AmbientOcclusionComponent.hpp
-        AntiAliasingComponent.cpp
-        AntiAliasingComponent.hpp
         AssetLoader.cpp
         AssetLoader.hpp
         AssetPreloader.cpp
         AssetPreloader.hpp
         AssetSettings.hpp
-        AudioSourceComponent.cpp
-        AudioSourceComponent.hpp
-        CameraComponent.cpp
-        CameraComponent.hpp
         CommandBuffer.hpp
         Component.hpp
         ComponentRegistry.cpp
         ComponentRegistry.hpp
         DebugUI.cpp
         DebugUI.hpp
-        DirectionalLightComponent.cpp
-        DirectionalLightComponent.hpp
         EngineConfig.hpp
         EngineContext.hpp
         EnvironmentBaker.cpp
         EnvironmentBaker.hpp
-        EnvironmentComponent.cpp
-        EnvironmentComponent.hpp
-        FPPlayerController.cpp
-        FPPlayerController.hpp
         FXAA.cpp
         FXAA.hpp
         Game.cpp
@@ -57,18 +43,12 @@ add_library(Xen STATIC
         MaterialBindings.hpp
         MeshCache.cpp
         MeshCache.hpp
-        MeshComponent.cpp
-        MeshComponent.hpp
         MeshRenderer.cpp
         MeshRenderer.hpp
         MipGenerator.cpp
         MipGenerator.hpp
-        PBRMaterialComponent.cpp
-        PBRMaterialComponent.hpp
         PostProcess.cpp
         PostProcess.hpp
-        PostProcessComponent.cpp
-        PostProcessComponent.hpp
         Reflection.hpp
         RenderDevice.hpp
         RadianceHdr.cpp
@@ -79,14 +59,14 @@ add_library(Xen STATIC
         Scene.hpp
         SceneSerializer.cpp
         SceneSerializer.hpp
-        SpriteComponent.cpp
-        SpriteComponent.hpp
         SpriteRenderer.cpp
         SpriteRenderer.hpp
         SpriteBatcher.cpp
         SpriteBatcher.hpp
         SSAO.cpp
         SSAO.hpp
+        TAA.cpp
+        TAA.hpp
         TextureCache.cpp
         TextureCache.hpp
         Transform.hpp
@@ -94,6 +74,31 @@ add_library(Xen STATIC
         Viewport.hpp
         Window.cpp
         Window.hpp
+        # Engine/Components - concrete IComponent implementations (Component.hpp/
+        # ComponentRegistry.* above are the base interface + registry, not a
+        # component themselves, so they stay at the module root).
+        Components/AmbientOcclusionComponent.cpp
+        Components/AmbientOcclusionComponent.hpp
+        Components/AntiAliasingComponent.cpp
+        Components/AntiAliasingComponent.hpp
+        Components/AudioSourceComponent.cpp
+        Components/AudioSourceComponent.hpp
+        Components/CameraComponent.cpp
+        Components/CameraComponent.hpp
+        Components/DirectionalLightComponent.cpp
+        Components/DirectionalLightComponent.hpp
+        Components/EnvironmentComponent.cpp
+        Components/EnvironmentComponent.hpp
+        Components/FPPlayerController.cpp
+        Components/FPPlayerController.hpp
+        Components/MeshComponent.cpp
+        Components/MeshComponent.hpp
+        Components/PBRMaterialComponent.cpp
+        Components/PBRMaterialComponent.hpp
+        Components/PostProcessComponent.cpp
+        Components/PostProcessComponent.hpp
+        Components/SpriteComponent.cpp
+        Components/SpriteComponent.hpp
         # Engine/Backends - Windows + D3D12 only; the engine has no other target platform.
         Backends/D3D12Translate.hpp
         Backends/D3D12RenderDevice.cpp

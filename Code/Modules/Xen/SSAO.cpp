@@ -183,7 +183,12 @@ namespace Xen {
         Commands.PushDebugGroup("SSAO");
 
         {
-            const RHI::RenderPassDesc Pass = RHI::RenderPassDesc::ColorTarget(_RawTarget, 1.0f, 1.0f, 1.0f, 1.0f);
+            // Clear value is moot either way - the fullscreen triangle
+            // overwrites every pixel - so this just takes ColorTarget's
+            // default rather than the arbitrary (1,1,1,1) it used to pass,
+            // which only mismatched _RawTarget's own optimized clear value
+            // (see TextureDesc::OptimizedClear) for no benefit.
+            const RHI::RenderPassDesc Pass = RHI::RenderPassDesc::ColorTarget(_RawTarget);
             Commands.BeginRenderPass(Pass);
             Commands.BindPipeline(_Pipeline);
 

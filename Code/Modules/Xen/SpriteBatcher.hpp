@@ -6,8 +6,8 @@
 
 #include <Common/XenCommon.hpp>
 
-#include "CameraComponent.hpp"
-#include "SpriteComponent.hpp"
+#include "Components/CameraComponent.hpp"
+#include "Components/SpriteComponent.hpp"
 #include "TextureCache.hpp"
 
 #include <vector>

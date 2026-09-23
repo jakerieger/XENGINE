@@ -268,6 +268,22 @@ namespace Xen::RHI {
     enum class BorderColor : u8 { TransparentBlack, OpaqueBlack, OpaqueWhite };
     enum class CompareOp : u8 { Never, Less, Equal, LessEqual, Greater, NotEqual, GreaterEqual, Always };
 
+    // Also used below by TextureDesc::OptimizedClear - moved up from its
+    // original spot next to RenderPassDesc so that field can use it. Every
+    // real RenderPassDesc construction (SwapChain/ColorTarget/
+    // ColorAndDepthTarget) always overwrites Color/Depth explicitly from its
+    // own arguments, so this bare struct default is only ever actually
+    // consumed via TextureDesc::OptimizedClear - chosen there to match what
+    // the overwhelming majority of this engine's offscreen color targets
+    // clear to (transparent black - alpha marks "did this pass touch this
+    // pixel" in more than one place, e.g. PostProcess.hpp), not the opaque-
+    // black a swap chain target more typically wants.
+    struct ClearValue {
+        f32 Color[4] {0.0f, 0.0f, 0.0f, 0.0f};
+        f32 Depth {1.0f};
+        u32 Stencil {0};
+    };
+
     struct TextureDesc {
         TextureType Type {TextureType::Texture2D};
         Format Fmt {Format::RGBA8_UNORM};
@@ -277,6 +293,21 @@ namespace Xen::RHI {
         u32 MipLevels {1};  // 0 means the full chain
         u32 SampleCount {1};
         TextureUsage Usage {TextureUsage::Sampled};
+
+        /// @brief For a ColorTarget or DepthTarget texture, the value most
+        /// render passes will actually clear it to - letting the backend
+        /// create it with a matching D3D12_CLEAR_VALUE so the GPU can use
+        /// its fast-clear path instead of a slower generic one every time
+        /// (D3D12 debug-layer warnings 820/821 without this). Ignored for a
+        /// texture that's neither usage. Defaults match what the
+        /// overwhelming majority of this engine's targets actually clear to
+        /// - transparent black / far-plane depth; only worth overriding
+        /// when a texture is known to always clear to something else (a
+        /// LoadOp::Clear whose value doesn't match this one still works,
+        /// it just falls back to the slower path, same as not setting this
+        /// at all).
+        ClearValue OptimizedClear {};
+
         const char* DebugName {nullptr};
     };
 
@@ -609,11 +640,8 @@ namespace Xen::RHI {
     enum class LoadOp : u8 { Load, Clear, DontCare };
     enum class StoreOp : u8 { Store, DontCare };  // DontCare invalidates the attachment
 
-    struct ClearValue {
-        f32 Color[4] {0.0f, 0.0f, 0.0f, 1.0f};
-        f32 Depth {1.0f};
-        u32 Stencil {0};
-    };
+    // ClearValue itself now lives up with TextureDesc (see
+    // TextureDesc::OptimizedClear) - still used here unchanged.
 
     struct ColorAttachment {
         TextureHandle Texture {};

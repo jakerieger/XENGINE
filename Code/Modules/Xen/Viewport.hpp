@@ -49,12 +49,26 @@ namespace Xen {
         ///
         /// WithDepth is off by default - 2D content (XenPong) never depth-
         /// tests, so it costs a texture for nothing. 3D content needs it on.
+        ///
+        /// ClearColor is purely a performance hint (TextureDesc::
+        /// OptimizedClear) for whoever actually clears this color target
+        /// every frame - typically SpriteRenderer, whose own
+        /// Config::ClearColor default this matches. It doesn't have to be
+        /// exact: a mismatch just falls back to a slower generic clear
+        /// (D3D12 debug-layer warning 820), the same as leaving this at its
+        /// default entirely - so only worth passing something else here if
+        /// a game also calls SpriteRenderer::SetClearColor to something
+        /// different.
         bool Initialize(RHI::IRenderDevice& Device,
                         u32 Width,
                         u32 Height,
                         RHI::Format ColorFormat = RHI::Format::BGRA8_UNORM,
                         bool WithDepth          = false,
-                        RHI::Format DepthFormat = RHI::Format::D32_FLOAT);
+                        RHI::Format DepthFormat = RHI::Format::D32_FLOAT,
+                        f32 ClearR = 0.1f,
+                        f32 ClearG = 0.1f,
+                        f32 ClearB = 0.1f,
+                        f32 ClearA = 1.0f);
         void Shutdown();
 
         NODISCARD bool IsInitialized() const { return _Device != nullptr; }
@@ -87,5 +101,11 @@ namespace Xen {
         RHI::Format _DepthFormat {RHI::Format::D32_FLOAT};
         u32 _Width {0};
         u32 _Height {0};
+
+        // Remembered from Initialize so Resize can recreate _ColorTarget
+        // with the same optimized clear value (see Initialize's own
+        // comment) rather than silently dropping back to TextureDesc's bare
+        // default.
+        f32 _ClearColor[4] {0.1f, 0.1f, 0.1f, 1.0f};
     };
 }  // namespace Xen

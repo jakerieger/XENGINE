@@ -7,7 +7,7 @@
 #include "Game.hpp"
 
 #include <thread>
-#include "AntiAliasingComponent.hpp"
+#include "Components/AntiAliasingComponent.hpp"
 #include "AssetPreloader.hpp"
 #include "SceneSerializer.hpp"
 #include "AssetSettings.hpp"
@@ -305,14 +305,23 @@ namespace Xen {
             // inside MeshRenderer/PostProcess. Settings come from the
             // scene's first AntiAliasingComponent, the same "first one
             // found" rule as PostProcessComponent; a scene with none uses
-            // FXAA::Settings's defaults (on).
+            // Technique's own default (TAA). Only run when that component
+            // picked FXAA specifically - TAA (if picked) already ran inside
+            // MeshRenderer::Render, before the composite, since it needs the
+            // linear-HDR scene color and motion vectors PostProcess consumes
+            // before this point ever sees anything (see TAA.hpp); running
+            // FXAA on top of an already-TAA'd frame would just soften it
+            // further for no benefit.
+            AntiAliasingTechnique AaTechnique = AntiAliasingTechnique::TAA;
             FXAA::Settings AaSettings;
             const std::vector<Actor*> AaActors = _ActiveScene->FindActorsWith<AntiAliasingComponent>();
             if (!AaActors.empty()) {
                 if (const auto* AA = AaActors.front()->GetComponent<AntiAliasingComponent>()) {
-                    AaSettings = AA->GetSettings();
+                    AaTechnique = AA->GetTechnique();
+                    AaSettings  = AA->GetFxaaSettings();
                 }
             }
+            AaSettings.Enabled &= AaTechnique == AntiAliasingTechnique::FXAA;
             const RHI::TextureHandle PresentTarget =
               _FXAA.Render(_MainViewport.GetColorTarget(), _MainViewport.GetWidth(), _MainViewport.GetHeight(), AaSettings);
 

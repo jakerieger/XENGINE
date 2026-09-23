@@ -198,6 +198,9 @@ namespace Xen::RHI::D3D12Backend {
         TransientAllocation AllocateTransient(u32 Size, BufferUsage Usage) override;
 
         NODISCARD const FrameStats& GetLastFrameStats() const override { return _LastStats; }
+        NODISCARD const std::vector<GpuScopeTiming>& GetLastFrameGpuTimings() const override {
+            return _LastResolvedGpuTimings;
+        }
         NODISCARD MemoryStats GetMemoryStats() const override;
 
         // --- Debug UI (Dear ImGui) integration -----------------------------
@@ -239,6 +242,15 @@ namespace Xen::RHI::D3D12Backend {
         /// runs every BeginFrame; also called explicitly from WaitIdle()/
         /// Shutdown() to force a full flush once the GPU is known idle.
         void ProcessDeferredDeletes();
+
+        /// @brief Reads back FrameIndex's timestamp query results (from
+        /// MaxFramesInFlight frames ago, the last time this same ring slot
+        /// was used) into _LastResolvedGpuTimings, in milliseconds. Only
+        /// safe to call once WaitForFrame(FrameIndex) has returned - that's
+        /// the same guarantee that lets _CmdAllocators[FrameIndex] be reset
+        /// for reuse, and it's what makes mapping the readback buffer here
+        /// safe too (the GPU is done writing it).
+        void ResolveGpuTimings(u32 FrameIndex);
 
         void ExecuteBeginRenderPass(const RenderPassDesc& Desc);
         void ExecuteOffscreenBeginRenderPass(const RenderPassDesc& Desc);
@@ -375,6 +387,50 @@ namespace Xen::RHI::D3D12Backend {
 
         FrameStats _Stats {};
         FrameStats _LastStats {};
+
+        // --- GPU timing (CommandBuffer::PushDebugGroup/PopDebugGroup) -----
+        //
+        // One D3D12_QUERY_TYPE_TIMESTAMP per Push and per Pop, all in one
+        // heap shared across frames; each frame-in-flight gets its own
+        // readback buffer (same "ring indexed by _FrameIndex" shape as
+        // _CmdAllocators) since a query's result isn't available until the
+        // GPU has actually executed that point in the command stream -
+        // BeginFrame's existing WaitForFrame(_FrameIndex) is what makes it
+        // safe to read a slot back before reusing it for a new frame (see
+        // ResolveGpuTimings).
+        static constexpr u32 MaxGpuTimestamps = 128;  // 64 Push/Pop pairs per frame
+        ComPtr<ID3D12QueryHeap> _TimestampHeap;
+        std::array<ComPtr<ID3D12Resource>, MaxFramesInFlight> _TimestampReadback;
+        u64 _TimestampFrequency {0};  // ticks/second - 0 if timestamp queries aren't supported
+        u32 _NextTimestampIndex {0};  // reset to 0 every BeginFrame
+
+        struct PendingGpuScope {
+            char Name[32] {};
+            u32 StartIndex {0};
+            u32 EndIndex {0};
+            u32 Depth {0};
+        };
+        // What this frame's Pushes/Pops resolved to (index pairs, not yet
+        // turned into milliseconds - that needs the readback buffer, which
+        // isn't safe to read until this same ring slot comes back around).
+        // Entries land here in Push order, not Pop order: PushDebugGroup
+        // appends a placeholder immediately (EndIndex patched in once the
+        // matching Pop runs), rather than only recording anything at Pop
+        // time - the latter would put a scope's *children* before the scope
+        // itself in this list (Pop is innermost-first), which reads
+        // backwards in a nested display; Push order is a normal depth-first
+        // traversal, parent immediately followed by its own children.
+        std::array<std::vector<PendingGpuScope>, MaxFramesInFlight> _PendingGpuScopes;
+
+        // CPU-side stack of not-yet-popped PushDebugGroup calls, mirroring
+        // the nesting those calls already imply - just the index into this
+        // frame's _PendingGpuScopes where Pop should patch in EndIndex.
+        std::vector<u32> _ActiveGpuScopeStack;
+
+        // The most recently resolved frame's results - what
+        // GetLastFrameGpuTimings() returns. Always a few frames "behind"
+        // whatever's on screen right now; see that method's own comment.
+        std::vector<GpuScopeTiming> _LastResolvedGpuTimings;
 
         bool _Initialized {false};
 

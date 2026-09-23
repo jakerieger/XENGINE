@@ -8,7 +8,7 @@
 
 #include <Xen/Scene.hpp>
 #include <Xen/Actor.hpp>
-#include <Xen/SpriteComponent.hpp>
+#include <Xen/Components/SpriteComponent.hpp>
 
 #include <algorithm>
 

@@ -14,7 +14,11 @@ namespace Xen {
                               const u32 Height,
                               const RHI::Format ColorFormat,
                               const bool WithDepth,
-                              const RHI::Format DepthFormat) {
+                              const RHI::Format DepthFormat,
+                              const f32 ClearR,
+                              const f32 ClearG,
+                              const f32 ClearB,
+                              const f32 ClearA) {
         if (Width == 0 || Height == 0) return false;
 
         _Device      = &Device;
@@ -22,6 +26,10 @@ namespace Xen {
         _DepthFormat = DepthFormat;
         _Width       = Width;
         _Height      = Height;
+        _ClearColor[0] = ClearR;
+        _ClearColor[1] = ClearG;
+        _ClearColor[2] = ClearB;
+        _ClearColor[3] = ClearA;
 
         RHI::TextureDesc ColorDesc;
         ColorDesc.Fmt       = ColorFormat;
@@ -29,6 +37,10 @@ namespace Xen {
         ColorDesc.Height    = Height;
         ColorDesc.MipLevels = 1;
         ColorDesc.Usage     = RHI::TextureUsage::ColorTarget | RHI::TextureUsage::Sampled;
+        ColorDesc.OptimizedClear.Color[0] = ClearR;
+        ColorDesc.OptimizedClear.Color[1] = ClearG;
+        ColorDesc.OptimizedClear.Color[2] = ClearB;
+        ColorDesc.OptimizedClear.Color[3] = ClearA;
         ColorDesc.DebugName = "Viewport Color";
 
         _ColorTarget = Device.CreateTexture(ColorDesc);
@@ -94,6 +106,10 @@ namespace Xen {
         ColorDesc.Height    = Height;
         ColorDesc.MipLevels = 1;
         ColorDesc.Usage     = RHI::TextureUsage::ColorTarget | RHI::TextureUsage::Sampled;
+        ColorDesc.OptimizedClear.Color[0] = _ClearColor[0];
+        ColorDesc.OptimizedClear.Color[1] = _ClearColor[1];
+        ColorDesc.OptimizedClear.Color[2] = _ClearColor[2];
+        ColorDesc.OptimizedClear.Color[3] = _ClearColor[3];
         ColorDesc.DebugName = "Viewport Color";
         _ColorTarget        = Device->CreateTexture(ColorDesc);
 
