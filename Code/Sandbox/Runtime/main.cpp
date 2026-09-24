@@ -20,11 +20,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
             return 1;
         }
 
-        Sandbox Game("Demo.PBR", Xen::BuildMountConfig(Xen::Generated::GameSettings(), Arguments.Argc, Arguments.Argv));
+        Sandbox Game("Sandbox", Xen::BuildMountConfig(Xen::Generated::GameSettings(), Arguments.Argc, Arguments.Argv));
 
 #ifndef NDEBUG
         SceneBuilder::Build(Game.GetContext());
-        Xen::AttachConsole("Demo.PBR");
 #endif
 
         Game.Run();

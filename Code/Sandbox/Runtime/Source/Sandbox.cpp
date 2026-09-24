@@ -7,6 +7,7 @@
 #ifdef XEN_WITH_DEBUG_UI
     #include <imgui.h>
     #include <Common/Log.hpp>
+    #include <cstdio>
 #endif
 
 using namespace Xen;
@@ -93,6 +94,37 @@ void Sandbox::OnRender() {
             }
             ImGui::Separator();
             ImGui::Text("Total (top-level scopes): %.3f ms", TopLevelTotal);
+
+            // Rolling history of the line above, not the CPU-side Frame
+            // Stats delta - a fixed-size circular buffer (~4s at 60 FPS),
+            // static so it persists across calls without adding a member to
+            // Sandbox for a debug-only graph. Only fed once real timing data
+            // exists (this whole block is skipped otherwise), so the graph
+            // never gets polluted with the all-zero startup frames.
+            static float FrameTimeHistory[240] = {};
+            static int FrameTimeOffset         = 0;
+            static bool FrameTimeFilled         = false;
+
+            FrameTimeHistory[FrameTimeOffset] = TopLevelTotal;
+            FrameTimeOffset                   = (FrameTimeOffset + 1) % IM_ARRAYSIZE(FrameTimeHistory);
+            if (FrameTimeOffset == 0) FrameTimeFilled = true;
+
+            const int SampleCount = FrameTimeFilled ? IM_ARRAYSIZE(FrameTimeHistory) : FrameTimeOffset;
+            float MaxSample        = 0.0f;
+            for (int i = 0; i < SampleCount; ++i) {
+                if (FrameTimeHistory[i] > MaxSample) MaxSample = FrameTimeHistory[i];
+            }
+
+            char Overlay[32];
+            std::snprintf(Overlay, sizeof(Overlay), "%.3f ms", TopLevelTotal);
+            ImGui::PlotLines("##FrameTimeHistory",
+                             FrameTimeHistory,
+                             SampleCount,
+                             FrameTimeFilled ? FrameTimeOffset : 0,
+                             Overlay,
+                             0.0f,
+                             MaxSample * 1.2f + 0.001f,  // +epsilon: a perfectly flat 0ms history would else divide by zero
+                             ImVec2(0.0f, 80.0f));
         }
     }
     ImGui::End();
