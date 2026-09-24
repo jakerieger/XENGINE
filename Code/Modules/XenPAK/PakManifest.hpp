@@ -17,7 +17,7 @@ namespace Xen::PAK {
 
     constexpr u32 PAK_MANIFEST_VERSION = 1;
 
-    /// @brief Per-asset metadata that isn't recoverable from the .xpak itself - the pak only
+    /// @brief Per-asset metadata that isn't recoverable from the .pxk itself - the pak only
     /// knows assets by their hashed AssetID, so recovering the original path/extension for
     /// tooling purposes requires this sidecar file.
     struct PakManifestEntry {
@@ -30,7 +30,7 @@ namespace Xen::PAK {
         bool Encrypted       = false;
     };
 
-    /// @brief Dev-time-only sidecar to a .xpak file (same name, .xmeta extension) recording
+    /// @brief Dev-time-only sidecar to a .pxk file (same name, .pxkm extension) recording
     /// the metadata needed for tooling (`unpack`, `info`) to be useful. Never read by the
     /// runtime asset pipeline - only the packing tool produces/consumes it.
     struct PakManifest {
@@ -45,7 +45,7 @@ namespace Xen::PAK {
         static PakManifest ReadFromFile(const std::filesystem::path& Path);
 
         /// @brief Sidecar manifest path for a given pak file: same directory + stem,
-        /// ".xmeta" extension.
+        /// ".pxkm" extension.
         static std::filesystem::path ManifestPathFor(const std::filesystem::path& PakPath);
     };
 }  // namespace Xen::PAK

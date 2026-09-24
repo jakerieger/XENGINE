@@ -8,7 +8,7 @@ include_guard(GLOBAL)
 # visible everywhere regardless of which scope first ran this file.
 set(_XEN_GAME_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
 
-set(XEN_DEFAULT_PAK "Data1.xpak")
+set(XEN_DEFAULT_PAK "Data.pxk")
 
 # Creates the game's executable target. Windows-only (WIN32 subsystem, so
 # the game doesn't get a console window) - the engine dropped cross-platform
@@ -63,9 +63,34 @@ function(xen_configure_game TARGET)
         set(XEN_GEN_PAK_FILES "R\"(${ARG_PAK_FILENAME})\"")
     endif ()
 
-    set(XEN_ENGINE_SHADERS_PAK "R\"(EngineContent/XEN.Shaders.xpak)\"")
+    set(XEN_ENGINE_SHADERS_PAK "R\"(EngineContent/XEN.Shaders.pxk)\"")
 
-    set(XEN_ENGINE_ENVIRONMENT_PAK "R\"(EngineContent/XEN.Environment.xpak)\"")
+    set(XEN_ENGINE_ENVIRONMENT_PAK "R\"(EngineContent/XEN.Environment.pxk)\"")
+
+    # Debug-only (see XenGameSettings.h.in's #ifdef NDEBUG split) - absolute
+    # paths into the engine's OWN source tree, for ShaderHotReload. Baked in
+    # unconditionally here; it's the generated header's #ifdef, not this
+    # value, that keeps them out of a Release build.
+    set(XEN_ENGINE_SHADER_SOURCE_DIR "R\"(${CMAKE_SOURCE_DIR}/Code/Shaders)\"")
+    set(XEN_ENGINE_SHADER_OUTPUT_DIR "R\"(${CMAKE_SOURCE_DIR}/EngineContent/Shaders)\"")
+
+    # dxc.exe isn't normally on a plain user/system PATH - only on the one a
+    # Visual Studio dev-tools shell (vcvars) sets up, which is what this
+    # whole build already runs under (compile_engine_shaders.py relies on
+    # exactly that). The running GAME's own process almost certainly won't
+    # have that PATH, so ShaderHotReload needs dxc.exe's absolute location
+    # baked in rather than trusting its own ambient PATH at runtime -
+    # resolved once here, in the same environment that's already proven to
+    # find it (this configure step runs under whatever shell invoked CMake).
+    find_program(XEN_DXC_EXECUTABLE dxc.exe)
+    if (NOT XEN_DXC_EXECUTABLE)
+        message(WARNING "xen_configure_game(${TARGET}): dxc.exe not found on PATH at configure time - "
+                "ShaderHotReload will fall back to a bare 'dxc.exe' PATH lookup at runtime, which will "
+                "likely fail unless the game is launched from a shell with the VS dev tools on PATH.")
+        set(XEN_ENGINE_DXC_PATH "R\"()\"")
+    else ()
+        set(XEN_ENGINE_DXC_PATH "R\"(${XEN_DXC_EXECUTABLE})\"")
+    endif ()
 
     set(XEN_GEN_CONTENT_DIRS "")
     foreach (dir IN LISTS ARG_CONTENT_DIRS)
@@ -156,29 +181,17 @@ function(xen_package_game_content TARGET)
 
     set(out_dir "$<TARGET_FILE_DIR:${TARGET}>/..")
 
-    # AES-256-CTR encryption (PAKTool's --encrypt) costs real time in both
-    # directions - packing and every LoadFull - for content that, during
-    # development, is sitting right there on disk either way. Only worth
-    # paying for in a build meant to leave this machine, so it's on for
-    # Release and off everywhere else. Written as --encrypt=0/1 (CLI11
-    # accepts an explicit value for a flag) rather than the more obvious
-    # $<$<CONFIG:Release>:--encrypt>, which reads right but, for a
-    # POST_BUILD add_custom_command, evaluates to a literal empty ""
-    # argument in every other configuration instead of disappearing -
-    # add_custom_command doesn't drop empty generator-expression arguments
-    # the way e.g. target_compile_options does, and PAKTool would see (and
-    # reject) that stray "". $<CONFIG:Release> alone is itself a boolean
-    # generator expression (evaluates to 1 or 0), so this is always exactly
-    # one well-formed argument.
+
     set(encrypt_flag "--encrypt=$<CONFIG:Release>")
+    set(metadata_flag "--metadata=$<CONFIG:Debug>")
 
     add_custom_command(
             TARGET ${TARGET} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory "${ARG_CONFIG_DIR}" "${out_dir}/Config"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${out_dir}/EngineContent"
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Shaders" -o "${out_dir}/EngineContent/XEN.Shaders.xpak" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag}
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Environment" -o "${out_dir}/EngineContent/XEN.Environment.xpak" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag}
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${ARG_CONTENT_DIR}" -o "${out_dir}/${ARG_PAK_FILENAME}" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag}
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Shaders" -o "${out_dir}/EngineContent/XEN.Shaders.pxk" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Environment" -o "${out_dir}/EngineContent/XEN.Environment.pxk" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${ARG_CONTENT_DIR}" -o "${out_dir}/${ARG_PAK_FILENAME}" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
             COMMENT "Packaging ${TARGET} content (Config, Engine shaders/environment, ${ARG_PAK_FILENAME})..."
             VERBATIM
     )

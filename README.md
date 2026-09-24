@@ -32,30 +32,30 @@ These are here for my own convenience.
 ### Project Format
 
 - Runtime/
-    - Source/
-        - \<CustomComponent\>.hpp
-        - \<CustomComponent\>.cpp
-    - CMakeLists.txt
-    - main.cpp
+  - Source/
+    - \<CustomComponent\>.hpp
+    - \<CustomComponent\>.cpp
+  - CMakeLists.txt
+  - main.cpp
 - Content/
-    - scenes/
-    - textures/
-    - audio/
-    - etc...
+  - scenes/
+  - textures/
+  - audio/
+  - etc...
 - Config/
-    - EngineConfig.ini
-    - InputConfig.ini
-    - AudioConfig.ini
+  - EngineConfig.ini
+  - InputConfig.ini
+  - AudioConfig.ini
 
 ### Game Distribution Output
 
 - Config/
-    - EngineConfig.ini
-    - InputConfig.ini
-    - AudioConfig.ini
+  - EngineConfig.ini
+  - InputConfig.ini
+  - AudioConfig.ini
 - EngineContent/
-    - XEN.Shaders.xpak
-    - XEN.Environment.xpak (contains IBL cubemaps, BRDF maps, etc...)
+  - XEN.Shaders.pxk
+  - XEN.Environment.pxk (contains IBL cubemaps, BRDF maps, etc...)
 - Bin64/
-    - GameDist.exe
-- Data1.xpak
+  - GameDist.exe
+- Data.pxk

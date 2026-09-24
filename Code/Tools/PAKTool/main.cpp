@@ -67,16 +67,17 @@ namespace {
             }
         }
 
-        while (PatternIdx < Pattern.size() && Pattern[PatternIdx] == '*') ++PatternIdx;
+        while (PatternIdx < Pattern.size() && Pattern[PatternIdx] == '*')
+            ++PatternIdx;
 
         return PatternIdx == Pattern.size();
     }
 
     /// @brief One parsed line from a .pakignore file.
     struct IgnorePattern {
-        std::string Text;         ///< Canonicalized (lowercase, '/'-separated) pattern text.
-        std::string Raw;          ///< Original line, for diagnostics/printing.
-        bool MatchBasenameOnly;   ///< True if the raw pattern had no '/' - matches the filename at any depth.
+        std::string Text;        ///< Canonicalized (lowercase, '/'-separated) pattern text.
+        std::string Raw;         ///< Original line, for diagnostics/printing.
+        bool MatchBasenameOnly;  ///< True if the raw pattern had no '/' - matches the filename at any depth.
     };
 
     /// @brief Parses raw .pakignore lines into IgnorePatterns: blank lines
@@ -116,7 +117,9 @@ namespace {
     /// checked against the full path, root-anchored (there's no per-
     /// directory .pakignore, so "anchored" just means "relative to the
     /// content root" here).
-    bool IsIgnored(const std::string& CanonicalPath, const std::vector<IgnorePattern>& Patterns, std::string* OutMatchedRaw) {
+    bool IsIgnored(const std::string& CanonicalPath,
+                   const std::vector<IgnorePattern>& Patterns,
+                   std::string* OutMatchedRaw) {
         std::string_view Basename = CanonicalPath;
         if (const size_t Slash = CanonicalPath.find_last_of('/'); Slash != std::string::npos) {
             Basename = std::string_view(CanonicalPath).substr(Slash + 1);
@@ -175,9 +178,10 @@ namespace {
     }
 
     int RunPack(const fs::path& ContentDir,
-               const fs::path& OutputPath,
-               const std::optional<fs::path>& PakIgnore,
-               const bool Encrypt) {
+                const fs::path& OutputPath,
+                const std::optional<fs::path>& PakIgnore,
+                const bool Encrypt,
+                const bool Metadata) {
         std::vector<std::string> IgnorePatterns;
         if (PakIgnore.has_value()) {
             std::ifstream IgnoreFile(*PakIgnore);
@@ -336,7 +340,7 @@ namespace {
         Out.close();
 
         const fs::path ManifestPath = PakManifest::ManifestPathFor(OutputPath);
-        Manifest.WriteToFile(ManifestPath);
+        if (Metadata) Manifest.WriteToFile(ManifestPath);
 
         const f64 Ratio =
           TotalUncompressed > 0 ? 100.0 * (1.0 - CAST<f64>(TotalStored) / CAST<f64>(TotalUncompressed)) : 0.0;
@@ -350,7 +354,7 @@ namespace {
                     CAST<u64>(TotalStored),
                     Ratio,
                     Encrypt ? "encrypted" : "not encrypted");
-        std::printf("[PAKTool] wrote manifest '%s'\n", ManifestPath.string().c_str());
+        if (Metadata) std::printf("[PAKTool] wrote manifest '%s'\n", ManifestPath.string().c_str());
 
         SelfVerify(OutputPath, Assets);
 
@@ -478,16 +482,18 @@ int main(int argc, char** argv) {
     App.require_subcommand(1);
 
     fs::path PackContentDir;
-    fs::path PackOutput = "Data1.xpak";
+    fs::path PackOutput = "Data.pxk";
     std::optional<fs::path> PakIgnore;
-    bool PackEncrypt = false;
-    CLI::App* PackCmd = App.add_subcommand("pack", "Pack a content directory into a .xpak file");
+    bool PackEncrypt  = false;
+    bool PackMetadata = false;
+
+    CLI::App* PackCmd = App.add_subcommand("pack", "Pack a content directory into a .pxk file");
     PackCmd->add_option("content-dir", PackContentDir, "Root content directory to pack")
       ->required()
       ->check(CLI::ExistingDirectory);
     PackCmd->add_option("-o,--output",
                         PackOutput,
-                        "Output .xpak filename (default: Data1.xpak). Must use .xpak extension.");
+                        "Output .pxk filename (default: Data.pxk). Must use .pxk extension.");
     PackCmd
       ->add_option("-i,--ignore",
                    PakIgnore,
@@ -501,21 +507,22 @@ int main(int argc, char** argv) {
                       "AES-256-CTR encrypt every packed asset. Off by default - encryption adds real time to "
                       "both packing and load, which mostly buys nothing during development; enable it for a "
                       "build you're distributing.");
+    PackCmd->add_flag("-m,--metadata", PackMetadata, "Optional .pxkm file containing pack content metadata.");
 
     fs::path UnpackPak;
     fs::path UnpackOutputDir;
-    CLI::App* UnpackCmd = App.add_subcommand("unpack", "Unpack all assets from a .xpak file");
+    CLI::App* UnpackCmd = App.add_subcommand("unpack", "Unpack all assets from a .pxk file");
     UnpackCmd->add_option("pak-file", UnpackPak, "Pak file to unpack")->required()->check(CLI::ExistingFile);
     UnpackCmd->add_option("output-dir", UnpackOutputDir, "Directory to write unpacked assets to")->required();
 
     fs::path InfoPak;
-    CLI::App* InfoCmd = App.add_subcommand("info", "Print detailed information about a .xpak file");
+    CLI::App* InfoCmd = App.add_subcommand("info", "Print detailed information about a .pxk file");
     InfoCmd->add_option("pak-file", InfoPak, "Pak file to inspect")->required()->check(CLI::ExistingFile);
 
     CLI11_PARSE(App, argc, argv);
 
     try {
-        if (*PackCmd) return RunPack(PackContentDir, PackOutput, PakIgnore, PackEncrypt);
+        if (*PackCmd) return RunPack(PackContentDir, PackOutput, PakIgnore, PackEncrypt, PackMetadata);
         if (*UnpackCmd) return RunUnpack(UnpackPak, UnpackOutputDir);
         if (*InfoCmd) return RunInfo(InfoPak);
     } catch (const EngineException& Ex) {

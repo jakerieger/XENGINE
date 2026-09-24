@@ -56,6 +56,86 @@ namespace Xen {
         // _SceneColorTarget) - fixed, unlike TargetFormats.GetColorFormat(),
         // which only ever governs the post-process composite pipeline now.
         constexpr RHI::Format SceneColorFormat = RHI::Format::RGBA16_FLOAT;
+
+        // --- Frustum culling ------------------------------------------------
+        //
+        // A plane as (a, b, c, d): a*x + b*y + c*z + d >= 0 is "inside".
+        struct FrustumPlane {
+            f32 a, b, c, d;
+        };
+
+        // Gribb-Hartmann plane extraction, for DirectXMath's row-vector
+        // convention (clip = v * M, so "column c of M" is the linear
+        // function of v that produces clip's c-th component - see
+        // CameraComponent::GetViewProjectionMatrix's own comment on the
+        // convention). D3D's clip volume is -w<=x<=w, -w<=y<=w, 0<=z<=w, so
+        // e.g. "Left" (x >= -w) is Column0 + Column3, "Near" (z >= 0) is
+        // just Column2 (no D3D-vs-OpenGL 0..1-vs-(-1..1) NDC ambiguity to
+        // worry about, unlike the more commonly-copied OpenGL version of
+        // this derivation).
+        void ExtractFrustumPlanes(const Float4x4& M, FrustumPlane (&Planes)[6]) {
+            const auto Col = [&](const int c) -> Float4 {
+                return {M.m[0][c], M.m[1][c], M.m[2][c], M.m[3][c]};
+            };
+            const Float4 C0 = Col(0), C1 = Col(1), C2 = Col(2), C3 = Col(3);
+
+            Planes[0] = {C3.x + C0.x, C3.y + C0.y, C3.z + C0.z, C3.w + C0.w};  // Left
+            Planes[1] = {C3.x - C0.x, C3.y - C0.y, C3.z - C0.z, C3.w - C0.w};  // Right
+            Planes[2] = {C3.x + C1.x, C3.y + C1.y, C3.z + C1.z, C3.w + C1.w};  // Bottom
+            Planes[3] = {C3.x - C1.x, C3.y - C1.y, C3.z - C1.z, C3.w - C1.w};  // Top
+            Planes[4] = {C2.x, C2.y, C2.z, C2.w};                             // Near
+            Planes[5] = {C3.x - C2.x, C3.y - C2.y, C3.z - C2.z, C3.w - C2.w};  // Far
+        }
+
+        // Transforms all 8 corners of a local-space AABB (MeshInfo's
+        // BoundsMin/BoundsMax) by Model and takes their min/max - the
+        // standard conservative way to get a world-space AABB that fully
+        // contains an arbitrarily rotated/scaled/translated box, matching
+        // the same 8-corner pattern RenderShadowPass already uses to fit
+        // the shadow volume around each caster.
+        void ComputeWorldAabb(const Float4x4& Model, const Float3& LocalMin, const Float3& LocalMax,
+                              Float3& WorldMin, Float3& WorldMax) {
+            using namespace DirectX;
+            const XMMATRIX M = XMLoadFloat4x4(&Model);
+
+            WorldMin = {std::numeric_limits<f32>::max(), std::numeric_limits<f32>::max(), std::numeric_limits<f32>::max()};
+            WorldMax = {std::numeric_limits<f32>::lowest(),
+                       std::numeric_limits<f32>::lowest(),
+                       std::numeric_limits<f32>::lowest()};
+
+            for (u32 Corner = 0; Corner < 8; ++Corner) {
+                const XMVECTOR Local = XMVectorSet((Corner & 1) ? LocalMax.x : LocalMin.x,
+                                                   (Corner & 2) ? LocalMax.y : LocalMin.y,
+                                                   (Corner & 4) ? LocalMax.z : LocalMin.z,
+                                                   1.0f);
+                Float3 World;
+                XMStoreFloat3(&World, XMVector3Transform(Local, M));
+
+                WorldMin.x = std::min(WorldMin.x, World.x);
+                WorldMin.y = std::min(WorldMin.y, World.y);
+                WorldMin.z = std::min(WorldMin.z, World.z);
+                WorldMax.x = std::max(WorldMax.x, World.x);
+                WorldMax.y = std::max(WorldMax.y, World.y);
+                WorldMax.z = std::max(WorldMax.z, World.z);
+            }
+        }
+
+        // Standard "positive vertex" AABB-vs-frustum test: for each plane,
+        // the AABB corner furthest along the plane's own normal is the
+        // corner most likely to still be inside it - if even that corner
+        // fails, the whole box is fully on the outside of that one plane,
+        // which is enough to cull it (conservative: never culls something
+        // actually visible, may miss culling a box that's outside only at a
+        // corner - the standard, cheap trade-off for this technique).
+        bool AabbIntersectsFrustum(const Float3& Min, const Float3& Max, const FrustumPlane (&Planes)[6]) {
+            for (const FrustumPlane& P : Planes) {
+                const f32 PositiveX = P.a >= 0.0f ? Max.x : Min.x;
+                const f32 PositiveY = P.b >= 0.0f ? Max.y : Min.y;
+                const f32 PositiveZ = P.c >= 0.0f ? Max.z : Min.z;
+                if (P.a * PositiveX + P.b * PositiveY + P.c * PositiveZ + P.d < 0.0f) return false;
+            }
+            return true;
+        }
     }  // namespace
 
     MeshRenderer::~MeshRenderer() {
@@ -71,7 +151,7 @@ namespace Xen {
         // Content directory. Code/Shaders/PBR.hlsl is the authored source;
         // Scripts/compile_engine_shaders.py compiles it offline (dxc.exe) to
         // Engine/Shaders/pbr.vs + pbr.ps, and those get packed into
-        // Engine/XEN.Shaders.xpak, the only place this ever loads them from.
+        // Engine/XEN.Shaders.pxk, the only place this ever loads them from.
         constexpr AssetID VertexAsset   = ASSET("xen.shader.pbr.vs");
         constexpr AssetID FragmentAsset = ASSET("xen.shader.pbr.ps");
         if (!Assets.Contains(VertexAsset) || !Assets.Contains(FragmentAsset)) {
@@ -864,7 +944,7 @@ namespace Xen {
         return Result;
     }
 
-    void MeshRenderer::RenderDepthPrepass(const Scene& S, const Float4x4& ViewProjection, MeshCache& Meshes) {
+    void MeshRenderer::RenderDepthPrepass(const std::vector<VisibleMesh>& Visible, const Float4x4& ViewProjection) {
         if (!_DepthPrepassPipeline.IsValid()) return;
 
         // BindPipeline first: it's what may change the root signature (a
@@ -880,26 +960,16 @@ namespace Xen {
         Frame.ViewProjection = ViewProjection;
         _Commands.BindUniformBuffer(MaterialSlot::Frame, _Device->AllocateUniform(Frame));
 
-        S.ForEachActor([&](Actor& A) {
-            auto* MeshComp     = A.GetComponent<MeshComponent>();
-            auto* MaterialComp = A.GetComponent<PBRMaterialComponent>();
-            if (!MeshComp || !MaterialComp) return;
-
-            const MeshHandle Mesh = MeshComp->GetMesh();
-            if (!Mesh.IsValid()) return;
-
-            const RHI::BufferHandle VertexBuffer = Meshes.GetVertexBuffer(Mesh);
-            const RHI::BufferHandle IndexBuffer  = Meshes.GetIndexBuffer(Mesh);
-            const MeshInfo Info                  = Meshes.GetInfo(Mesh);
-            if (!VertexBuffer.IsValid() || !IndexBuffer.IsValid() || Info.IndexCount == 0) return;
-
+        // Visible is already frustum-culled and mesh/buffer-validated (see
+        // MeshRenderer::Render) - nothing left to skip here.
+        for (const VisibleMesh& VM : Visible) {
             ObjectConstants Object {};
-            Object.Model = A.GetWorldTransform().ToMatrix();
+            Object.Model = VM.Model;
             _Commands.BindUniformBuffer(MaterialSlot::Object, _Device->AllocateUniform(Object));
-            _Commands.BindVertexBuffer(0, VertexBuffer);
-            _Commands.BindIndexBuffer(IndexBuffer, Info.IndexType);
-            _Commands.DrawIndexed(Info.IndexCount);
-        });
+            _Commands.BindVertexBuffer(0, VM.VertexBuffer);
+            _Commands.BindIndexBuffer(VM.IndexBuffer, VM.Info.IndexType);
+            _Commands.DrawIndexed(VM.Info.IndexCount);
+        }
     }
 
     void MeshRenderer::Render(const Scene& S, const Viewport& Target, const f32 DeltaTime) {
@@ -1032,6 +1102,50 @@ namespace Xen {
             Frame.InvScreenSizeAndPad = {1.0f / CAST<f32>(Target.GetWidth()), 1.0f / CAST<f32>(Target.GetHeight()), 0.0f, 0.0f};
         }
 
+        // Frustum culling: every mesh actor, tested once against the
+        // camera's view frustum (a plain AABB-vs-6-planes test - see
+        // ExtractFrustumPlanes/AabbIntersectsFrustum) and, if visible,
+        // resolved down to everything both the depth prepass and the main
+        // pass need to draw it - so neither pass repeats the mesh/buffer
+        // lookup or the world-matrix computation, and neither iterates an
+        // actor this frame will never actually rasterize. Jitter (see
+        // TAA.hpp) is sub-pixel, so testing against the jittered
+        // Frame.ViewProjection instead of an unjittered variant makes no
+        // practical difference here.
+        std::vector<VisibleMesh> VisibleMeshes;
+        u32 CulledMeshCount = 0;
+        if (CanDraw) {
+            FrustumPlane Planes[6];
+            ExtractFrustumPlanes(Frame.ViewProjection, Planes);
+
+            S.ForEachActor([&](Actor& A) {
+                auto* MeshComp     = A.GetComponent<MeshComponent>();
+                auto* MaterialComp = A.GetComponent<PBRMaterialComponent>();
+                if (!MeshComp || !MaterialComp) return;
+
+                const MeshHandle Mesh = MeshComp->GetMesh();
+                if (!Mesh.IsValid()) return;
+
+                const RHI::BufferHandle VertexBuffer = Meshes->GetVertexBuffer(Mesh);
+                const RHI::BufferHandle IndexBuffer  = Meshes->GetIndexBuffer(Mesh);
+                const MeshInfo Info                  = Meshes->GetInfo(Mesh);
+                if (!VertexBuffer.IsValid() || !IndexBuffer.IsValid() || Info.IndexCount == 0) return;
+
+                const Float4x4 Model = A.GetWorldTransform().ToMatrix();
+
+                Float3 WorldMin, WorldMax;
+                ComputeWorldAabb(Model, Info.BoundsMin, Info.BoundsMax, WorldMin, WorldMax);
+                if (!AabbIntersectsFrustum(WorldMin, WorldMax, Planes)) {
+                    ++CulledMeshCount;
+                    return;
+                }
+
+                VisibleMeshes.push_back({&A, MaterialComp, Model, VertexBuffer, IndexBuffer, Info});
+            });
+        }
+        _LastCulledMeshCount  = CulledMeshCount;
+        _LastVisibleMeshCount = CAST<u32>(VisibleMeshes.size());
+
         // Camera-space depth prepass + SSAO, both before the main pass
         // begins - see MeshRenderer.hpp's own comment on RenderDepthPrepass
         // for why a forward renderer needs the depth done this early at all.
@@ -1050,7 +1164,7 @@ namespace Xen {
                 PrepassDesc.DebugName                = "Depth prepass";
                 _Commands.PushDebugGroup("Depth prepass");
                 _Commands.BeginRenderPass(PrepassDesc);
-                RenderDepthPrepass(S, Frame.ViewProjection, *Meshes);
+                RenderDepthPrepass(VisibleMeshes, Frame.ViewProjection);
                 _Commands.EndRenderPass();
                 _Commands.PopDebugGroup();
             }
@@ -1115,21 +1229,12 @@ namespace Xen {
             // every material channel's own placeholder.
             _Commands.BindTexture(MaterialSlot::SSAO, AoTexture.IsValid() ? AoTexture : _WhiteTexture, _ClampSampler);
 
-            S.ForEachActor([&](Actor& A) {
-                auto* MeshComp     = A.GetComponent<MeshComponent>();
-                auto* MaterialComp = A.GetComponent<PBRMaterialComponent>();
-                if (!MeshComp || !MaterialComp) return;
-
-                const MeshHandle Mesh = MeshComp->GetMesh();
-                if (!Mesh.IsValid()) return;
-
-                const RHI::BufferHandle VertexBuffer = Meshes->GetVertexBuffer(Mesh);
-                const RHI::BufferHandle IndexBuffer  = Meshes->GetIndexBuffer(Mesh);
-                const MeshInfo Info                  = Meshes->GetInfo(Mesh);
-                if (!VertexBuffer.IsValid() || !IndexBuffer.IsValid() || Info.IndexCount == 0) return;
+            for (const VisibleMesh& VM : VisibleMeshes) {
+                Actor& A                        = *VM.A;
+                PBRMaterialComponent* MaterialComp = VM.Material;
 
                 ObjectConstants Object {};
-                Object.Model = A.GetWorldTransform().ToMatrix();
+                Object.Model = VM.Model;
 
                 // TAA motion vectors (see PBR.hlsl's PSOutput): last frame's
                 // Model, keyed by this actor's stable handle - a new actor
@@ -1167,10 +1272,10 @@ namespace Xen {
                 BindChannel(MaterialSlot::AmbientOcclusion, MaterialComp->GetAmbientOcclusionMap(), _WhiteTexture);
                 BindChannel(MaterialSlot::Emissive, MaterialComp->GetEmissiveMap(), _WhiteTexture);
 
-                _Commands.BindVertexBuffer(0, VertexBuffer);
-                _Commands.BindIndexBuffer(IndexBuffer, Info.IndexType);
-                _Commands.DrawIndexed(Info.IndexCount);
-            });
+                _Commands.BindVertexBuffer(0, VM.VertexBuffer);
+                _Commands.BindIndexBuffer(VM.IndexBuffer, VM.Info.IndexType);
+                _Commands.DrawIndexed(VM.Info.IndexCount);
+            }
 
             // The background, last: it only lands on pixels no mesh covered
             // (far-plane depth vs LessEqual), and it needs the real baked

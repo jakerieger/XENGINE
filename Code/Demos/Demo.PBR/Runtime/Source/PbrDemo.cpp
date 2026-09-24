@@ -31,6 +31,9 @@ void PBRDemo::OnRender() {
         ImGui::Text("Render passes:   %u", Stats.RenderPasses);
         ImGui::Text("Pipeline binds:  %u (%u redundant skipped)", Stats.PipelineBinds, Stats.RedundantBindsSkipped);
         ImGui::Text("Transient bytes: %u", Stats.TransientBytesUsed);
+        ImGui::Text("Meshes:          %u visible, %u culled",
+                    GetMeshRenderer().GetLastVisibleMeshCount(),
+                    GetMeshRenderer().GetLastCulledMeshCount());
 
         ImGui::Separator();
         ImGui::Text("Asset Caches");

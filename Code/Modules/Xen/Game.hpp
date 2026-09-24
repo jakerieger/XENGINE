@@ -16,6 +16,7 @@
 #include "MeshCache.hpp"
 #include "MeshRenderer.hpp"
 #include "Scene.hpp"
+#include "ShaderHotReload.hpp"
 #include "SpriteBatcher.hpp"
 #include "SpriteRenderer.hpp"
 #include "Viewport.hpp"
@@ -207,6 +208,13 @@ namespace Xen {
         // above: no shader asset just means no anti-aliasing.
         FXAA _FXAA;
 
+        // Dev-only (see ShaderHotReload.hpp) - permanently inert in a
+        // Release build. Polled once a frame in TickFrame; a change reloads
+        // every subsystem above that owns a pipeline built from
+        // Code/Shaders (see ReloadShaders).
+        ShaderHotReload _ShaderHotReload;
+        void ReloadShaders();
+
         // Declared after _RenderDevice (destroyed before it, in reverse
         // declaration order) so DebugUI::~DebugUI's WaitIdle() call still
         // has a live device to call it on - a backstop, since ~Game()
@@ -249,7 +257,7 @@ namespace Xen {
     /// executable's own directory.
     ///
     /// The game executable builds to <output>/Bin64/, one level below
-    /// Config/, Data1.xpak and Engine/ (see README.md's Game Distribution
+    /// Config/, Data.pxk and Engine/ (see README.md's Game Distribution
     /// Output layout) - every relative path in the engine
     /// (EngineConfig::Read("Config/..."), InputMap::Load,
     /// AssetMountConfig::PakFiles, and BuildMountConfig's own exists()
@@ -272,26 +280,36 @@ namespace Xen {
         }
     }
 
+    inline void AttachConsole(const std::string& Name) {
+        ::AllocConsole();
+
+        FILE* FilePointer;
+        freopen_s(&FilePointer, "CONOUT$", "w", stdout);
+        freopen_s(&FilePointer, "CONOUT$", "w", stderr);
+        freopen_s(&FilePointer, "CONIN$", "r", stdin);
+
+        std::ios::sync_with_stdio(true);
+
+        ::SetConsoleTitleA(std::string(Name + " | Console").c_str());
+    }
+
     template<typename GameClass>
-    void RunGame(const std::string& Name, const AssetSettings& Settings, const int argc, char* argv[]) noexcept {
+    void RunGame(const std::string& Name, const AssetSettings& Settings) noexcept {
         ASSERT_BASE_OF(Game, GameClass);
 
         FixContentWorkingDirectory();
 
-        const auto MountConfig = BuildMountConfig(Settings, argc, argv);
+        ProcessCommandLineArguments Args {};
+        if (!GetProcessCommandLineArguments(Args)) {
+            LOG_ERR("Failed to get command line arguments");
+            return;
+        }
+
+        const auto MountConfig = BuildMountConfig(Settings, Args.Argc, Args.Argv);
 
         try {
 #ifndef NDEBUG
-            ::AllocConsole();
-
-            FILE* FilePointer;
-            freopen_s(&FilePointer, "CONOUT$", "w", stdout);
-            freopen_s(&FilePointer, "CONOUT$", "w", stderr);
-            freopen_s(&FilePointer, "CONIN$", "r", stdin);
-
-            std::ios::sync_with_stdio(true);
-
-            ::SetConsoleTitleA(std::string(Name + " | Console").c_str());
+            AttachConsole(Name);
 #endif
 
             GameClass {Name, MountConfig}.Run();
@@ -304,6 +322,6 @@ namespace Xen {
 
 #define XEN_GAME(GameClass, Title)                                                                                     \
     int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {                                                            \
-        Xen::RunGame<GameClass>(Title, Xen::Generated::GameSettings(), __argc, __argv);                                \
+        Xen::RunGame<GameClass>(Title, Xen::Generated::GameSettings());                                                \
         return 0;                                                                                                      \
     }

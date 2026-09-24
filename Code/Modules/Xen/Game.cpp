@@ -12,6 +12,8 @@
 #include "SceneSerializer.hpp"
 #include "AssetSettings.hpp"
 
+#include <XenPAK/LooseFileSource.hpp>
+
 namespace Xen {
     PAK::AssetMountConfig BuildMountConfig(const AssetSettings& Settings, const int argc, char* argv[]) {
         PAK::AssetMountConfig Config;
@@ -32,6 +34,10 @@ namespace Xen {
             // real packaging error and should still fail loudly.
             Config.PakFiles = Settings.PakFiles;
         }
+
+        Config.EngineShaderSourceDir = Settings.EngineShaderSourceDir;
+        Config.EngineShaderOutputDir = Settings.EngineShaderOutputDir;
+        Config.EngineDxcPath         = Settings.EngineDxcPath;
 
         return Config;
     }
@@ -121,6 +127,33 @@ namespace Xen {
         // same convention as _MeshRenderer above.
         if (!_FXAA.Initialize(*_RenderDevice, *_Assets, _MainViewport.GetColorFormat())) {
             LOG_DBG("FXAA not initialized (no shader asset found) - anti-aliasing unavailable");
+        }
+
+        // Dev-only: a no-op call in Release (MountConfig's two shader paths
+        // are empty there - see AssetSettings.hpp). The loose override has
+        // to be mounted before anything above already loaded a shader would
+        // matter for a REPEAT load, but since this is the very first one,
+        // mounting it here (rather than earlier, before _MeshRenderer/_FXAA
+        // Initialize) makes no practical difference - nothing's been edited
+        // yet at process start regardless.
+        if (_ShaderHotReload.Initialize(
+              MountConfig.EngineShaderSourceDir, MountConfig.EngineShaderOutputDir, MountConfig.EngineDxcPath)) {
+            _Assets->AddSource(std::make_unique<PAK::LooseFileSource>(MountConfig.EngineShaderOutputDir,
+                                                                       PAK::MOUNT_PRIORITY_LOOSE_BASE * 10));
+        }
+    }
+
+    void Game::ReloadShaders() {
+        LOG_INFO("Shader hot-reload: reloading render pipelines...");
+
+        _MeshRenderer.Shutdown();
+        if (!_MeshRenderer.Initialize(*_RenderDevice, *_Assets, _MainViewport)) {
+            LOG_WARN("Shader hot-reload: mesh renderer failed to reinitialize - 3D rendering now unavailable");
+        }
+
+        _FXAA.Shutdown();
+        if (!_FXAA.Initialize(*_RenderDevice, *_Assets, _MainViewport.GetColorFormat())) {
+            LOG_WARN("Shader hot-reload: FXAA failed to reinitialize - anti-aliasing now unavailable");
         }
     }
 
@@ -243,6 +276,12 @@ namespace Xen {
     void Game::TickFrame(const f32 DeltaTime) {
         _LastDelta = DeltaTime;
         ++_FrameCount;
+
+        // Dev-only, permanently a no-op in Release (see ShaderHotReload.hpp)
+        // - checked before any BeginFrame below, since reloading a pipeline
+        // needs to run outside one (the same constraint MeshRenderer::
+        // Initialize's synchronous BRDF LUT bake already has).
+        if (_ShaderHotReload.Poll(DeltaTime)) { ReloadShaders(); }
 
         // A scene is loading: there's nothing to update or draw but the
         // loading screen. RunLoop still pumps the window every iteration, so it

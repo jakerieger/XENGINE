@@ -54,7 +54,6 @@ namespace Xen {
 
     private:
         std::ofstream _LogStream;
-        std::string _LogFileName;
         size_t _CurrentEntry {0};
         size_t _TotalEntries {0};
         std::array<Entry, LOGGER_MAX_ENTRIES> _Entries {};

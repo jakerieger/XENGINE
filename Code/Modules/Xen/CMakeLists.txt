@@ -59,6 +59,8 @@ add_library(Xen STATIC
         Scene.hpp
         SceneSerializer.cpp
         SceneSerializer.hpp
+        ShaderHotReload.cpp
+        ShaderHotReload.hpp
         SpriteRenderer.cpp
         SpriteRenderer.hpp
         SpriteBatcher.cpp

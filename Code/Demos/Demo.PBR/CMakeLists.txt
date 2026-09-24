@@ -2,6 +2,8 @@ project(Demo.PBR)
 
 include(XenGame)
 xen_add_game_executable(Demo.PBR
+        Runtime/Res/App.rc
+        Runtime/Res/Resource.h
         Runtime/main.cpp
         Runtime/Source/RotatingComponent.cpp
         Runtime/Source/RotatingComponent.hpp
@@ -10,7 +12,7 @@ xen_add_game_executable(Demo.PBR
         Runtime/Source/SceneBuilder.hpp
 )
 xen_configure_game(Demo.PBR
-        PAK_FILENAME "Data1.xpak"
+        PAK_FILENAME "Data.pxk"
         CONTENT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Content"
 )
 xen_compile_shaders(Demo.PBR)

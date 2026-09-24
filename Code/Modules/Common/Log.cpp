@@ -7,7 +7,8 @@
 #include <filesystem>
 
 namespace Xen {
-    namespace fs = std::filesystem;
+    namespace fs               = std::filesystem;
+    constexpr auto LogFileName = "Game.log";
 
     Logger& GetLogger() {
         static Logger Instance;
@@ -15,17 +16,22 @@ namespace Xen {
     }
 
     Logger::Logger() {
-        _LogFileName = GetLogFileName();
-        _LogStream.open(_LogFileName, std::ios::app);
+        _LogStream.open(LogFileName, std::ios::out | std::ios::trunc);
 
         const auto Header = std::format("-- Log opened at {} --\n", DateTime::Now().LocalUTCString());
         _LogStream << Header;
     }
 
     Logger::~Logger() {
-        if (_LogStream.is_open()) {
-            std::printf("Log saved to '%s'\n", _LogFileName.c_str());
-            _LogStream.close();
+        if (_LogStream.is_open()) _LogStream.close();
+
+        // Copy log to 'Logs' directory for backup. 'Game.log' gets overwritten the next time the game runs.
+        const auto BackupFileName = GetLogFileName();
+        fs::copy_file(LogFileName, BackupFileName);
+        if (fs::exists(BackupFileName)) {
+            std::printf("Log has been backed up to '%s'\n", BackupFileName.c_str());
+        } else {
+            std::fprintf(stderr, "Failed to backup current log to '%s'\n", BackupFileName.c_str());
         }
     }
 

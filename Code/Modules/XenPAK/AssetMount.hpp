@@ -21,6 +21,17 @@ namespace Xen::PAK {
     struct AssetMountConfig {
         std::vector<std::filesystem::path> PakFiles;
         std::vector<std::filesystem::path> ContentDirs;
+
+        // Passed straight through from AssetSettings (see BuildMountConfig)
+        // to whatever constructs the Game - not mounted by MountAssets
+        // itself. Debug-only; empty in Release (see XenGameSettings.h.in).
+        // Xen::ShaderHotReload watches SourceDir and writes into OutputDir;
+        // Game::Game mounts a LooseFileSource over OutputDir separately, at
+        // the very end of MountAssets's own priority band, once the rest of
+        // this config has already been mounted normally.
+        std::filesystem::path EngineShaderSourceDir;
+        std::filesystem::path EngineShaderOutputDir;
+        std::filesystem::path EngineDxcPath;
     };
 
     /// @brief Priority bands. Paks occupy the low band, loose files sit above

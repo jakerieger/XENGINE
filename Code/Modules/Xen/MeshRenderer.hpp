@@ -11,6 +11,7 @@
 
 #include "ActorHandle.hpp"
 #include "EnvironmentBaker.hpp"
+#include "MeshCache.hpp"
 #include "PostProcess.hpp"
 #include "RenderDevice.hpp"
 #include "SSAO.hpp"
@@ -18,6 +19,7 @@
 #include "Viewport.hpp"
 
 #include <unordered_map>
+#include <vector>
 
 namespace Xen {
     namespace PAK {
@@ -25,9 +27,10 @@ namespace Xen {
     }
 
     class Scene;
+    class Actor;
     class CameraComponent;
     class DirectionalLightComponent;
-    class MeshCache;
+    class PBRMaterialComponent;
 
     class MeshRenderer {
     public:
@@ -66,6 +69,12 @@ namespace Xen {
         /// real frame time for auto exposure's eye-adaptation ramp.
         void Render(const Scene& S, const Viewport& Target, f32 DeltaTime);
 
+        /// @brief How many mesh actors the last Render() drew vs. skipped
+        /// via frustum culling - 0/0 before the first Render(). For a debug
+        /// UI to show; not used internally.
+        NODISCARD u32 GetLastVisibleMeshCount() const { return _LastVisibleMeshCount; }
+        NODISCARD u32 GetLastCulledMeshCount() const { return _LastCulledMeshCount; }
+
         /// @brief Bakes the scene's environment (the prefiltered/irradiance
         /// cube maps) now instead of on the first Render that sees it. The
         /// bake is a burst of GPU work, so a game calls this while its loading
@@ -75,6 +84,19 @@ namespace Xen {
         void PrepareEnvironment(const Scene& S);
 
     private:
+        // A frustum-culled, mesh/buffer-validated actor with everything both
+        // the depth prepass and the main pass need to draw it - computed
+        // once per frame (see Render), not per-pass, so neither the world
+        // matrix nor the mesh's buffer handles/info get looked up twice.
+        struct VisibleMesh {
+            Actor* A;
+            PBRMaterialComponent* Material;
+            Float4x4 Model;
+            RHI::BufferHandle VertexBuffer;
+            RHI::BufferHandle IndexBuffer;
+            MeshInfo Info;
+        };
+
         bool CreateDefaultTextures();
 
         /// @brief Renders the split-sum BRDF lookup table (see
@@ -95,17 +117,18 @@ namespace Xen {
         /// pipeline exists, so the scene just has no shadows and no SSAO.
         void CreateShadowPipeline(const PAK::AssetRegistry& Assets, RHI::Format TargetDepthFormat);
 
-        /// @brief Depth-only pass from the camera's own view - every actor
-        /// the main pass would draw, before it draws them. Exists so SSAO
-        /// has a full scene depth to read before any shading happens (a
+        /// @brief Depth-only pass from the camera's own view - every visible
+        /// actor the main pass would draw, before it draws them. Exists so
+        /// SSAO has a full scene depth to read before any shading happens (a
         /// forward pass's own depth isn't finished until shading is, the
         /// problem a deferred renderer's G-buffer doesn't have); the main
         /// pass then reads this depth back with LoadOp::Load and a
         /// LessEqual compare (not the usual Less) instead of clearing and
         /// redoing the work, so this isn't pure overhead - it also caps the
         /// main pass's overdraw the way any z-prepass does. No-op if the
-        /// prepass pipeline never built.
-        void RenderDepthPrepass(const Scene& S, const Float4x4& ViewProjection, MeshCache& Meshes);
+        /// prepass pipeline never built. Visible is already frustum-culled
+        /// and validated (see Render) - nothing left to skip here.
+        void RenderDepthPrepass(const std::vector<VisibleMesh>& Visible, const Float4x4& ViewProjection);
 
         /// @brief What the shadow pass hands the main pass: whether a shadow
         /// map was rendered this frame and how to look points up in it.
@@ -227,6 +250,11 @@ namespace Xen {
         RHI::TextureHandle _IrradianceMap {};
 
         void ReleaseBakedEnvironment();
+
+        // Frustum culling stats from the last Render() call - see
+        // GetLastVisibleMeshCount/GetLastCulledMeshCount.
+        u32 _LastVisibleMeshCount {0};
+        u32 _LastCulledMeshCount {0};
 
         struct EnvironmentState {
             bool HasBaked {false};

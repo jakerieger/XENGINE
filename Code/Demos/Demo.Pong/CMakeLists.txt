@@ -13,7 +13,7 @@ xen_add_game_executable(Demo.Pong
         Runtime/Source/PlayerComponent.hpp
 )
 xen_configure_game(Demo.Pong
-        PAK_FILENAME "Data1.xpak"
+        PAK_FILENAME "Data.pxk"
         CONTENT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Content"
 )
 xen_compile_shaders(Demo.Pong)

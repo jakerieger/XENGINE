@@ -67,7 +67,7 @@ namespace Xen::PAK {
             In >> Root;
         } catch (const Json::parse_error& Ex) {
             THROW_ENGINE_EXCEPTION(InvalidManifestException,
-                                  "failed to parse manifest '" + Path.string() + "': " + Ex.what());
+                                   "failed to parse manifest '" + Path.string() + "': " + Ex.what());
         }
 
         PakManifest Manifest;
@@ -87,12 +87,13 @@ namespace Xen::PAK {
                 Manifest.Assets.push_back(std::move(AssetEntry));
             }
         } catch (const Json::exception& Ex) {
-            THROW_ENGINE_EXCEPTION(InvalidManifestException, "malformed manifest '" + Path.string() + "': " + Ex.what());
+            THROW_ENGINE_EXCEPTION(InvalidManifestException,
+                                   "malformed manifest '" + Path.string() + "': " + Ex.what());
         }
 
         if (Manifest.FormatVersion != PAK_MANIFEST_VERSION) {
             THROW_ENGINE_EXCEPTION(InvalidManifestException,
-                                  "unsupported manifest version: " + std::to_string(Manifest.FormatVersion));
+                                   "unsupported manifest version: " + std::to_string(Manifest.FormatVersion));
         }
 
         return Manifest;
@@ -100,7 +101,7 @@ namespace Xen::PAK {
 
     std::filesystem::path PakManifest::ManifestPathFor(const std::filesystem::path& PakPath) {
         std::filesystem::path Result = PakPath;
-        Result.replace_extension(".xmeta");
+        Result.replace_extension(".pxkm");
         return Result;
     }
 }  // namespace Xen::PAK

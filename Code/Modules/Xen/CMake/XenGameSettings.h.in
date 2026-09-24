@@ -18,7 +18,10 @@ namespace Xen::Generated {
 #ifdef NDEBUG
         Settings.MountContentDirs = @XEN_GEN_LOOSE_IN_RELEASE@;
 #else
-        Settings.MountContentDirs = !Settings.ContentDirs.empty();
+        Settings.MountContentDirs      = !Settings.ContentDirs.empty();
+        Settings.EngineShaderSourceDir = @XEN_ENGINE_SHADER_SOURCE_DIR@;
+        Settings.EngineShaderOutputDir = @XEN_ENGINE_SHADER_OUTPUT_DIR@;
+        Settings.EngineDxcPath         = @XEN_ENGINE_DXC_PATH@;
 #endif
 
         return Settings;

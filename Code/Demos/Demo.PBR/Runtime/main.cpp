@@ -24,6 +24,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
 
 #ifndef NDEBUG
         SceneBuilder::Build(Game.GetContext());
+        Xen::AttachConsole("Demo.PBR");
 #endif
 
         Game.Run();
