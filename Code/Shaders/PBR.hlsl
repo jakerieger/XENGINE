@@ -10,6 +10,7 @@
 
 #include "Include/Common.hlsli"
 #include "Include/FrameData.hlsli"
+#include "Include/LightData.hlsli"
 #include "Include/MaterialBindings.hlsli"
 
 cbuffer ObjectData : register(XEN_OBJECT_REGISTER) {
@@ -144,6 +145,54 @@ float3 FresnelSchlick(float CosTheta, float3 F0) {
 float3 FresnelSchlickRoughness(float CosTheta, float3 F0, float Roughness) {
     return F0 + (max(float3(1.0 - Roughness, 1.0 - Roughness, 1.0 - Roughness), F0) - F0) *
                 pow(clamp(1.0 - CosTheta, 0.0, 1.0), 5.0);
+}
+
+// Cook-Torrance direct lighting for one already-attenuated Radiance arriving
+// from direction L - shared by the directional light (Radiance includes its
+// shadow term) and every point/spot light below (Radiance includes distance/
+// cone falloff instead). Pulled out once rather than duplicated per light
+// type, since the BRDF evaluation itself doesn't care where Radiance/L came
+// from.
+float3 EvaluateDirectLighting(float3 N, float3 V, float3 L, float3 Albedo, float Metallic, float Roughness,
+                              float3 F0, float3 Radiance) {
+    const float NdotL = max(dot(N, L), 0.0);
+    if (NdotL <= 0.0) return float3(0.0, 0.0, 0.0);
+
+    const float3 H = normalize(V + L);
+    const float NDF = DistributionGGX(N, H, Roughness);
+    const float G   = GeometrySmith(N, V, L, Roughness);
+    const float3 F  = FresnelSchlick(max(dot(H, V), 0.0), F0);
+
+    const float3 KSpecular = F;
+    // Metals absorb all diffuse light - only dielectrics scatter it.
+    const float3 KDiffuse = (1.0 - KSpecular) * (1.0 - Metallic);
+
+    const float3 Specular = (NDF * G * F) / max(4.0 * max(dot(N, V), 0.0) * NdotL, 0.0001);
+    return (KDiffuse * Albedo / PI + Specular) * Radiance * NdotL;
+}
+
+// Karis's windowed inverse-square falloff ("Real Shading in Unreal Engine 4",
+// SIGGRAPH 2013) - physically-plausible 1/d^2 close to the light, smoothly
+// windowed to exactly zero at Range instead of a hard if-cutoff, which would
+// pop visibly as a light moves or a receiver crosses the boundary.
+float DistanceAttenuation(float Distance, float Range) {
+    const float DistanceOverRange = Distance / max(Range, 0.0001);
+    const float Window = saturate(1.0 - pow(DistanceOverRange, 4.0));
+    return (Window * Window) / max(Distance * Distance, 0.0001);
+}
+
+// Smooth angular falloff between a spot light's inner and outer cone - fully
+// lit inside CosInner, zero outside CosOuter, squared for a softer-edged
+// transition than a linear ramp (matches the same "smoothstep-ish" shaping
+// DistanceAttenuation's own squared window uses).
+float SpotAttenuation(float3 ToLightDir, float3 SpotForward, float CosInner, float CosOuter) {
+    // ToLightDir points FROM the surface TO the light; SpotForward is the
+    // direction the light itself points (the light's own -Z, see
+    // SpotLightComponent::GetDirection) - the angle between them is measured
+    // against the light shining TOWARD the surface, hence the negation.
+    const float CosAngle = dot(-ToLightDir, SpotForward);
+    const float Falloff  = saturate((CosAngle - CosOuter) / max(CosInner - CosOuter, 0.0001));
+    return Falloff * Falloff;
 }
 
 // Tangent-space normal (sampled from NormalMap, so callers always pass a
@@ -304,32 +353,40 @@ PSOutput PSMain(PSInput In) {
 
     const float3 V = normalize(CameraPositionAndPad.xyz - In.WorldPosition);
     const float3 L = normalize(-LightDirectionAndPad.xyz);
-    const float3 H = normalize(V + L);
 
     // Dielectrics start near 0.04 reflectance at normal incidence; metals
     // tint their reflectance by their own albedo instead.
     const float3 F0 = lerp(float3(0.04, 0.04, 0.04), Albedo, Metallic);
 
-    const float NDF = DistributionGGX(N, H, Roughness);
-    const float G   = GeometrySmith(N, V, L, Roughness);
-    const float3 F  = FresnelSchlick(max(dot(H, V), 0.0), F0);
-
-    const float3 KSpecular = F;
-    // Metals absorb all diffuse light - only dielectrics scatter it.
-    const float3 KDiffuse = (1.0 - KSpecular) * (1.0 - Metallic);
-
-    const float3 Numerator   = NDF * G * F;
-    const float Denominator  = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
-    const float3 Specular    = Numerator / Denominator;
-
-    const float NdotL       = max(dot(N, L), 0.0);
-    const float3 Radiance   = LightColorAndIntensity.xyz * LightColorAndIntensity.w;
-
     // Shadowing uses the interpolated geometric normal, not the normal-mapped
     // one: acne is a property of the surface's actual slope.
     const float3 GeometricNormal = normalize(In.WorldNormal);
     const float Shadow = ShadowVisibility(In.WorldPosition, GeometricNormal, dot(GeometricNormal, L), In.Position.xy);
-    const float3 DirectLight = (KDiffuse * Albedo / PI + Specular) * Radiance * NdotL * Shadow;
+    const float3 SunRadiance = LightColorAndIntensity.xyz * LightColorAndIntensity.w * Shadow;
+    float3 DirectLight = EvaluateDirectLighting(N, V, L, Albedo, Metallic, Roughness, F0, SunRadiance);
+
+    // Every point/spot light in the scene (see LightData.hlsli) - a plain
+    // brute-force loop, not a per-tile culled list: this is still a forward
+    // renderer, not Forward+ (tiled culling is a deferred follow-on once a
+    // scene actually has enough lights to need it - see LightData.hlsli's
+    // own comment). No shadows from these; only the one directional light
+    // casts them.
+    for (uint LightIndex = 0; LightIndex < LightCount; ++LightIndex) {
+        const Light Lt = Lights[LightIndex];
+
+        const float3 ToLight = Lt.PositionAndRange.xyz - In.WorldPosition;
+        const float Distance = length(ToLight);
+        const float3 Li      = ToLight / max(Distance, 0.0001);
+
+        float Attenuation = DistanceAttenuation(Distance, Lt.PositionAndRange.w);
+        if (Lt.DirectionAndType.w == XEN_LIGHT_TYPE_SPOT) {
+            Attenuation *= SpotAttenuation(Li, Lt.DirectionAndType.xyz, Lt.ConeAnglesAndPad.x, Lt.ConeAnglesAndPad.y);
+        }
+        if (Attenuation <= 0.0) continue;
+
+        const float3 PunctualRadiance = Lt.ColorAndIntensity.xyz * Lt.ColorAndIntensity.w * Attenuation;
+        DirectLight += EvaluateDirectLighting(N, V, Li, Albedo, Metallic, Roughness, F0, PunctualRadiance);
+    }
 
     // Image-based lighting, split-sum style: the environment maps supply the
     // incoming light, BrdfLUT supplies how much of it this material reflects

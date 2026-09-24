@@ -97,8 +97,12 @@ add_library(Xen STATIC
         Components/MeshComponent.hpp
         Components/PBRMaterialComponent.cpp
         Components/PBRMaterialComponent.hpp
+        Components/PointLightComponent.cpp
+        Components/PointLightComponent.hpp
         Components/PostProcessComponent.cpp
         Components/PostProcessComponent.hpp
+        Components/SpotLightComponent.cpp
+        Components/SpotLightComponent.hpp
         Components/SpriteComponent.cpp
         Components/SpriteComponent.hpp
         # Engine/Backends - Windows + D3D12 only; the engine has no other target platform.

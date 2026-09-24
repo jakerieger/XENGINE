@@ -7,6 +7,8 @@
 #include "Components/MeshComponent.hpp"
 #include "Components/PBRMaterialComponent.hpp"
 #include "Components/DirectionalLightComponent.hpp"
+#include "Components/PointLightComponent.hpp"
+#include "Components/SpotLightComponent.hpp"
 #include "Components/EnvironmentComponent.hpp"
 #include "Components/PostProcessComponent.hpp"
 #include "Components/AmbientOcclusionComponent.hpp"
@@ -50,6 +52,32 @@ namespace Xen {
             Float4 AlbedoAndMetallic;
             Float4 RoughnessAOAndPad;
             Float4 EmissiveAndPad;
+        };
+
+        constexpr f32 LightTypePoint = 0.0f;
+        constexpr f32 LightTypeSpot  = 1.0f;
+
+        // Matches Code/Shaders/Include/LightData.hlsli's Light exactly.
+        struct GpuLight {
+            Float4 PositionAndRange;
+            Float4 ColorAndIntensity;
+            Float4 DirectionAndType;
+            Float4 ConeAnglesAndPad;
+        };
+
+        // One past the highest light index LightData.hlsli's fixed-size
+        // array holds (XEN_MAX_LIGHTS) - kept in sync by hand, same
+        // no-shared-codegen tradeoff as every other HLSL/C++ mirrored
+        // struct in this file.
+        constexpr u32 MaxLights = 128;
+
+        // Matches Code/Shaders/Include/LightData.hlsli's cbuffer exactly,
+        // including its 16-byte-aligned header (LightCount + 3 pad words,
+        // matching a single float4 slot the same way HLSL packs it).
+        struct LightConstants {
+            u32 LightCount {0};
+            u32 Pad[3] {};
+            GpuLight Lights[MaxLights] {};
         };
 
         // The scene render's own target format (see MeshRenderer.hpp's
@@ -191,7 +219,8 @@ namespace Xen {
         RHI::PipelineLayoutDesc LayoutDesc;
         LayoutDesc.Binding(MaterialSlot::Frame, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All)
           .Binding(MaterialSlot::Object, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All)
-          .Binding(MaterialSlot::Material, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::Fragment);
+          .Binding(MaterialSlot::Material, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::Fragment)
+          .Binding(MaterialSlot::LightData, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::Fragment);
         for (u32 Slot = 0; Slot < MaterialSlot::TextureSlotCount; ++Slot) {
             LayoutDesc.Binding(Slot, RHI::BindingType::SampledTexture, RHI::ShaderVisibility::Fragment)
               .Binding(Slot, RHI::BindingType::Sampler, RHI::ShaderVisibility::Fragment);
@@ -1102,6 +1131,42 @@ namespace Xen {
             Frame.InvScreenSizeAndPad = {1.0f / CAST<f32>(Target.GetWidth()), 1.0f / CAST<f32>(Target.GetHeight()), 0.0f, 0.0f};
         }
 
+        // Every point/spot light in the scene (see LightData.hlsli) - a
+        // plain, uncapped-per-pixel-cost forward list (up to MaxLights),
+        // not a per-tile culled one; this is still a forward renderer, not
+        // Forward+. An actor with both components on it (unusual) is only
+        // counted as whichever GetComponent finds first, point before spot.
+        LightConstants LightData;
+        if (CanDraw) {
+            using namespace DirectX;
+
+            S.ForEachActor([&](Actor& A) {
+                if (LightData.LightCount >= MaxLights) return;
+
+                if (const auto* PL = A.GetComponent<PointLightComponent>()) {
+                    const Float3 Pos    = A.GetWorldTransform().Position;
+                    const Float3& Color = PL->GetColor();
+                    GpuLight& Lt        = LightData.Lights[LightData.LightCount++];
+                    Lt.PositionAndRange = {Pos.x, Pos.y, Pos.z, PL->GetRange()};
+                    Lt.ColorAndIntensity = {Color.x, Color.y, Color.z, PL->GetIntensity()};
+                    Lt.DirectionAndType  = {0.0f, 0.0f, 0.0f, LightTypePoint};
+                    Lt.ConeAnglesAndPad  = {0.0f, 0.0f, 0.0f, 0.0f};
+                } else if (const auto* SL = A.GetComponent<SpotLightComponent>()) {
+                    const Float3 Pos    = A.GetWorldTransform().Position;
+                    const Float3 Dir    = SL->GetDirection();
+                    const Float3& Color = SL->GetColor();
+                    GpuLight& Lt        = LightData.Lights[LightData.LightCount++];
+                    Lt.PositionAndRange = {Pos.x, Pos.y, Pos.z, SL->GetRange()};
+                    Lt.ColorAndIntensity = {Color.x, Color.y, Color.z, SL->GetIntensity()};
+                    Lt.DirectionAndType  = {Dir.x, Dir.y, Dir.z, LightTypeSpot};
+                    Lt.ConeAnglesAndPad  = {std::cos(XMConvertToRadians(SL->GetInnerConeAngle())),
+                                            std::cos(XMConvertToRadians(SL->GetOuterConeAngle())),
+                                            0.0f,
+                                            0.0f};
+                }
+            });
+        }
+
         // Frustum culling: every mesh actor, tested once against the
         // camera's view frustum (a plain AABB-vs-6-planes test - see
         // ExtractFrustumPlanes/AabbIntersectsFrustum) and, if visible,
@@ -1228,6 +1293,7 @@ namespace Xen {
             // multiplies through as the identity, the same convention as
             // every material channel's own placeholder.
             _Commands.BindTexture(MaterialSlot::SSAO, AoTexture.IsValid() ? AoTexture : _WhiteTexture, _ClampSampler);
+            _Commands.BindUniformBuffer(MaterialSlot::LightData, _Device->AllocateUniform(LightData));
 
             for (const VisibleMesh& VM : VisibleMeshes) {
                 Actor& A                        = *VM.A;

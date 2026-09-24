@@ -12,10 +12,15 @@
 
 namespace Xen::MaterialSlot {
     // cbuffer slots (XEN_FRAME_REGISTER/XEN_OBJECT_REGISTER/
-    // XEN_MATERIAL_REGISTER).
+    // XEN_MATERIAL_REGISTER/XEN_LIGHT_REGISTER).
     inline constexpr u32 Frame    = 0;
     inline constexpr u32 Object   = 1;
     inline constexpr u32 Material = 2;
+
+    // Every point/spot light in the scene (capped, see LightData.hlsli's
+    // MAX_LIGHTS) - scene-level like the texture slots below, bound once per
+    // frame, not per draw.
+    inline constexpr u32 LightData = 3;
 
     // Texture/sampler slots (XEN_*_TEX_REGISTER/XEN_*_SAMPLER_REGISTER) -
     // each is both the t# and the paired s# (see CommandBuffer::BindTexture).

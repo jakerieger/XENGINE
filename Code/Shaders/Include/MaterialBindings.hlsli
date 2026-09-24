@@ -22,6 +22,7 @@
 #define XEN_FRAME_REGISTER    b0  // FrameData: per-frame (view-projection, camera, light) - one bind per frame
 #define XEN_OBJECT_REGISTER   b1  // ObjectData: per-object (model matrix) - one bind per draw
 #define XEN_MATERIAL_REGISTER b2  // MaterialData: per-material scalar factors - one bind per draw
+#define XEN_LIGHT_REGISTER    b3  // LightData: every point/spot light in the scene (see LightData.hlsli) - one bind per frame
 
 // Texture/sampler slots share their number across register spaces (t#/s#),
 // matching Code/Modules/Xen/CommandBuffer.hpp's BindTexture(Slot, Tex,
