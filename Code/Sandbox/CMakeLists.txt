@@ -1,21 +1,21 @@
-project(Demo.PBR)
+project(Sandbox)
 
 include(XenGame)
-xen_add_game_executable(Demo.PBR
+xen_add_game_executable(Sandbox
         Runtime/Res/App.rc
         Runtime/Res/Resource.h
         Runtime/main.cpp
         Runtime/Source/RotatingComponent.cpp
         Runtime/Source/RotatingComponent.hpp
-        Runtime/Source/PbrDemo.cpp
-        Runtime/Source/PbrDemo.hpp
+        Runtime/Source/Sandbox.cpp
+        Runtime/Source/Sandbox.hpp
         Runtime/Source/SceneBuilder.hpp
 )
-xen_configure_game(Demo.PBR
+xen_configure_game(Sandbox
         PAK_FILENAME "Data.pxk"
         CONTENT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Content"
 )
-xen_compile_shaders(Demo.PBR)
-xen_package_game_content(Demo.PBR)
+xen_compile_shaders(Sandbox)
+xen_package_game_content(Sandbox)
 
-target_include_directories(Demo.PBR PRIVATE Runtime Runtime/Source ${MODULES_ROOT} ${VENDOR_ROOT})
+target_include_directories(Sandbox PRIVATE Runtime Runtime/Source ${MODULES_ROOT} ${VENDOR_ROOT})

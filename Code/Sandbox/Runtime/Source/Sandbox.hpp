@@ -6,7 +6,7 @@
 
 #include <Xen/Game.hpp>
 
-class PBRDemo final : public Xen::Game {
+class Sandbox final : public Xen::Game {
     using Game::Game;
 
 protected:

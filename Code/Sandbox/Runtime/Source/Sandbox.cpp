@@ -2,7 +2,7 @@
 // Created by Jake Rieger on 9/23/2026.
 //
 
-#include "PbrDemo.hpp"
+#include "Sandbox.hpp"
 
 #ifdef XEN_WITH_DEBUG_UI
     #include <imgui.h>
@@ -11,11 +11,11 @@
 
 using namespace Xen;
 
-void PBRDemo::OnUpdate(f32 DeltaTime) {
+void Sandbox::OnUpdate(f32 DeltaTime) {
     if (GetInputManager().GetKeyDown(Input::KeyCode::Escape)) { Quit(); }
 }
 
-void PBRDemo::OnRender() {
+void Sandbox::OnRender() {
     if (!GetDebugUI().IsInitialized()) return;
 
 #ifdef XEN_WITH_DEBUG_UI
@@ -132,11 +132,19 @@ void PBRDemo::OnRender() {
             for (const Logger::Entry& Entry : Snapshot) {
                 ImVec4 Color;
                 switch (Entry.Severity) {
-                    case Logger::Severity::Warning: Color = ImVec4(1.0f, 0.8f, 0.2f, 1.0f); break;
+                    case Logger::Severity::Warning:
+                        Color = ImVec4(1.0f, 0.8f, 0.2f, 1.0f);
+                        break;
                     case Logger::Severity::Error:
-                    case Logger::Severity::Critical: Color = ImVec4(1.0f, 0.35f, 0.35f, 1.0f); break;
-                    case Logger::Severity::Debug: Color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f); break;
-                    default: Color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f); break;
+                    case Logger::Severity::Critical:
+                        Color = ImVec4(1.0f, 0.35f, 0.35f, 1.0f);
+                        break;
+                    case Logger::Severity::Debug:
+                        Color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+                        break;
+                    default:
+                        Color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                        break;
                 }
                 ImGui::TextColored(Color, "[%s] %s", Entry.TimeStamp.c_str(), Entry.Message.c_str());
             }
@@ -149,7 +157,7 @@ void PBRDemo::OnRender() {
 #endif
 }
 
-void PBRDemo::OnSceneLoaded(Scene& S) {
+void Sandbox::OnSceneLoaded(Scene& S) {
     LOG_INFO("Loaded scene: %s", S.GetName().c_str());
     LOG_INFO("Actors in scene: %llu", S.GetActorCount());
     LOG_INFO("Actors:");
@@ -158,6 +166,6 @@ void PBRDemo::OnSceneLoaded(Scene& S) {
       [](const Actor& A) { LOG_INFO("  - %s (%llu component(s))", A.GetName().c_str(), A.GetComponentCount()); });
 }
 
-void PBRDemo::OnSceneUnloading(Scene& S) {
+void Sandbox::OnSceneUnloading(Scene& S) {
     LOG_INFO("Scene unloading: %s", S.GetName().c_str());
 }

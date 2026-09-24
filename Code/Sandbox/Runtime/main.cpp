@@ -2,7 +2,7 @@
 // Created by Jake Rieger on 9/17/2026.
 //
 
-#include "PbrDemo.hpp"
+#include "Sandbox.hpp"
 
 #include <Xen/XenGameSettings.h>
 
@@ -20,7 +20,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
             return 1;
         }
 
-        PBRDemo Game("Demo.PBR", Xen::BuildMountConfig(Xen::Generated::GameSettings(), Arguments.Argc, Arguments.Argv));
+        Sandbox Game("Demo.PBR", Xen::BuildMountConfig(Xen::Generated::GameSettings(), Arguments.Argc, Arguments.Argv));
 
 #ifndef NDEBUG
         SceneBuilder::Build(Game.GetContext());
