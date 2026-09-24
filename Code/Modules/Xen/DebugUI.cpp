@@ -65,14 +65,14 @@ namespace Xen {
 
         static void
         SrvFree(ImGui_ImplDX12_InitInfo* Info, const D3D12_CPU_DESCRIPTOR_HANDLE Cpu, D3D12_GPU_DESCRIPTOR_HANDLE) {
-            auto* Self                                 = CAST<Impl*>(Info->UserData);
+            auto* Self                                  = CAST<Impl*>(Info->UserData);
             const D3D12_CPU_DESCRIPTOR_HANDLE HeapStart = Self->SrvHeap->GetCPUDescriptorHandleForHeapStart();
             const auto Index = CAST<u32>((Cpu.ptr - HeapStart.ptr) / Self->SrvDescriptorSize);
             if (Index < SrvHeapCapacity) Self->SrvSlotUsed[Index] = false;
         }
     };
 
-    DebugUI::DebugUI()  = default;
+    DebugUI::DebugUI() = default;
     DebugUI::~DebugUI() {
         Shutdown();
     }
@@ -139,7 +139,7 @@ namespace Xen {
         }
 
         _Initialized = true;
-        LOG_DBG("DebugUI initialized (Dear ImGui %s)", IMGUI_VERSION);
+        LOG_DBG("DebugUI initialized (Dear ImGui %s (%d))", IMGUI_VERSION, IMGUI_VERSION_NUM);
         return true;
     }
 

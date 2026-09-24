@@ -36,6 +36,16 @@ namespace Xen {
             WndClass.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
             WndClass.lpszClassName = WINDOW_CLASS_NAME;
 
+            // Window icon resource is always defined as 101 for Xen projects. If the icon resource isn't found, the
+            // icon will simply appear as an error icon.
+            WndClass.hIcon   = static_cast<HICON>(::LoadImage(Instance,
+                                                            MAKEINTRESOURCE(101),
+                                                            IMAGE_ICON,
+                                                            ::GetSystemMetrics(SM_CXICON),
+                                                            ::GetSystemMetrics(SM_CYICON),
+                                                            0));
+            WndClass.hIconSm = WndClass.hIcon;
+
             if (!RegisterClassExW(&WndClass)) { THROW_ENGINE_EXCEPTION(EngineException, "RegisterClassExW failed"); }
         }
 
