@@ -34,9 +34,9 @@ namespace SceneBuilder {
         TestMeshActor->AddComponent<Xen::MeshComponent>(Xen::ASSET("meshes/teapot.glb"));
 
         auto* Material = TestMeshActor->AddComponent<Xen::PBRMaterialComponent>();
-        Material->SetAlbedoMapAsset(Xen::ASSET("pbr/marble/albedo.png"));
-        Material->SetNormalMapAsset(Xen::ASSET("pbr/marble/normal.png"));
-        Material->SetRoughnessMapAsset(Xen::ASSET("pbr/marble/roughness.png"));
+        Material->SetAlbedoMapAsset(Xen::ASSET("textures/marble/albedo.png"));
+        Material->SetNormalMapAsset(Xen::ASSET("textures/marble/normal.png"));
+        Material->SetRoughnessMapAsset(Xen::ASSET("textures/marble/roughness.png"));
         Material->SetMetallic(0.1f);
 
         TestMeshActor->AddComponent<Xen::RotatingComponent>();
@@ -49,9 +49,9 @@ namespace SceneBuilder {
         GroundActor->AddComponent<Xen::MeshComponent>(Xen::ASSET("meshes/plane.glb"));
 
         auto* GroundMaterial = GroundActor->AddComponent<Xen::PBRMaterialComponent>();
-        GroundMaterial->SetAlbedoMapAsset(Xen::ASSET("pbr/checkered_tile/albedo.png"));
-        GroundMaterial->SetNormalMapAsset(Xen::ASSET("pbr/checkered_tile/normal.png"));
-        GroundMaterial->SetRoughnessMapAsset(Xen::ASSET("pbr/checkered_tile/roughness.png"));
+        GroundMaterial->SetAlbedoMapAsset(Xen::ASSET("textures/checkered_tile/albedo.png"));
+        GroundMaterial->SetNormalMapAsset(Xen::ASSET("textures/checkered_tile/normal.png"));
+        GroundMaterial->SetRoughnessMapAsset(Xen::ASSET("textures/checkered_tile/roughness.png"));
         GroundMaterial->SetMetallic(0.01f);
 
         GroundActor->SetScale(Xen::Float3 {200.0f, 1.0f, 200.0f});
