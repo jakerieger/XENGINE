@@ -38,6 +38,9 @@ add_library(Xen STATIC
         Game.cpp
         Game.hpp
         Input.hpp
+        LightCulling.cpp
+        LightCulling.hpp
+        LightData.hpp
         LoadingScreen.cpp
         LoadingScreen.hpp
         MaterialBindings.hpp

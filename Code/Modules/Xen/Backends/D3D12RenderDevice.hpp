@@ -26,6 +26,15 @@ namespace Xen::RHI::D3D12Backend {
         MemoryUsage Memory {MemoryUsage::GpuOnly};
         void* Mapped {nullptr};  // non-null for CpuToGpu buffers - persistently mapped
         bool Transient {false};
+
+        // A raw-buffer UAV descriptor, valid for the buffer's whole lifetime
+        // once created (BufferUsage::Storage only) - unlike D3DTexture, this
+        // engine gives a Storage buffer no other state to be in: it's
+        // created directly into D3D12_RESOURCE_STATE_UNORDERED_ACCESS and
+        // never transitions away from it (see BindStorageBuffer's executor
+        // and CmdType::PipelineBarrier's UAV-hazard barrier), so there's no
+        // CurrentState field to track here the way D3DTexture has.
+        u32 UavHeapIndex {UINT32_MAX};
     };
 
     struct D3DTexture {

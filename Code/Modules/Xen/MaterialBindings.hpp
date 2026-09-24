@@ -22,6 +22,14 @@ namespace Xen::MaterialSlot {
     // frame, not per draw.
     inline constexpr u32 LightData = 3;
 
+    // Forward+ tile-culling output (see LightCulling.hpp/.hlsli) - u0/u1, a
+    // separate register space from the b#/t#/s# slots above so these numbers
+    // don't collide with anything. Written by a compute pass earlier in the
+    // frame, read here per-pixel; also bound (same slots) to LightCulling's
+    // own compute pipeline layout.
+    inline constexpr u32 LightIndexList = 0;  // u0
+    inline constexpr u32 TileLightGrid  = 1;  // u1
+
     // Texture/sampler slots (XEN_*_TEX_REGISTER/XEN_*_SAMPLER_REGISTER) -
     // each is both the t# and the paired s# (see CommandBuffer::BindTexture).
     inline constexpr u32 Albedo           = 0;

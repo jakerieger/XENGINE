@@ -35,6 +35,12 @@ cbuffer FrameData : register(XEN_FRAME_REGISTER) {
     float4 ShadowParams2;                  // x = 1 / shadow map size, y = shadow distance, z = fade-out length
 
     float4 InvScreenSizeAndPad;  // xy = 1 / render target size in pixels - PBR.hlsl's own SSAO screen UV (SV_Position.xy * this)
+
+    // Forward+ tile grid (see LightCulling.hlsli) - x = tile count X, y =
+    // tile count Y, z = tile size in pixels, w unused. PBR.hlsl turns
+    // SV_Position into a tile index with this instead of LightCulling.hlsl's
+    // own separate LightCullParams cbuffer, which this pipeline never binds.
+    float4 TileGridAndSize;
 };
 
 #endif  // XEN_FRAMEDATA_HLSLI

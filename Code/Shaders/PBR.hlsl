@@ -11,6 +11,7 @@
 #include "Include/Common.hlsli"
 #include "Include/FrameData.hlsli"
 #include "Include/LightData.hlsli"
+#include "Include/LightCulling.hlsli"
 #include "Include/MaterialBindings.hlsli"
 
 cbuffer ObjectData : register(XEN_OBJECT_REGISTER) {
@@ -365,13 +366,17 @@ PSOutput PSMain(PSInput In) {
     const float3 SunRadiance = LightColorAndIntensity.xyz * LightColorAndIntensity.w * Shadow;
     float3 DirectLight = EvaluateDirectLighting(N, V, L, Albedo, Metallic, Roughness, F0, SunRadiance);
 
-    // Every point/spot light in the scene (see LightData.hlsli) - a plain
-    // brute-force loop, not a per-tile culled list: this is still a forward
-    // renderer, not Forward+ (tiled culling is a deferred follow-on once a
-    // scene actually has enough lights to need it - see LightData.hlsli's
-    // own comment). No shadows from these; only the one directional light
-    // casts them.
-    for (uint LightIndex = 0; LightIndex < LightCount; ++LightIndex) {
+    // Every point/spot light in this pixel's own screen tile (see
+    // LightCulling.hlsli) - Forward+: culled by a compute pass earlier this
+    // frame (Code/Shaders/LightCulling.hlsl) instead of looping every scene
+    // light at every pixel. No shadows from these; only the one directional
+    // light casts them.
+    const uint2 TileCoord     = uint2(In.Position.xy) / (uint) TileGridAndSize.z;
+    const uint TileIndex      = TileCoord.y * (uint) TileGridAndSize.x + TileCoord.x;
+    const uint TileLightCount = min(TileLightGrid.Load(TileIndex * 4), XEN_MAX_LIGHTS_PER_TILE);
+
+    for (uint i = 0; i < TileLightCount; ++i) {
+        const uint LightIndex = LightIndexList.Load((TileIndex * XEN_MAX_LIGHTS_PER_TILE + i) * 4);
         const Light Lt = Lights[LightIndex];
 
         const float3 ToLight = Lt.PositionAndRange.xyz - In.WorldPosition;

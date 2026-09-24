@@ -11,6 +11,7 @@
 
 #include "ActorHandle.hpp"
 #include "EnvironmentBaker.hpp"
+#include "LightCulling.hpp"
 #include "MeshCache.hpp"
 #include "PostProcess.hpp"
 #include "RenderDevice.hpp"
@@ -218,6 +219,12 @@ namespace Xen {
         // "this channel isn't available" case) when disabled/unavailable,
         // rather than SSAO owning a redundant fallback of its own.
         SSAO _SSAO;
+
+        // Forward+ per-tile light culling (see LightCulling.hpp) - computed
+        // right after the depth prepass, same dependency as SSAO above; its
+        // two output buffers are what PBR.hlsl's per-pixel light loop reads
+        // instead of iterating every scene light.
+        LightCulling _LightCulling;
 
         // Temporal anti-aliasing (see TAA.hpp) - resolved after the main
         // pass, before PostProcess, since it needs the linear-HDR scene

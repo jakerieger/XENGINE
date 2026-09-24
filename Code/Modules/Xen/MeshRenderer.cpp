@@ -4,6 +4,7 @@
 
 #include "MeshRenderer.hpp"
 #include "MaterialBindings.hpp"
+#include "LightData.hpp"
 #include "Components/MeshComponent.hpp"
 #include "Components/PBRMaterialComponent.hpp"
 #include "Components/DirectionalLightComponent.hpp"
@@ -41,6 +42,8 @@ namespace Xen {
             Float4 ShadowParams;
             Float4 ShadowParams2;
             Float4 InvScreenSizeAndPad;  // xy = 1 / render target size in pixels - PBR.hlsl's own SSAO screen UV
+            Float4 TileGridAndSize;  // x = tile count X, y = tile count Y, z = tile size in pixels, w unused -
+                                      // PBR.hlsl's own tile index from SV_Position, see LightCulling.hpp
         };
 
         struct ObjectConstants {
@@ -54,31 +57,10 @@ namespace Xen {
             Float4 EmissiveAndPad;
         };
 
-        constexpr f32 LightTypePoint = 0.0f;
-        constexpr f32 LightTypeSpot  = 1.0f;
-
-        // Matches Code/Shaders/Include/LightData.hlsli's Light exactly.
-        struct GpuLight {
-            Float4 PositionAndRange;
-            Float4 ColorAndIntensity;
-            Float4 DirectionAndType;
-            Float4 ConeAnglesAndPad;
-        };
-
-        // One past the highest light index LightData.hlsli's fixed-size
-        // array holds (XEN_MAX_LIGHTS) - kept in sync by hand, same
-        // no-shared-codegen tradeoff as every other HLSL/C++ mirrored
-        // struct in this file.
-        constexpr u32 MaxLights = 128;
-
-        // Matches Code/Shaders/Include/LightData.hlsli's cbuffer exactly,
-        // including its 16-byte-aligned header (LightCount + 3 pad words,
-        // matching a single float4 slot the same way HLSL packs it).
-        struct LightConstants {
-            u32 LightCount {0};
-            u32 Pad[3] {};
-            GpuLight Lights[MaxLights] {};
-        };
+        // GpuLight/LightConstants/MaxLights/LightTypePoint/LightTypeSpot now
+        // live in LightData.hpp - LightCulling.cpp needs the identical
+        // layout to read the same LightData cbuffer, so it's shared rather
+        // than duplicated.
 
         // The scene render's own target format (see MeshRenderer.hpp's
         // _SceneColorTarget) - fixed, unlike TargetFormats.GetColorFormat(),
@@ -220,7 +202,11 @@ namespace Xen {
         LayoutDesc.Binding(MaterialSlot::Frame, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All)
           .Binding(MaterialSlot::Object, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::All)
           .Binding(MaterialSlot::Material, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::Fragment)
-          .Binding(MaterialSlot::LightData, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::Fragment);
+          .Binding(MaterialSlot::LightData, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::Fragment)
+          // Forward+ tile culling output (see LightCulling.hpp) - written by
+          // a compute pass earlier in the same frame, read here per-pixel.
+          .Binding(MaterialSlot::LightIndexList, RHI::BindingType::StorageBuffer, RHI::ShaderVisibility::Fragment)
+          .Binding(MaterialSlot::TileLightGrid, RHI::BindingType::StorageBuffer, RHI::ShaderVisibility::Fragment);
         for (u32 Slot = 0; Slot < MaterialSlot::TextureSlotCount; ++Slot) {
             LayoutDesc.Binding(Slot, RHI::BindingType::SampledTexture, RHI::ShaderVisibility::Fragment)
               .Binding(Slot, RHI::BindingType::Sampler, RHI::ShaderVisibility::Fragment);
@@ -371,6 +357,13 @@ namespace Xen {
         // occlusion (Render binds _WhiteTexture into the SSAO slot instead
         // - see MeshRenderer.hpp).
         _SSAO.Initialize(Device, Assets);
+
+        // Not fatal: without it every tile's light index list is empty
+        // (Render only binds Culled.LightIndexList/TileLightGrid inside the
+        // CanDraw block, and LightCulling::Render itself no-ops when
+        // !IsInitialized - see LightCulling.hpp), so a scene with no
+        // LightCulling.hlsl asset just renders unlit point/spot lights.
+        _LightCulling.Initialize(Device, Assets);
 
         // Not fatal: without it a scene with TAA picked just falls back to
         // an unresolved (and un-jittered - see Render's UseTaa check)
@@ -1129,13 +1122,23 @@ namespace Xen {
             }
 
             Frame.InvScreenSizeAndPad = {1.0f / CAST<f32>(Target.GetWidth()), 1.0f / CAST<f32>(Target.GetHeight()), 0.0f, 0.0f};
+
+            // Tile grid for Forward+ light culling (see LightCulling.hpp) -
+            // a pure function of target size and the fixed tile size, so
+            // it's computed independently of LightCulling::Render's own
+            // dispatch below (no ordering dependency between the two).
+            const u32 TileCountX = (Target.GetWidth() + LightCulling::TileSize - 1) / LightCulling::TileSize;
+            const u32 TileCountY = (Target.GetHeight() + LightCulling::TileSize - 1) / LightCulling::TileSize;
+            Frame.TileGridAndSize =
+              {CAST<f32>(TileCountX), CAST<f32>(TileCountY), CAST<f32>(LightCulling::TileSize), 0.0f};
         }
 
-        // Every point/spot light in the scene (see LightData.hlsli) - a
-        // plain, uncapped-per-pixel-cost forward list (up to MaxLights),
-        // not a per-tile culled one; this is still a forward renderer, not
-        // Forward+. An actor with both components on it (unusual) is only
-        // counted as whichever GetComponent finds first, point before spot.
+        // Every point/spot light in the scene (see LightData.hlsli) -
+        // culled per-tile below (LightCulling) before PBR.hlsl's pixel
+        // shader ever sees them, so a light far from a given pixel's tile
+        // costs nothing there. An actor with both components on it
+        // (unusual) is only counted as whichever GetComponent finds first,
+        // point before spot.
         LightConstants LightData;
         if (CanDraw) {
             using namespace DirectX;
@@ -1211,6 +1214,10 @@ namespace Xen {
         _LastCulledMeshCount  = CulledMeshCount;
         _LastVisibleMeshCount = CAST<u32>(VisibleMeshes.size());
 
+        // Populated below (CanDraw only) - declared out here so it's still
+        // in scope where the main pass binds it, same reason AoTexture is.
+        LightCulling::Result Culled;
+
         // Camera-space depth prepass + SSAO, both before the main pass
         // begins - see MeshRenderer.hpp's own comment on RenderDepthPrepass
         // for why a forward renderer needs the depth done this early at all.
@@ -1233,6 +1240,20 @@ namespace Xen {
                 _Commands.EndRenderPass();
                 _Commands.PopDebugGroup();
             }
+
+            // Forward+ tile culling - only depends on the depth prepass
+            // above (same as SSAO below), so its position relative to SSAO
+            // doesn't matter. The PipelineBarrier is the UAV write->read
+            // hazard: the main pass's per-draw loop further down binds
+            // Culled.LightIndexList/TileLightGrid via the same UAV
+            // descriptor this Dispatch just wrote through.
+            Culled = _LightCulling.Render(_Commands,
+                                          Target.GetDepthTarget(),
+                                          Frame.InvViewProjection,
+                                          LightData,
+                                          Target.GetWidth(),
+                                          Target.GetHeight());
+            _Commands.PipelineBarrier(RHI::Cmd::BarrierBits::StorageBuffer);
 
             // Settings come from the scene's first AmbientOcclusionComponent,
             // the same "first one found" rule as PostProcessComponent; a
@@ -1294,6 +1315,8 @@ namespace Xen {
             // every material channel's own placeholder.
             _Commands.BindTexture(MaterialSlot::SSAO, AoTexture.IsValid() ? AoTexture : _WhiteTexture, _ClampSampler);
             _Commands.BindUniformBuffer(MaterialSlot::LightData, _Device->AllocateUniform(LightData));
+            _Commands.BindStorageBuffer(MaterialSlot::LightIndexList, Culled.LightIndexList);
+            _Commands.BindStorageBuffer(MaterialSlot::TileLightGrid, Culled.TileLightGrid);
 
             for (const VisibleMesh& VM : VisibleMeshes) {
                 Actor& A                        = *VM.A;

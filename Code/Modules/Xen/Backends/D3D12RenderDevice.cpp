@@ -91,6 +91,7 @@ namespace Xen::RHI::D3D12Backend {
 
         D3D12_RESOURCE_STATES RestingBufferState(const BufferUsage Usage) {
             if (Any(Usage & BufferUsage::Index)) return D3D12_RESOURCE_STATE_INDEX_BUFFER;
+            if (Any(Usage & BufferUsage::Storage)) return D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
             return D3D12_RESOURCE_STATE_GENERIC_READ;
         }
 
@@ -611,7 +612,11 @@ namespace Xen::RHI::D3D12Backend {
         if (!_Fence) return;
         const u64 Completed = _Fence->GetCompletedValue();
 
-        ReleaseCompleted(_RetiredBuffers, Completed);
+        while (!_RetiredBuffers.empty() && _RetiredBuffers.front().FenceValue <= Completed) {
+            const D3DBuffer& Buf = _RetiredBuffers.front().Item;
+            if (Buf.UavHeapIndex != UINT32_MAX) _FreeSrvSlots.push_back(Buf.UavHeapIndex);
+            _RetiredBuffers.pop_front();
+        }
 
         // A heap slot is a view the GPU can still be reading via an
         // already-recorded command list, exactly like the resource it views -
@@ -797,11 +802,27 @@ namespace Xen::RHI::D3D12Backend {
                     break;
                 }
 
-                case CmdType::BindStorageBuffer:
-                    // Not exercised by any pipeline yet (no UAV buffer view
-                    // creation path) - left unimplemented, same as before the
-                    // pipeline layout generalization.
+                case CmdType::BindStorageBuffer: {
+                    const auto& P = It.Payload<Cmd::BindStorageBuffer>();
+                    if (!_CurrentLayout || !_CurrentPipeline) break;
+
+                    // No self-transition here unlike BindTexture: a Storage
+                    // buffer is created directly into UNORDERED_ACCESS and
+                    // never leaves it (see D3DBuffer::UavHeapIndex) - the
+                    // write/read hazard between a culling Dispatch and a
+                    // later draw is handled by an explicit UAV barrier
+                    // (CmdType::PipelineBarrier), not a state transition.
+                    if (D3DBuffer* Buf = _Buffers.Get(P.Buffer); Buf && Buf->UavHeapIndex != UINT32_MAX) {
+                        if (const auto* Binding = _CurrentLayout->Find(P.Slot, BindingType::StorageBuffer)) {
+                            D3D12_GPU_DESCRIPTOR_HANDLE Handle = _SrvHeap->GetGPUDescriptorHandleForHeapStart();
+                            Handle.ptr += CAST<UINT64>(Buf->UavHeapIndex) * _SrvDescriptorSize;
+                            if (_CurrentPipeline->IsCompute)
+                                _CmdList->SetComputeRootDescriptorTable(Binding->RootParameterIndex, Handle);
+                            else _CmdList->SetGraphicsRootDescriptorTable(Binding->RootParameterIndex, Handle);
+                        }
+                    }
                     break;
+                }
 
                 case CmdType::BindTexture: {
                     const auto& P = It.Payload<Cmd::BindTexture>();
@@ -907,10 +928,30 @@ namespace Xen::RHI::D3D12Backend {
                 case CmdType::UpdateBuffer:
                 case CmdType::CopyBuffer:
                 case CmdType::GenerateMips:
-                case CmdType::PipelineBarrier:
                 case CmdType::InsertDebugMarker:
                 default:
                     break;
+
+                // Only the StorageBuffer bit does anything: a UAV
+                // write-then-read hazard on the same resource (a culling
+                // Dispatch's output, bound for read by the very next draw)
+                // needs an explicit UAV barrier - a state-transition barrier
+                // is skipped by TransitionTexture/BindStorageBuffer's own
+                // early-out when before/after states are equal, which they
+                // always are here (see D3DBuffer::UavHeapIndex). Global
+                // (pResource = nullptr): the simplest correct choice for a
+                // one-off dispatch-then-draw sync point, not worth tracking
+                // which specific buffer needs it.
+                case CmdType::PipelineBarrier: {
+                    const auto& P = It.Payload<Cmd::PipelineBarrier>();
+                    if (Cmd::Any(P.Bits, Cmd::BarrierBits::StorageBuffer)) {
+                        D3D12_RESOURCE_BARRIER Barrier {};
+                        Barrier.Type          = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+                        Barrier.UAV.pResource = nullptr;
+                        _CmdList->ResourceBarrier(1, &Barrier);
+                    }
+                    break;
+                }
 
                 // GPU timing (see GetLastFrameGpuTimings). _ActiveGpuScopeStack
                 // persists across every Submit() call this frame (SpriteRenderer's,
@@ -1214,6 +1255,7 @@ namespace Xen::RHI::D3D12Backend {
         ResDesc.MipLevels        = 1;
         ResDesc.SampleDesc.Count = 1;
         ResDesc.Layout           = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        if (Any(Desc.Usage & BufferUsage::Storage)) ResDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 
         const bool HasInitial                 = Desc.InitialData != nullptr && Desc.Size > 0;
         const D3D12_RESOURCE_STATES RestState = RestingBufferState(Desc.Usage);
@@ -1246,7 +1288,14 @@ namespace Xen::RHI::D3D12Backend {
             D3D12MA::ALLOCATION_DESC UploadDesc {};
             UploadDesc.HeapType = D3D12_HEAP_TYPE_UPLOAD;
 
+            // Never carries ResDesc's Flags: an UPLOAD-heap staging buffer is
+            // just a linear byte range for the CPU-write/GPU-copy below, and
+            // D3D12 forbids ALLOW_RENDER_TARGET/ALLOW_UNORDERED_ACCESS on an
+            // UPLOAD (or READBACK) heap resource outright (debug-layer
+            // error) - a Storage buffer's UAV flag belongs only on the real
+            // DEFAULT-heap resource ResDesc otherwise describes.
             D3D12_RESOURCE_DESC UploadResDesc = ResDesc;
+            UploadResDesc.Flags               = D3D12_RESOURCE_FLAG_NONE;
 
             ComPtr<D3D12MA::Allocation> UploadAlloc;
             ComPtr<ID3D12Resource> UploadRes;
@@ -1272,6 +1321,29 @@ namespace Xen::RHI::D3D12Backend {
                     Barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
                     List->ResourceBarrier(1, &Barrier);
                 });
+            }
+        }
+
+        // A raw-buffer UAV descriptor written once at creation - the same
+        // shader-visible CBV_SRV_UAV heap textures already share their SRVs
+        // through (see CreateTexture's SRV path below), via the same
+        // AllocateSrvSlot() bump allocator. Raw (ByteAddressBuffer), not
+        // structured: NumElements is always Size/4 for a raw view regardless
+        // of how the shader indexes it, so no per-buffer stride needs to be
+        // threaded through BufferDesc.
+        if (Any(Desc.Usage & BufferUsage::Storage)) {
+            Buf.UavHeapIndex = AllocateSrvSlot();
+            if (Buf.UavHeapIndex != UINT32_MAX) {
+                D3D12_UNORDERED_ACCESS_VIEW_DESC UavDesc {};
+                UavDesc.Format              = DXGI_FORMAT_R32_TYPELESS;
+                UavDesc.ViewDimension       = D3D12_UAV_DIMENSION_BUFFER;
+                UavDesc.Buffer.FirstElement = 0;
+                UavDesc.Buffer.NumElements  = CAST<UINT>(Desc.Size / 4);
+                UavDesc.Buffer.Flags        = D3D12_BUFFER_UAV_FLAG_RAW;
+
+                D3D12_CPU_DESCRIPTOR_HANDLE Handle = _SrvHeap->GetCPUDescriptorHandleForHeapStart();
+                Handle.ptr += CAST<SIZE_T>(Buf.UavHeapIndex) * _SrvDescriptorSize;
+                _Device->CreateUnorderedAccessView(Buf.Resource.Get(), nullptr, &UavDesc, Handle);
             }
         }
 
