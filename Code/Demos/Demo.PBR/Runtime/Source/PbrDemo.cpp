@@ -6,6 +6,7 @@
 
 #ifdef XEN_WITH_DEBUG_UI
     #include <imgui.h>
+    #include <Common/Log.hpp>
 #endif
 
 using namespace Xen;
@@ -93,6 +94,56 @@ void PBRDemo::OnRender() {
             ImGui::Separator();
             ImGui::Text("Total (top-level scopes): %.3f ms", TopLevelTotal);
         }
+    }
+    ImGui::End();
+
+    // The engine's own ring-buffer logger (Common/Log.hpp) - every LOG_INFO/
+    // WARN/ERR/CRIT/DBG call anywhere in the process, not just this demo's
+    // own. The buffer itself is a fixed-size ring (Logger::LOGGER_MAX_ENTRIES,
+    // currently 4096); snapshotted under its mutex (AssetLoader's worker
+    // threads log too) into a local copy first, so the actual ImGui:: calls
+    // - the slow part - run unlocked.
+    ImGui::SetNextWindowPos(ImVec2(360, 10), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(700, 400), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Log")) {
+        Logger& Log = GetLogger();
+
+        std::vector<Logger::Entry> Snapshot;
+        {
+            std::lock_guard Lock(Log.GetBufferMutex());
+            const auto& Entries = Log.GetEntries();
+            const size_t Total  = Log.GetTotalEntries();
+            // Oldest entry is at index 0 until the ring has wrapped at least
+            // once (Total == LOGGER_MAX_ENTRIES), at which point the NEXT
+            // write slot (CurrentEntry) is also the oldest surviving one.
+            const size_t Start = Total < Logger::LOGGER_MAX_ENTRIES ? 0 : Log.GetCurrentEntryIndex();
+            Snapshot.reserve(Total);
+            for (size_t i = 0; i < Total; ++i) {
+                Snapshot.push_back(Entries[(Start + i) % Logger::LOGGER_MAX_ENTRIES]);
+            }
+        }
+
+        if (ImGui::BeginChild("LogScroll", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar)) {
+            // Only stick to the bottom on new lines if the user was already
+            // there - scrolling up to read history shouldn't get yanked back
+            // down by the next log line.
+            const bool WasAtBottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1.0f;
+
+            for (const Logger::Entry& Entry : Snapshot) {
+                ImVec4 Color;
+                switch (Entry.Severity) {
+                    case Logger::Severity::Warning: Color = ImVec4(1.0f, 0.8f, 0.2f, 1.0f); break;
+                    case Logger::Severity::Error:
+                    case Logger::Severity::Critical: Color = ImVec4(1.0f, 0.35f, 0.35f, 1.0f); break;
+                    case Logger::Severity::Debug: Color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f); break;
+                    default: Color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f); break;
+                }
+                ImGui::TextColored(Color, "[%s] %s", Entry.TimeStamp.c_str(), Entry.Message.c_str());
+            }
+
+            if (WasAtBottom) ImGui::SetScrollHereY(1.0f);
+        }
+        ImGui::EndChild();
     }
     ImGui::End();
 #endif

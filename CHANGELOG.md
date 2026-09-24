@@ -2,6 +2,11 @@
 
 ## 2026-09-23
 
+### Added (later same day, Log window)
+
+- A "Log" ImGui window in Demo.PBR, alongside the existing Frame Stats/GPU Profiler ones - every `LOG_INFO`/`WARN`/`ERR`/`CRIT`/`DBG` call in the process (not just this demo's own), read from the engine's existing ring-buffer `Logger` (`Common/Log.hpp`, `Logger::LOGGER_MAX_ENTRIES` = 4096). Snapshotted under `Logger::GetBufferMutex()` into a local copy first (a background `AssetLoader` worker thread logs too) so the actual `ImGui::` calls - the slow part - run unlocked. Color-coded by severity (yellow warnings, red errors/critical, gray debug), scrolls in its own child region, and sticks to the bottom on new lines only if the view was already there (so scrolling up to read history doesn't get yanked back down).
+  - Verified: shows every line from a real session (asset mount summary, the D3D12 loading-screen warnings in yellow, scene actor listing) with correct auto-scroll behavior, 0 log errors.
+
 ### Added (later same day, shader hot-reload + frustum culling)
 
 - **Shader hot-reload**, the next roadmap item after TAA - edit a `Code/Shaders/*.hlsl` file while Demo.PBR is running and see the change without a rebuild or relaunch. New `ShaderHotReload` class (`ShaderHotReload.hpp/.cpp`), Debug-only (`XEN_WITH_SHADER_HOT_RELOAD`, same on-by-default-in-Debug/off-in-Release convention as `DebugUI.hpp`'s `XEN_WITH_DEBUG_UI` - every method a safe no-op in Release, so `Game`'s call sites need no `#if` of their own).
