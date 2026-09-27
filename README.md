@@ -6,7 +6,8 @@
 XENGINE
 </h1>
 
-**XEN**GINE (X-Engine), or XEN is a 3D game engine for Windows written in C++ and utilizing DirectX 12.
+**XEN**GINE (_zen-jin_), or XEN, is a DirectX 12-powered 3D game engine for Windows written in C++.
 
 > [!NOTE]
-> This is **NOT** a production-ready engine. This is a proof-of-concept developed for my own amusement.
+> This is **NOT** a production-ready engine (the code will make that obvious). This is a proof-of-concept developed for
+my own amusement.
