@@ -11,6 +11,7 @@
 
 #include <XenPAK/AssetID.hpp>
 
+#include <string>
 #include <unordered_map>
 
 namespace Xen {
@@ -32,8 +33,28 @@ namespace Xen {
         constexpr bool operator==(const MeshHandle& Other) const { return ID == Other.ID; }
     };
 
+    /// @brief One glTF primitive's slice of a mesh's shared, concatenated
+    /// index buffer - what makes a mesh with several material slots
+    /// (authored in Blender, textured per-slot in Substance Painter) more
+    /// than "one material blindly covering everything." FirstIndex/
+    /// IndexCount index straight into MeshInfo's single vertex/index buffer
+    /// pair (every primitive's indices are rebased at load time - see
+    /// MeshCache::DecodeAsset - so no separate vertex offset is needed).
+    /// MaterialName is the glTF material's own name (cgltf_material::name),
+    /// empty for an untagged primitive/single-material mesh - MeshRenderer
+    /// matches it against PBRMaterialComponent::GetSubmeshName().
+    struct MeshSubmesh {
+        u32 FirstIndex {0};
+        u32 IndexCount {0};
+        std::string MaterialName;
+    };
+
     struct MeshInfo {
         u32 VertexCount {0};
+        /// Total indices across every submesh below - unchanged meaning
+        /// even after submeshes were added; RenderDepthPrepass/
+        /// RenderShadowPass still draw this whole range in one call, since
+        /// depth-only rendering doesn't care how many materials a mesh has.
         u32 IndexCount {0};
         RHI::IndexType IndexType {RHI::IndexType::U32};
         /// Exact vertex + index buffer bytes resident on the GPU.
@@ -42,6 +63,11 @@ namespace Xen {
         /// space (MeshRenderer fits its shadow volume around these).
         Float3 BoundsMin {0.0f, 0.0f, 0.0f};
         Float3 BoundsMax {0.0f, 0.0f, 0.0f};
+        /// One entry per glTF primitive - always at least one, even for a
+        /// single-primitive mesh (one untagged submesh covering the whole
+        /// IndexCount), so MeshRenderer never needs a separate "does this
+        /// mesh have submeshes" branch.
+        std::vector<MeshSubmesh> Submeshes;
     };
 
     /// @brief The fixed GPU vertex layout every mesh is uploaded as,

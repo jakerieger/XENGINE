@@ -355,6 +355,13 @@ namespace Xen {
 
     class InputManager {
         friend class Window;
+        // Lets an embedded Game (see Game.hpp's editor constructor)
+        // default-construct its own always-empty fallback instance for
+        // GetInputManager() to return when it has no Window - nothing ever
+        // writes into that instance's state (only Window's raw-input
+        // handling does that), so it just permanently reports "nothing is
+        // pressed", which is exactly the safe behavior wanted there.
+        friend class Game;
 
         InputManager(const InputManager&)            = delete;
         InputManager(InputManager&&)                 = delete;

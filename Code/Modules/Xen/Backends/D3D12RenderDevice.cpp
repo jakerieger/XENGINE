@@ -541,6 +541,35 @@ namespace Xen::RHI::D3D12Backend {
         _BackBufferIsRenderTarget[_FrameIndex] = false;
     }
 
+    bool D3D12RenderDevice::CreateTextureSRV(const TextureHandle Handle, const D3D12_CPU_DESCRIPTOR_HANDLE DestCpu) {
+        D3DTexture* Tex = _Textures.Get(Handle);
+        if (!Tex) return false;
+
+        // A depth target's stored Format is its raw depth DXGI_FORMAT (e.g.
+        // D32_FLOAT), invalid for an SRV without the typeless-reinterpret
+        // trick CreateTexture's own SRV path applies via ToDepthSrvFormat -
+        // this method only has the already-translated DXGI_FORMAT to work
+        // with, not the original RHI::Format that needs, so depth (and
+        // array/cube, which need a different ViewDimension) are rejected
+        // rather than silently producing an invalid view.
+        if (Any(Tex->Usage & TextureUsage::DepthTarget) || Tex->Type == TextureType::TextureCube || Tex->Layers > 1) {
+            LOG_ERR("CreateTextureSRV: only a plain, non-array, non-cube color texture is supported");
+            return false;
+        }
+
+        TransitionTexture(*Tex,
+                           D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC SrvDesc {};
+        SrvDesc.Format                  = Tex->Format;
+        SrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        SrvDesc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
+        SrvDesc.Texture2D.MipLevels     = Tex->Mips;
+
+        _Device->CreateShaderResourceView(Tex->Resource.Get(), &SrvDesc, DestCpu);
+        return true;
+    }
+
     // --- Sync ----------------------------------------------------------------
 
     void D3D12RenderDevice::WaitForFrame(const u32 FrameIndex) {

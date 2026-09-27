@@ -17,6 +17,7 @@
 #endif
 
 #include <Windows.h>
+#include <cstdlib>
 
 namespace Xen {
     constexpr unsigned long long operator""_KB(const unsigned long long N) {
@@ -35,16 +36,16 @@ namespace Xen {
 #define MB(N) operator""_MB(N)
 #define GB(N) operator""_GB(N)
 
-    constexpr f64 ToKB(const unsigned long long N) {
-        return static_cast<f64>(N) / 1024.0;
+    constexpr double ToKB(const unsigned long long N) {
+        return static_cast<double>(N) / 1024.0;
     }
 
-    constexpr f64 ToMB(const unsigned long long N) {
-        return static_cast<f64>(N) / 1024.0 / 1024.0;
+    constexpr double ToMB(const unsigned long long N) {
+        return static_cast<double>(N) / 1024.0 / 1024.0;
     }
 
-    constexpr f64 ToGB(const unsigned long long N) {
-        return static_cast<f64>(N) / 1024.0 / 1024.0 / 1024.0;
+    constexpr double ToGB(const unsigned long long N) {
+        return static_cast<double>(N) / 1024.0 / 1024.0 / 1024.0;
     }
 
     struct ProcessCommandLineArguments {

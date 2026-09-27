@@ -31,17 +31,17 @@ namespace SceneBuilder {
 
         const Xen::ActorHandle TestMeshHandle = MainScene.Spawn("TestMesh");
         Xen::Actor* TestMeshActor             = MainScene.Get(TestMeshHandle);
-        TestMeshActor->AddComponent<Xen::MeshComponent>(Xen::ASSET("meshes/teapot.glb"));
+        TestMeshActor->AddComponent<Xen::MeshComponent>(Xen::ASSET("meshes/cube.glb"));
 
         auto* Material = TestMeshActor->AddComponent<Xen::PBRMaterialComponent>();
         Material->SetAlbedoMapAsset(Xen::ASSET("textures/marble/albedo.png"));
         Material->SetNormalMapAsset(Xen::ASSET("textures/marble/normal.png"));
         Material->SetRoughnessMapAsset(Xen::ASSET("textures/marble/roughness.png"));
-        Material->SetMetallic(0.1f);
+        Material->SetMetallic(0.001f);
 
         TestMeshActor->AddComponent<Xen::RotatingComponent>();
-        TestMeshActor->SetPosition(Xen::Float3 {0.0f, 0.25f, 0.0f});
-        TestMeshActor->SetScale(Xen::Float3 {0.5f, 0.5f, 0.5f});
+        TestMeshActor->SetPosition(Xen::Float3 {0.0f, 1.0f, 0.0f});
+        // TestMeshActor->SetScale(Xen::Float3 {0.5f, 0.5f, 0.5f});
 
         // A floor for the TestMeshy's shadow to land on.
         const Xen::ActorHandle GroundHandle = MainScene.Spawn("Ground");
@@ -65,6 +65,11 @@ namespace SceneBuilder {
         // canonical forward, matching glTF's convention) at an unrotated
         // Transform - the TestMesh at the origin ends up straight ahead.
         CameraActor->SetPosition(Xen::Float3 {0.0f, 1.0f, 4.0f});
+
+        const XMVECTOR CameraRotation = XMQuaternionRotationRollPitchYaw(0.0f, XMConvertToRadians(0.0f), 0.0f);
+        Xen::Quat CameraRotationOut;
+        XMStoreFloat4(&CameraRotationOut, CameraRotation);
+        CameraActor->SetRotation(CameraRotationOut);
 
         const Xen::ActorHandle LightHandle = MainScene.Spawn("Light");
         Xen::Actor* LightActor             = MainScene.Get(LightHandle);

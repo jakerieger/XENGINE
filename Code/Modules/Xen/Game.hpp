@@ -48,6 +48,19 @@ namespace Xen {
     class Game {
     public:
         Game(const std::string& Title, const PAK::AssetMountConfig& MountConfig);
+
+        /// @brief Embedded mode, for an editor: renders into its own
+        /// _MainViewport (sized InitialWidth x InitialHeight) using Device,
+        /// which the caller owns and must keep alive for at least as long as
+        /// this Game - no Window, no swap chain, no DebugUI of its own (an
+        /// embedding editor owns exactly one DebugUI/ImGuiContext across its
+        /// whole UI, including whatever panel displays this Game's own
+        /// Viewport - see DebugUI::GetOrCreateSceneTextureID). Drive it with
+        /// StartEmbedded() once, then TickEmbedded(DeltaTime) per editor
+        /// frame, instead of Run()/RunLoop() - those still assume a Window
+        /// and are for the standalone constructor above only.
+        Game(RHI::IRenderDevice& Device, const PAK::AssetMountConfig& MountConfig, u32 InitialWidth, u32 InitialHeight);
+
         virtual ~Game();
 
         Game(const Game&)            = delete;
@@ -55,6 +68,22 @@ namespace Xen {
 
         void Run();
         void RunFrames(u32 FrameCount);
+
+        /// @brief Embedded-mode equivalent of the OnStartup()+
+        /// ApplyPendingSceneChange() pair Run() does before entering its own
+        /// loop - call once after constructing an embedded Game, before the
+        /// first TickEmbedded.
+        void StartEmbedded();
+
+        /// @brief Embedded-mode equivalent of one RunLoop() iteration's
+        /// TickFrame call - drives fixed/variable update and renders into
+        /// _MainViewport, but never touches a swap chain or DebugUI (the
+        /// embedding editor's own frame is what does that, with this Game's
+        /// _MainViewport.GetColorTarget() sampled into one of its panels).
+        /// The caller is responsible for its own frame pacing/delta time and
+        /// for calling SetViewport when the hosting panel resizes.
+        void TickEmbedded(f32 DeltaTime);
+
         void Quit();
 
         NODISCARD bool IsRunning() const { return _Running; };
@@ -89,7 +118,16 @@ namespace Xen {
         NODISCARD Viewport& GetMainViewport() { return _MainViewport; }
         NODISCARD RHI::IRenderDevice& GetRenderDevice() const { return *_RenderDevice; }
         NODISCARD Window& GetWindow() const { return *_Window; }
-        NODISCARD InputManager& GetInputManager() const { return _Window->GetInputManager(); }
+
+        /// @brief An embedded Game (see the editor constructor) has no
+        /// Window of its own, and therefore no real input capture yet
+        /// (play-in-editor input routing is separate, later work) - falls
+        /// back to an always-empty InputManager rather than null-dereferencing
+        /// _Window, so game code written against this call doesn't need its
+        /// own "am I embedded" branch just to stay crash-safe.
+        NODISCARD InputManager& GetInputManager() const {
+            return _Window ? _Window->GetInputManager() : _EmbeddedInputManager;
+        }
 
         /// @brief Dear ImGui layer - draw debug windows (frame stats, dev
         /// tools, a console, ...) from OnRender with ordinary ImGui:: calls;
@@ -125,6 +163,16 @@ namespace Xen {
         /// fits on screen. Miss any of these and something stays 0x0 or
         /// stale while the others resize around it.
         void SetViewport(u32 Width, u32 Height);
+
+        /// @brief Recompiles every engine shader right now and reloads
+        /// every subsystem that owns a pipeline built from one
+        /// (MeshRenderer, FXAA) - for a game-defined "reload shaders" key
+        /// bind, as opposed to ShaderHotReload's own automatic file-change
+        /// polling in TickFrame. Debug-only in effect
+        /// (XEN_WITH_SHADER_HOT_RELOAD) - a safe no-op in Release, same
+        /// convention as ShaderHotReload itself. Call outside BeginFrame/
+        /// EndFrame, same constraint the automatic reload path already has.
+        void ForceReloadShaders();
 
     protected:
         // --- Lifecycle hooks (override these) ---------------------------
@@ -183,6 +231,14 @@ namespace Xen {
         /// whatever assets it had already made resident.
         void CancelLoad();
 
+        /// @brief The part of construction identical between both
+        /// constructors - asset mounting, ShaderHotReload's loose-source
+        /// mount, the texture/mesh caches, MeshRenderer/FXAA - everything
+        /// that only ever needed IRenderDevice&, never a Window. Runs after
+        /// _RenderDevice and _MainViewport are already valid, however this
+        /// Game came by them.
+        void InitializeContent(const PAK::AssetMountConfig& MountConfig);
+
         EngineConfig _EngineConfig {};
         AudioConfig _AudioConfig {};
 
@@ -191,8 +247,27 @@ namespace Xen {
         std::unique_ptr<MeshCache> _Meshes;
         EngineContext _Context {};
         SpriteBatcher _SpriteBatcher;
+
+        // Both null/unused in embedded mode - an embedded Game has no
+        // window of its own (see the editor constructor) and never captures
+        // input directly yet.
         std::unique_ptr<Window> _Window;
-        std::unique_ptr<RHI::IRenderDevice> _RenderDevice;
+        mutable InputManager _EmbeddedInputManager;
+
+        // Non-owning whenever this Game didn't create the device itself -
+        // _OwnedDevice is what actually holds it in that case, and stays
+        // null in embedded mode (the caller/editor owns the device and must
+        // outlive this Game). Every other use of _RenderDevice in this class
+        // is unaffected by which constructor ran - it's always just a valid
+        // pointer either way.
+        RHI::IRenderDevice* _RenderDevice {nullptr};
+        std::unique_ptr<RHI::IRenderDevice> _OwnedDevice;
+
+        // True only for the editor constructor - gates the handful of
+        // TickFrame steps that don't apply without a Window/swap chain of
+        // this Game's own (see TickFrame/TickLoading).
+        bool _Embedded {false};
+
         Viewport _MainViewport;
         SpriteRenderer _SpriteRenderer;
 
@@ -215,10 +290,12 @@ namespace Xen {
         ShaderHotReload _ShaderHotReload;
         void ReloadShaders();
 
-        // Declared after _RenderDevice (destroyed before it, in reverse
+        // Declared after _OwnedDevice (destroyed before it, in reverse
         // declaration order) so DebugUI::~DebugUI's WaitIdle() call still
         // has a live device to call it on - a backstop, since ~Game()
-        // shuts it down explicitly anyway (see there).
+        // shuts it down explicitly anyway (see there). Unused in embedded
+        // mode (never Initialize()'d - see the editor constructor), where
+        // _OwnedDevice is null anyway and this ordering is moot.
         DebugUI _DebugUI;
 
         LoadingScreen _LoadingScreen;

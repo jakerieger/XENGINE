@@ -67,6 +67,30 @@ namespace Xen {
         // which only ever governs the post-process composite pipeline now.
         constexpr RHI::Format SceneColorFormat = RHI::Format::RGBA16_FLOAT;
 
+        // One entry per Info.Submeshes, matched by name (MeshSubmesh::
+        // MaterialName, the glTF material's own name) against Materials -
+        // whichever component's GetSubmeshName() equals it. No match (an
+        // untagged submesh against an untagged material is the common case
+        // here - a single-material mesh/actor, "" == "") falls back to
+        // Materials[0], the same "one material for the whole mesh" behavior
+        // this engine already had before submeshes existed.
+        std::vector<PBRMaterialComponent*> ResolveSubmeshMaterials(const MeshInfo& Info,
+                                                                    const std::vector<PBRMaterialComponent*>& Materials) {
+            std::vector<PBRMaterialComponent*> Out;
+            Out.reserve(Info.Submeshes.size());
+            for (const MeshSubmesh& Sub : Info.Submeshes) {
+                PBRMaterialComponent* Match = Materials[0];
+                for (PBRMaterialComponent* M : Materials) {
+                    if (M->GetSubmeshName() == Sub.MaterialName) {
+                        Match = M;
+                        break;
+                    }
+                }
+                Out.push_back(Match);
+            }
+            return Out;
+        }
+
         // --- Frustum culling ------------------------------------------------
         //
         // A plane as (a, b, c, d): a*x + b*y + c*z + d >= 0 is "inside".
@@ -1187,9 +1211,9 @@ namespace Xen {
             ExtractFrustumPlanes(Frame.ViewProjection, Planes);
 
             S.ForEachActor([&](Actor& A) {
-                auto* MeshComp     = A.GetComponent<MeshComponent>();
-                auto* MaterialComp = A.GetComponent<PBRMaterialComponent>();
-                if (!MeshComp || !MaterialComp) return;
+                auto* MeshComp                                        = A.GetComponent<MeshComponent>();
+                const std::vector<PBRMaterialComponent*> MaterialComps = A.GetComponents<PBRMaterialComponent>();
+                if (!MeshComp || MaterialComps.empty()) return;
 
                 const MeshHandle Mesh = MeshComp->GetMesh();
                 if (!Mesh.IsValid()) return;
@@ -1208,7 +1232,8 @@ namespace Xen {
                     return;
                 }
 
-                VisibleMeshes.push_back({&A, MaterialComp, Model, VertexBuffer, IndexBuffer, Info});
+                VisibleMeshes.push_back(
+                  {&A, ResolveSubmeshMaterials(Info, MaterialComps), Model, VertexBuffer, IndexBuffer, Info});
             });
         }
         _LastCulledMeshCount  = CulledMeshCount;
@@ -1319,8 +1344,7 @@ namespace Xen {
             _Commands.BindStorageBuffer(MaterialSlot::TileLightGrid, Culled.TileLightGrid);
 
             for (const VisibleMesh& VM : VisibleMeshes) {
-                Actor& A                        = *VM.A;
-                PBRMaterialComponent* MaterialComp = VM.Material;
+                Actor& A = *VM.A;
 
                 ObjectConstants Object {};
                 Object.Model = VM.Model;
@@ -1334,36 +1358,46 @@ namespace Xen {
                 Object.PrevModel = PrevModelIt != _PrevModelMatrices.end() ? PrevModelIt->second : Object.Model;
                 _PrevModelMatrices[Handle] = Object.Model;
 
-                MaterialConstants Material {};
-                const Float3& Albedo       = MaterialComp->GetAlbedo();
-                Material.AlbedoAndMetallic = {Albedo.x, Albedo.y, Albedo.z, MaterialComp->GetMetallic()};
-                Material.RoughnessAOAndPad = {MaterialComp->GetRoughness(),
-                                              MaterialComp->GetAmbientOcclusion(),
-                                              0.0f,
-                                              0.0f};
-                const Float3& Emissive     = MaterialComp->GetEmissive();
-                Material.EmissiveAndPad    = {Emissive.x, Emissive.y, Emissive.z, 0.0f};
-
+                // Shared by every submesh below - one vertex/index buffer
+                // pair and one Model per actor, regardless of how many
+                // materials it draws with.
                 _Commands.BindUniformBuffer(MaterialSlot::Object, _Device->AllocateUniform(Object));
-                _Commands.BindUniformBuffer(MaterialSlot::Material, _Device->AllocateUniform(Material));
-
-                // Every channel is always bound - a material with no map
-                // assigned for a slot falls back to a placeholder that
-                // multiplies through as the identity (see PBR.hlsl), so
-                // there's no per-material branch to take here either.
-                const auto BindChannel = [&](const u32 Slot, const RHI::TextureHandle Handle, const RHI::TextureHandle Fallback) {
-                    _Commands.BindTexture(Slot, Handle.IsValid() ? Handle : Fallback, _Sampler);
-                };
-                BindChannel(MaterialSlot::Albedo, MaterialComp->GetAlbedoMap(), _WhiteTexture);
-                BindChannel(MaterialSlot::Normal, MaterialComp->GetNormalMap(), _FlatNormalTexture);
-                BindChannel(MaterialSlot::Roughness, MaterialComp->GetRoughnessMap(), _WhiteTexture);
-                BindChannel(MaterialSlot::Metallic, MaterialComp->GetMetallicMap(), _WhiteTexture);
-                BindChannel(MaterialSlot::AmbientOcclusion, MaterialComp->GetAmbientOcclusionMap(), _WhiteTexture);
-                BindChannel(MaterialSlot::Emissive, MaterialComp->GetEmissiveMap(), _WhiteTexture);
-
                 _Commands.BindVertexBuffer(0, VM.VertexBuffer);
                 _Commands.BindIndexBuffer(VM.IndexBuffer, VM.Info.IndexType);
-                _Commands.DrawIndexed(VM.Info.IndexCount);
+
+                for (size_t SubIndex = 0; SubIndex < VM.Info.Submeshes.size(); ++SubIndex) {
+                    const MeshSubmesh& Sub               = VM.Info.Submeshes[SubIndex];
+                    PBRMaterialComponent* MaterialComp = VM.SubmeshMaterials[SubIndex];
+
+                    MaterialConstants Material {};
+                    const Float3& Albedo       = MaterialComp->GetAlbedo();
+                    Material.AlbedoAndMetallic = {Albedo.x, Albedo.y, Albedo.z, MaterialComp->GetMetallic()};
+                    Material.RoughnessAOAndPad = {MaterialComp->GetRoughness(),
+                                                  MaterialComp->GetAmbientOcclusion(),
+                                                  0.0f,
+                                                  0.0f};
+                    const Float3& Emissive     = MaterialComp->GetEmissive();
+                    Material.EmissiveAndPad    = {Emissive.x, Emissive.y, Emissive.z, 0.0f};
+
+                    _Commands.BindUniformBuffer(MaterialSlot::Material, _Device->AllocateUniform(Material));
+
+                    // Every channel is always bound - a material with no map
+                    // assigned for a slot falls back to a placeholder that
+                    // multiplies through as the identity (see PBR.hlsl), so
+                    // there's no per-material branch to take here either.
+                    const auto BindChannel =
+                      [&](const u32 Slot, const RHI::TextureHandle Handle, const RHI::TextureHandle Fallback) {
+                          _Commands.BindTexture(Slot, Handle.IsValid() ? Handle : Fallback, _Sampler);
+                      };
+                    BindChannel(MaterialSlot::Albedo, MaterialComp->GetAlbedoMap(), _WhiteTexture);
+                    BindChannel(MaterialSlot::Normal, MaterialComp->GetNormalMap(), _FlatNormalTexture);
+                    BindChannel(MaterialSlot::Roughness, MaterialComp->GetRoughnessMap(), _WhiteTexture);
+                    BindChannel(MaterialSlot::Metallic, MaterialComp->GetMetallicMap(), _WhiteTexture);
+                    BindChannel(MaterialSlot::AmbientOcclusion, MaterialComp->GetAmbientOcclusionMap(), _WhiteTexture);
+                    BindChannel(MaterialSlot::Emissive, MaterialComp->GetEmissiveMap(), _WhiteTexture);
+
+                    _Commands.DrawIndexed(Sub.IndexCount, 1, Sub.FirstIndex);
+                }
             }
 
             // The background, last: it only lands on pixels no mesh covered

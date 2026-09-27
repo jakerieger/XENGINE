@@ -11,6 +11,7 @@
 #include "TextureCache.hpp"
 
 #include <algorithm>
+#include <string>
 
 namespace Xen {
     REGISTER_COMPONENT(PBRMaterialComponent)
@@ -88,6 +89,18 @@ namespace Xen {
         void SetEmissiveMapAsset(AssetID ID) { SetChannelAsset(_EmissiveMap, ID); }
         NODISCARD TextureHandle GetEmissiveMap() const { return _EmissiveMap.Handle; }
 
+        /// @brief Which of the owning mesh's submeshes this material paints
+        /// - matched against MeshSubmesh::MaterialName (the glTF material
+        /// name from Blender, see MeshCache.hpp), not by index, so a
+        /// re-export that reorders primitives doesn't scramble assignments.
+        /// Leave unset ("") for a single-material mesh/actor, or as the
+        /// fallback an unmatched submesh uses - see MeshRenderer::Render.
+        /// An actor can hold several PBRMaterialComponents now (one per
+        /// submesh); Actor::GetComponents<T>() already supports that with
+        /// no component-system changes needed.
+        NODISCARD const std::string& GetSubmeshName() const { return _SubmeshName; }
+        void SetSubmeshName(const std::string& Name) { _SubmeshName = Name; }
+
     private:
         Float3 _Albedo {1.0f, 1.0f, 1.0f};
         f32 _Metallic {1.0f};
@@ -122,6 +135,8 @@ namespace Xen {
         TextureChannel _MetallicMap;
         TextureChannel _AmbientOcclusionMap;
         TextureChannel _EmissiveMap {.Srgb = true};
+
+        std::string _SubmeshName;
 
         // Every channel is optional, so unlike SpriteComponent's single
         // required texture, a channel's own Acquired flag can legitimately

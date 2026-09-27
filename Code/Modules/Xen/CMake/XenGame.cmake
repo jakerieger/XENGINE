@@ -189,9 +189,9 @@ function(xen_package_game_content TARGET)
             TARGET ${TARGET} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory "${ARG_CONFIG_DIR}" "${out_dir}/Config"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${out_dir}/EngineContent"
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Shaders" -o "${out_dir}/EngineContent/XEN.Shaders.pxk" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Environment" -o "${out_dir}/EngineContent/XEN.Environment.pxk" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool.exe" pack "${ARG_CONTENT_DIR}" -o "${out_dir}/${ARG_PAK_FILENAME}" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Shaders" -o "${out_dir}/EngineContent/XEN.Shaders.pxk" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Environment" -o "${out_dir}/EngineContent/XEN.Environment.pxk" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool/PAKTool.exe" pack "${ARG_CONTENT_DIR}" -o "${out_dir}/${ARG_PAK_FILENAME}" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
             COMMENT "Packaging ${TARGET} content (Config, Engine shaders/environment, ${ARG_PAK_FILENAME})..."
             VERBATIM
     )

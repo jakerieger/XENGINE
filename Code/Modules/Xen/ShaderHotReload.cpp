@@ -227,6 +227,37 @@ namespace Xen {
 
         return AnyRecompiled;
     }
+
+    bool ShaderHotReload::ForceReloadAll() {
+        if (!_Impl->Ready) return false;
+
+        std::error_code Ec;
+
+        LOG_INFO("Shader hot-reload: forced reload - recompiling every engine shader");
+        for (const auto& Entry : fs::directory_iterator(_Impl->SourceDir, Ec)) {
+            if (!Entry.is_regular_file() || Entry.path().extension() != ".hlsl") continue;
+            _Impl->RecompileOne(Entry.path());
+            _Impl->ShaderWriteTimes[Entry.path().filename().string()] = Entry.last_write_time();
+        }
+
+        // Rebaseline Include/*.hlsli too, so Poll's own change detection
+        // doesn't immediately see this reload's own files as "changed" and
+        // redundantly recompile everything again on its very next tick.
+        const fs::path IncludeDir = _Impl->SourceDir / "Include";
+        if (fs::is_directory(IncludeDir)) {
+            for (const auto& Entry : fs::directory_iterator(IncludeDir, Ec)) {
+                if (!Entry.is_regular_file() || Entry.path().extension() != ".hlsli") continue;
+                _Impl->IncludeWriteTime = std::max(_Impl->IncludeWriteTime, Entry.last_write_time());
+            }
+        }
+
+        // Unconditional, not just when a compile actually succeeded/changed
+        // anything (unlike Poll's AnyRecompiled): this is a deliberate
+        // manual action, so the caller should always reload every pipeline
+        // in response, even if every file happened to compile to identical
+        // bytes.
+        return true;
+    }
 }  // namespace Xen
 
 #else
@@ -243,6 +274,10 @@ namespace Xen {
     }
 
     bool ShaderHotReload::Poll(f32) {
+        return false;
+    }
+
+    bool ShaderHotReload::ForceReloadAll() {
         return false;
     }
 }  // namespace Xen

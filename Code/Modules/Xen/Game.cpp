@@ -55,8 +55,9 @@ namespace Xen {
         _Window =
           std::make_unique<Window>(Title, _EngineConfig.Mode, _EngineConfig.ResolutionX, _EngineConfig.ResolutionY);
 
-        _RenderDevice = RHI::CreateRenderDevice(RHI::Backend::D3D12);
-        if (!_RenderDevice) { THROW_ENGINE_EXCEPTION(EngineException, "no render device for the requested backend"); }
+        _OwnedDevice = RHI::CreateRenderDevice(RHI::Backend::D3D12);
+        if (!_OwnedDevice) { THROW_ENGINE_EXCEPTION(EngineException, "no render device for the requested backend"); }
+        _RenderDevice = _OwnedDevice.get();
 
         RHI::DeviceDescriptor Descriptor {};
         Descriptor.NativeWindowHandle = _Window->GetHandle();
@@ -105,9 +106,51 @@ namespace Xen {
             THROW_ENGINE_EXCEPTION(EngineException, "failed to initialize sprite renderer");
         }
 
+        InitializeContent(MountConfig);
+    }
+
+    Game::Game(RHI::IRenderDevice& Device,
+               const PAK::AssetMountConfig& MountConfig,
+               const u32 InitialWidth,
+               const u32 InitialHeight)
+        : _RenderDevice(&Device), _Embedded(true) {
+        // No _Window, no _OwnedDevice, no _DebugUI, no loading-screen
+        // background paint - none of those exist without a swap chain of
+        // this Game's own (see TickFrame/~Game for the other half of this).
+        if (!_MainViewport.Initialize(*_RenderDevice, InitialWidth, InitialHeight, RHI::Format::BGRA8_UNORM, true)) {
+            THROW_ENGINE_EXCEPTION(EngineException, "failed to initialize main viewport");
+        }
+        SetViewport(InitialWidth, InitialHeight);
+
+        if (!_SpriteRenderer.Initialize(*_RenderDevice)) {
+            THROW_ENGINE_EXCEPTION(EngineException, "failed to initialize sprite renderer");
+        }
+
+        InitializeContent(MountConfig);
+    }
+
+    void Game::InitializeContent(const PAK::AssetMountConfig& MountConfig) {
         _Assets = PAK::MountAssets(MountConfig);
         if (!_Assets) { THROW_ENGINE_EXCEPTION(EngineException, "failed to mount assets"); }
         LOG_DBG("Asset mount configuration:\n%s", PAK::DescribeMounts(*_Assets).c_str());
+
+        // Dev-only: a no-op call in Release (MountConfig's two shader paths
+        // are empty there - see AssetSettings.hpp). Mounted here, before
+        // anything below loads its first shader - NOT an "only matters for
+        // a repeat load" nicety: the engine-shader compile step runs on
+        // every Debug build regardless of whether the content pak actually
+        // gets repacked alongside it (CMake's packaging custom command
+        // doesn't always consider itself out of date just because the
+        // shader-compile one reran), so a shader recompiled moments ago and
+        // a plain relaunch (no live edit needed) can easily see the pak's
+        // stale copy if this mounts any later - exactly what a normal
+        // "edit shader, rebuild, relaunch" dev loop does, not just the
+        // while-the-game-is-running hot-reload path Poll() covers.
+        if (_ShaderHotReload.Initialize(
+              MountConfig.EngineShaderSourceDir, MountConfig.EngineShaderOutputDir, MountConfig.EngineDxcPath)) {
+            _Assets->AddSource(std::make_unique<PAK::LooseFileSource>(MountConfig.EngineShaderOutputDir,
+                                                                       PAK::MOUNT_PRIORITY_LOOSE_BASE * 10));
+        }
 
         _Textures = std::make_unique<TextureCache>(*_Assets, *_RenderDevice);
         _Meshes   = std::make_unique<MeshCache>(*_Assets, *_RenderDevice);
@@ -128,19 +171,6 @@ namespace Xen {
         if (!_FXAA.Initialize(*_RenderDevice, *_Assets, _MainViewport.GetColorFormat())) {
             LOG_DBG("FXAA not initialized (no shader asset found) - anti-aliasing unavailable");
         }
-
-        // Dev-only: a no-op call in Release (MountConfig's two shader paths
-        // are empty there - see AssetSettings.hpp). The loose override has
-        // to be mounted before anything above already loaded a shader would
-        // matter for a REPEAT load, but since this is the very first one,
-        // mounting it here (rather than earlier, before _MeshRenderer/_FXAA
-        // Initialize) makes no practical difference - nothing's been edited
-        // yet at process start regardless.
-        if (_ShaderHotReload.Initialize(
-              MountConfig.EngineShaderSourceDir, MountConfig.EngineShaderOutputDir, MountConfig.EngineDxcPath)) {
-            _Assets->AddSource(std::make_unique<PAK::LooseFileSource>(MountConfig.EngineShaderOutputDir,
-                                                                       PAK::MOUNT_PRIORITY_LOOSE_BASE * 10));
-        }
     }
 
     void Game::ReloadShaders() {
@@ -157,6 +187,10 @@ namespace Xen {
         }
     }
 
+    void Game::ForceReloadShaders() {
+        if (_ShaderHotReload.ForceReloadAll()) ReloadShaders();
+    }
+
     Game::~Game() {
         // First: the loader's workers use the caches and the device.
         _Load.reset();
@@ -166,7 +200,7 @@ namespace Xen {
         // while the device is unambiguously alive. The declaration order in
         // Game.hpp would get this right anyway; doing it here makes the
         // dependency visible instead of implicit.
-        _Window->SetDebugUI(nullptr);
+        if (_Window) _Window->SetDebugUI(nullptr);
         _DebugUI.Shutdown();
         _SpriteRenderer.Shutdown();
         _LoadingScreen.Shutdown();
@@ -227,6 +261,17 @@ namespace Xen {
         OnShutdown();
     }
 
+    void Game::StartEmbedded() {
+        _Running = true;
+        OnStartup();
+        ApplyPendingSceneChange();
+    }
+
+    void Game::TickEmbedded(const f32 DeltaTime) {
+        if (!_Running) return;
+        TickFrame(DeltaTime);
+    }
+
     void Game::Quit() {
         _Running = false;
     }
@@ -251,7 +296,11 @@ namespace Xen {
     }
 
     void Game::SetViewport(const u32 Width, const u32 Height) {
-        if (_RenderDevice) _RenderDevice->SetSwapChainSize(Width, Height);
+        // Embedded mode shares its device with the editor that owns it - its
+        // swap chain (if any) belongs to the editor's own window, not to
+        // this Game's _MainViewport, and must never be resized to match a
+        // docked panel's size.
+        if (_RenderDevice && !_Embedded) _RenderDevice->SetSwapChainSize(Width, Height);
         _MainViewport.Resize(Width, Height);
         _SpriteBatcher.SetViewport(Width, Height);
     }
@@ -288,7 +337,7 @@ namespace Xen {
         // stays responsive.
         if (_Load) {
             TickLoading(DeltaTime);
-            _Window->ResetInput();
+            if (_Window) _Window->ResetInput();
             ApplyPendingSceneChange();
             return;
         }
@@ -311,11 +360,16 @@ namespace Xen {
 
         // The other half of the viewport wiring. Window::ConsumeResized is
         // edge-triggered, so this has to run every frame or a resize is lost.
-        if (_Window->ConsumeResized()) { SetViewport(_Window->GetWidth(), _Window->GetHeight()); }
+        // Embedded mode has no Window - its size changes come from whoever
+        // embeds it calling SetViewport directly (e.g. a docked panel's
+        // content-region size changing) instead.
+        if (_Window && _Window->ConsumeResized()) { SetViewport(_Window->GetWidth(), _Window->GetHeight()); }
 
         // Nothing to present while minimized, and a zero-height viewport makes
-        // CameraComponent::GetVisibleWorldSize divide by zero.
-        if (_Window->IsMinimized()) {
+        // CameraComponent::GetVisibleWorldSize divide by zero. An embedded
+        // Game is never "minimized" in this sense - its host editor window
+        // might be, but that's the editor's own concern, not this Game's.
+        if (_Window && _Window->IsMinimized()) {
             ApplyPendingSceneChange();
             return;
         }
@@ -325,7 +379,7 @@ namespace Xen {
             // AllocateTransient call made from OnRender lands in this frame's
             // arena rather than the one the GPU may still be reading.
             _RenderDevice->BeginFrame();
-            _DebugUI.BeginFrame();
+            if (!_Embedded) _DebugUI.BeginFrame();
 
             _SpriteBatcher.BuildDrawList(*_ActiveScene);
             OnRender();
@@ -351,36 +405,43 @@ namespace Xen {
             // before this point ever sees anything (see TAA.hpp); running
             // FXAA on top of an already-TAA'd frame would just soften it
             // further for no benefit.
-            AntiAliasingTechnique AaTechnique = AntiAliasingTechnique::TAA;
-            FXAA::Settings AaSettings;
-            const std::vector<Actor*> AaActors = _ActiveScene->FindActorsWith<AntiAliasingComponent>();
-            if (!AaActors.empty()) {
-                if (const auto* AA = AaActors.front()->GetComponent<AntiAliasingComponent>()) {
-                    AaTechnique = AA->GetTechnique();
-                    AaSettings  = AA->GetFxaaSettings();
+            //
+            // Embedded mode skips this whole block: it has nothing to copy
+            // FXAA's result INTO (no swap chain of its own) or overlay a
+            // DebugUI on top of (an embedding editor owns exactly one
+            // DebugUI across its whole UI, not one per embedded Game) -
+            // whoever embeds this Game instead samples _MainViewport.
+            // GetColorTarget() directly (see DebugUI::GetOrCreateSceneTextureID),
+            // unaffected by FXAA either way since it never writes back into
+            // that texture (see FXAA::Render's own comment).
+            if (!_Embedded) {
+                AntiAliasingTechnique AaTechnique = AntiAliasingTechnique::TAA;
+                FXAA::Settings AaSettings;
+                const std::vector<Actor*> AaActors = _ActiveScene->FindActorsWith<AntiAliasingComponent>();
+                if (!AaActors.empty()) {
+                    if (const auto* AA = AaActors.front()->GetComponent<AntiAliasingComponent>()) {
+                        AaTechnique = AA->GetTechnique();
+                        AaSettings  = AA->GetFxaaSettings();
+                    }
                 }
+                AaSettings.Enabled &= AaTechnique == AntiAliasingTechnique::FXAA;
+                const RHI::TextureHandle PresentTarget = _FXAA.Render(
+                  _MainViewport.GetColorTarget(), _MainViewport.GetWidth(), _MainViewport.GetHeight(), AaSettings);
+
+                // Standalone-game presentation: copy the (possibly FXAA'd)
+                // viewport color target into the back buffer.
+                _RenderDevice->CopyToSwapChain(PresentTarget);
+
+                // Overlay, drawn after everything else so debug windows are
+                // always on top - see DebugUI::EndFrame for the back-buffer
+                // hand-off with CopyToSwapChain above.
+                _DebugUI.EndFrame();
             }
-            AaSettings.Enabled &= AaTechnique == AntiAliasingTechnique::FXAA;
-            const RHI::TextureHandle PresentTarget =
-              _FXAA.Render(_MainViewport.GetColorTarget(), _MainViewport.GetWidth(), _MainViewport.GetHeight(), AaSettings);
-
-            // Standalone-game presentation: copy the (possibly FXAA'd)
-            // viewport color target into the back buffer. An editor
-            // wouldn't call this at all - it would sample
-            // _MainViewport.GetColorTarget() into an ImGui panel instead
-            // (unaffected by FXAA, which never writes back into that
-            // texture - see FXAA::Render's own comment).
-            _RenderDevice->CopyToSwapChain(PresentTarget);
-
-            // Overlay, drawn after everything else so debug windows are
-            // always on top - see DebugUI::EndFrame for the back-buffer
-            // hand-off with CopyToSwapChain above.
-            _DebugUI.EndFrame();
 
             _RenderDevice->EndFrame();
         }
 
-        _Window->ResetInput();
+        if (_Window) _Window->ResetInput();
 
         ApplyPendingSceneChange();
     }
@@ -471,7 +532,7 @@ namespace Xen {
     void Game::TickLoading(const f32 DeltaTime) {
         using Clock = std::chrono::steady_clock;
 
-        if (_Window->ConsumeResized()) { SetViewport(_Window->GetWidth(), _Window->GetHeight()); }
+        if (_Window && _Window->ConsumeResized()) { SetViewport(_Window->GetWidth(), _Window->GetHeight()); }
 
         LoadState& L = *_Load;
 
@@ -502,12 +563,20 @@ namespace Xen {
             _LoadingScreen.Reset();
         }
 
-        const bool CanPresent = !_Window->IsMinimized();
+        // No Window in embedded mode -> CanPresent is always false there, so
+        // DrawLoadingFrame (which targets a swap chain this Game doesn't
+        // have) is never reached; the embedded environment-bake warm-up
+        // below is skipped the same way, falling back to MeshRenderer's own
+        // lazy first-Render bake instead.
+        const bool CanPresent = _Window && !_Window->IsMinimized();
         if (L.Visible && CanPresent) {
             DrawLoadingFrame(Progress, DeltaTime, false);
-        } else {
+        } else if (!_Embedded) {
             // Nothing is being presented (so nothing paces this loop the way
             // vsync does): don't spin a core while the workers decode.
+            // Embedded mode skips this sleep - the editor's own present/
+            // vsync already paces the shared frame loop, so sleeping here
+            // would add latency to the whole editor, not just this Game.
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
 

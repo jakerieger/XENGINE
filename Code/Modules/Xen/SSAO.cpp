@@ -9,7 +9,14 @@
 
 namespace Xen {
     namespace {
-        constexpr RHI::Format AoFormat = RHI::Format::R8_UNORM;
+        // R16_FLOAT, not R8_UNORM (this target's format until now): 8 bits
+        // is only 256 discrete levels, which visibly bands once a smooth AO
+        // falloff (post pow(AO, Power) reshaping) gets quantized onto that
+        // grid and then box-blurred - averaging already-quantized samples
+        // just produces contour bands, not a smoother gradient. Matches the
+        // precision this engine already uses for other single/dual-channel
+        // precision-sensitive targets (motion vectors, the BRDF LUT).
+        constexpr RHI::Format AoFormat = RHI::Format::R16_FLOAT;
 
         // Matches SSAO.hlsl's cbuffer exactly.
         struct SsaoParams {
@@ -85,7 +92,12 @@ namespace Xen {
         RHI::PipelineLayoutDesc BlurLayoutDesc;
         BlurLayoutDesc.Binding(0, RHI::BindingType::UniformBuffer, RHI::ShaderVisibility::Fragment)
           .Binding(0, RHI::BindingType::SampledTexture, RHI::ShaderVisibility::Fragment)
-          .Binding(0, RHI::BindingType::Sampler, RHI::ShaderVisibility::Fragment);
+          .Binding(0, RHI::BindingType::Sampler, RHI::ShaderVisibility::Fragment)
+          // Depth, for the bilateral weight (see SSAOBlur.hlsl) - t1, no
+          // separate sampler slot: the shader reuses s0 (SourceSampler) to
+          // sample it too, since both textures want the same point/clamp
+          // filtering.
+          .Binding(1, RHI::BindingType::SampledTexture, RHI::ShaderVisibility::Fragment);
         BlurLayoutDesc.DebugName = "XEN.Shaders.SSAOBlur";
         _BlurLayout              = Device.CreatePipelineLayout(BlurLayoutDesc);
 
@@ -217,6 +229,7 @@ namespace Xen {
             Params.TexelSize[1] = 1.0f / CAST<f32>(Height);
             Commands.BindUniformBuffer(0, _Device->AllocateUniform(Params));
             Commands.BindTexture(0, _RawTarget, _Sampler);
+            Commands.BindTexture(1, Depth, _Sampler);
             Commands.Draw(3);
             Commands.EndRenderPass();
         }

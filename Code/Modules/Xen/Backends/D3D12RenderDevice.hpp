@@ -240,6 +240,17 @@ namespace Xen::RHI::D3D12Backend {
         /// with BindSwapChainOverlayTarget.
         void UnbindSwapChainOverlayTarget();
 
+        /// @brief Writes an SRV for Handle's current resource into DestCpu -
+        /// a descriptor from the CALLER's own heap (DebugUI's, via
+        /// DebugUI::GetOrCreateSceneTextureID - not this device's own
+        /// _SrvHeap), self-transitioning the resource shader-readable first.
+        /// Mirrors BindTexture's executor (D3D12RenderDevice.cpp) but for a
+        /// heap this device doesn't own. Plain non-array, non-cube color
+        /// textures only - a Viewport's color target is exactly this;
+        /// returns false for anything else, including a depth target (which
+        /// needs a different SRV format this method doesn't resolve).
+        bool CreateTextureSRV(TextureHandle Handle, D3D12_CPU_DESCRIPTOR_HANDLE DestCpu);
+
     private:
         void CreateSwapChain();
         void ResizeSwapChain(u32 Width, u32 Height);

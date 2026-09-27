@@ -83,6 +83,16 @@ namespace Xen {
         /// subsystem that owns a pipeline built from Code/Shaders.
         NODISCARD bool Poll(f32 DeltaTime);
 
+        /// @brief Recompiles every Code/Shaders/*.hlsl right now, regardless
+        /// of whether its write time (or any Include/*.hlsli's) actually
+        /// changed since the last check - for a manual "reload shaders now"
+        /// key bind, as opposed to Poll's own file-change detection. Rolls
+        /// the write-time baseline forward the same way Poll does, so the
+        /// very next Poll() doesn't immediately see its own just-recompiled
+        /// files as "changed" and redundantly recompile them again. Returns
+        /// false (nothing attempted) only when Initialize never succeeded.
+        NODISCARD bool ForceReloadAll();
+
     private:
         struct Impl;
         std::unique_ptr<Impl> _Impl;

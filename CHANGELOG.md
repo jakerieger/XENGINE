@@ -1,5 +1,87 @@
 # Changelog
 
+## 2026-09-25
+
+### Fixed (later same day)
+
+- `AmbientShadow` (`PBR.hlsl`, darkens ambient/IBL diffuse light near a directional-light shadow) was popping hard between frames on concave/self-shadowing geometry - a rotating prop's crevice walls in particular, confirmed by the report and reproduced. Root cause: `ShadowVisibility`'s `NdotL <= 0` early-out, a free optimization from when the function's only caller was the direct-light term (already zero for a back-facing surface regardless of shadow) - but `AmbientShadow` now reads the same result to darken ambient light a back-facing surface still legitimately receives, so skipping the real shadow-map lookup there meant it jumped straight from the "unshadowed" fallback (1.0) to a real PCF value the instant a surface's normal crossed `NdotL = 0`, instead of transitioning smoothly. Fixed by removing the early-out - the shadow map is now always sampled regardless of facing. Costs a bit more GPU time (every back-facing-to-light pixel now pays for the full 5x5 PCF kernel too).
+  - **Found while verifying this**: the fix appeared to do nothing on a plain rebuild+relaunch - not a shader bug, a separate, real `Game` constructor-ordering bug. `ShaderHotReload`'s loose-file override (`EngineContent/Shaders`, meant to let a freshly recompiled shader reach the running game without a full content repack) was mounted *after* `MeshRenderer`/`FXAA` already loaded and compiled their first-ever shader - so a shader recompiled moments ago and a plain relaunch (no live edit needed) could still see a stale packed pak if content packaging didn't happen to rerun alongside the shader-compile step (which runs unconditionally on every Debug build). Only a *live* edit-while-running ever exercised the loose override (via `ShaderHotReload::Poll`), which is why this went unnoticed until now. Fixed by moving the `ShaderHotReload::Initialize`/loose-source-mount block to immediately after asset mounting, before anything else loads its first shader.
+  - Verified quantitatively, not just by eye: sampled average brightness in a fixed crevice-region ROI across 80 rapid-fire-captured frames (~4 seconds, one capture every ~3 real frames) of the debug-only `Out.Color = float4(AmbientShadow.xxx, 1.0)` visualization - the trace is a smooth, continuous oscillation (135→149→119→150→119...) matching the prop's rotation, with zero discontinuities, confirmed both before the constructor-order fix (where the shader edit provably wasn't reaching the GPU at all - the debug view still showed the fully lit textured scene) and after (debug view showing the correct flat grayscale term, real fix confirmed working).
+
+### Added
+
+- Multi-material mesh support: a mesh with several glTF material slots (a
+  Blender mesh with multiple material-slot assignments, textured per-slot in
+  Substance Painter) now renders each slot with its own material instead of
+  one `PBRMaterialComponent` blindly covering the whole thing. The
+  multi-primitive/multi-material data was already fully parsed by cgltf on
+  every load and simply discarded - `MeshCache::DecodeAsset` hard-coded
+  `meshes[0].primitives[0]` with a `LOG_WARN` that said outright "no submesh
+  support yet" (`MeshCache.cpp`). No RHI or shader changes were needed at
+  all: `RHI::CommandBuffer::DrawIndexed` already took `FirstIndex`/
+  `VertexOffset`, and the D3D12 backend already forwarded both straight into
+  `DrawIndexedInstanced` - confirmed by reading the executor before writing
+  any of this, not assumed.
+  - `MeshCache::DecodeAsset` now loops every primitive in the glTF mesh
+    (still only the first *top-level* mesh - an unrelated, still-unsupported
+    concept, typically LOD/variants), concatenating every primitive's
+    vertices/indices into one shared vertex/index buffer per mesh asset and
+    rebasing each primitive's indices by the running vertex count at load
+    time, so a submesh needs only `FirstIndex`/`IndexCount` to slice out of
+    the shared buffer - no separate vertex offset. `MeshInfo` gained
+    `Submeshes` (`MeshSubmesh{FirstIndex, IndexCount, MaterialName}`,
+    `MaterialName` from `cgltf_material::name`) - always at least one entry,
+    even for a single-primitive mesh (one untagged submesh covering the
+    whole `IndexCount`, which keeps its existing meaning: total indices
+    across every submesh).
+  - `PBRMaterialComponent` gained an optional `SubmeshName` tag, matched
+    against a `MeshSubmesh::MaterialName` **by name**, not index - robust to
+    Blender re-exporting primitives in a different order. Textures/factors
+    are still hand-wired per material in C++/scene JSON, same as today, just
+    now potentially several `PBRMaterialComponent`s per actor instead of
+    one - `Actor::GetComponents<T>()` and generic component serialization
+    already supported that with zero component-system changes (confirmed by
+    reading `Actor.hpp`/`SceneSerializer.cpp` before assuming, not guessed).
+  - `MeshRenderer`'s frustum-culling collection now calls
+    `GetComponents<PBRMaterialComponent>()` (plural) and resolves each of
+    the mesh's submeshes to a matching material once per visible actor per
+    frame (an unmatched/untagged submesh falls back to the actor's first
+    material - also exactly what keeps every existing single-material scene
+    rendering identically, unchanged). The main draw loop now binds
+    `ObjectConstants`/the vertex+index buffers once per actor (shared,
+    unchanged) and loops per-submesh for the `MaterialConstants`/six-texture
+    binds and `DrawIndexed(Submesh.IndexCount, 1, Submesh.FirstIndex)` that
+    used to happen once per actor. `RenderDepthPrepass`/`RenderShadowPass`
+    needed **no changes** - both already draw an actor's entire index range
+    in one call, correct regardless of material count since depth-only
+    rendering doesn't care about materials.
+  - Verified with a temporary hand-generated 2-primitive/2-named-material
+    cube (`Content/meshes/multimat_test.gltf`, built the same way
+    `Scripts/generate_primitive_meshes.py` already generates its own test
+    primitives - no Blender/Substance asset was available in this
+    environment) and a temporary test actor with two `PBRMaterialComponent`s
+    tagged `SetSubmeshName("Red")`/`SetSubmeshName("Blue")`: the cube
+    rendered with three correctly-colored red faces and three blue, cast one
+    correct shadow, draw calls went from 33 to 37 (+4 - shadow pass, depth
+    prepass, and 2 main-pass submesh draws for the one new actor, exactly as
+    expected). Regression-checked against the existing single-material
+    teapot/ground scene (identical render, draw call count unchanged) before
+    and after. 0 log errors in Debug/Release; temporary mesh/test actor
+    fully reverted afterward (confirmed via `git diff`).
+  - **Not a bug in this feature, but worth remembering**: rebuilding
+    Release right after reverting the temporary test actor still crashed on
+    launch (`MeshCache::DecodeAsset: mesh asset ... not found`) - not a
+    regression, a self-inflicted build-ordering artifact. `SceneBuilder::
+    Build()` regenerates `Content/scenes/main.xscene` on disk at *runtime*,
+    every launch; a Release build's `xen_package_game_content` step packs
+    whatever that file looks like *at build time* into `Data.pxk`, which is
+    then Release's only source (no loose content dirs). Since the on-disk
+    scene was still the multimat-test version (last written by a Debug
+    launch before the revert), Release's build baked in a scene referencing
+    the already-deleted test mesh. Fixed by launching Debug once (which
+    regenerates a clean scene on disk from the reverted code) before
+    rebuilding Release again.
+
 ## 2026-09-24
 
 ### Added (later same day, Forward+ tile culling)

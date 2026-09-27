@@ -19,6 +19,11 @@
 #include <Windows.h>
 #include <memory>
 
+// ImTextureID's actual definition (imgui.h) - kept out of the rest of this
+// header so a caller that never touches GetOrCreateSceneTextureID doesn't
+// need Dear ImGui's own headers just to include DebugUI.hpp.
+using ImTextureID = unsigned long long;
+
 // On by default in a debug build, off in release - matches the engine's
 // existing NDEBUG-gated debug tooling (Game.hpp's console allocation,
 // D3D12RenderDevice's validation layer). Override by defining this before
@@ -83,6 +88,20 @@ namespace Xen {
         /// @brief Same as WantsCaptureMouse but for keyboard input (e.g.
         /// typing into a debug console shouldn't also move the player).
         NODISCARD bool WantsCaptureKeyboard() const;
+
+        /// @brief An ImTextureID for Handle's current contents (e.g. an
+        /// embedded Game's Viewport::GetColorTarget()), for
+        /// ImGui::Image(...) - implicitly convertible to the newer
+        /// ImTextureRef parameter type ImGui::Image itself now takes. Safe
+        /// to call every frame: rewrites one dedicated descriptor slot each
+        /// time rather than caching by handle, so a Viewport::Resize (which
+        /// destroys and recreates its color target under a NEW handle) never
+        /// leaves a stale cache entry to invalidate. One slot only - fine
+        /// for one "Scene" panel; a second simultaneous viewport would need
+        /// a small handle-keyed map at that point, not before. Returns 0
+        /// (ImTextureID_Invalid) if not initialized or Handle isn't a plain
+        /// color TextureHandle (see D3D12RenderDevice::CreateTextureSRV).
+        NODISCARD ImTextureID GetOrCreateSceneTextureID(RHI::TextureHandle Handle);
 
     private:
         struct Impl;

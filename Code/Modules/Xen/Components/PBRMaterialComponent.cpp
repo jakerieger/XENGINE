@@ -30,6 +30,8 @@ namespace Xen {
         // The resolved TextureHandle in each channel is deliberately not
         // reflected: it's a runtime GPU handle, meaningless across sessions,
         // and rebuilt in BeginPlay.
+
+        R.Property("Submesh", _SubmeshName, {.Category = "Material"});
     }
 
     void PBRMaterialComponent::BeginPlay() {

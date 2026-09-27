@@ -40,6 +40,12 @@ namespace Xen {
         u32 SrvDescriptorSize {0};
         std::vector<bool> SrvSlotUsed;
 
+        // Lazily allocated by GetOrCreateSceneTextureID, from this same
+        // heap/free-list - one fixed slot, rewritten every call rather than
+        // one slot per distinct TextureHandle (see that method's own
+        // comment for why).
+        u32 SceneTextureSlot {UINT32_MAX};
+
         static void SrvAlloc(ImGui_ImplDX12_InitInfo* Info,
                              D3D12_CPU_DESCRIPTOR_HANDLE* OutCpu,
                              D3D12_GPU_DESCRIPTOR_HANDLE* OutGpu) {
@@ -207,6 +213,33 @@ namespace Xen {
         ImGui::SetCurrentContext(_Impl->Context);
         return ImGui::GetIO().WantCaptureKeyboard;
     }
+
+    ImTextureID DebugUI::GetOrCreateSceneTextureID(const RHI::TextureHandle Handle) {
+        if (!_Initialized) return 0;
+
+        if (_Impl->SceneTextureSlot == UINT32_MAX) {
+            for (u32 i = 0; i < Impl::SrvHeapCapacity; ++i) {
+                if (_Impl->SrvSlotUsed[i]) continue;
+                _Impl->SrvSlotUsed[i]   = true;
+                _Impl->SceneTextureSlot = i;
+                break;
+            }
+            if (_Impl->SceneTextureSlot == UINT32_MAX) {
+                LOG_ERR("DebugUI: out of SRV descriptor slots (capacity=%u) - the scene view won't display",
+                        Impl::SrvHeapCapacity);
+                return 0;
+            }
+        }
+
+        D3D12_CPU_DESCRIPTOR_HANDLE Cpu = _Impl->SrvHeap->GetCPUDescriptorHandleForHeapStart();
+        Cpu.ptr += CAST<SIZE_T>(_Impl->SceneTextureSlot) * _Impl->SrvDescriptorSize;
+
+        if (!_Impl->Device->CreateTextureSRV(Handle, Cpu)) return 0;
+
+        D3D12_GPU_DESCRIPTOR_HANDLE Gpu = _Impl->SrvHeap->GetGPUDescriptorHandleForHeapStart();
+        Gpu.ptr += CAST<UINT64>(_Impl->SceneTextureSlot) * _Impl->SrvDescriptorSize;
+        return CAST<ImTextureID>(Gpu.ptr);
+    }
 }  // namespace Xen
 
 #else
@@ -231,6 +264,9 @@ namespace Xen {
     }
     bool DebugUI::WantsCaptureKeyboard() const {
         return false;
+    }
+    ImTextureID DebugUI::GetOrCreateSceneTextureID(RHI::TextureHandle) {
+        return 0;
     }
 }  // namespace Xen
 

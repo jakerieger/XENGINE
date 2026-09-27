@@ -11,10 +11,10 @@ add_executable(PAKTool main.cpp)
 # PAKTool.exe silently landed in the flat bin/ root instead of bin/Tools/,
 # breaking every caller that references it via TOOLS_BIN_DIR (Scripts/
 # pack_demo_content.py, XenPBRDemo's engine-shader/environment pack steps).
-set_target_properties(PAKTool PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+set_target_properties(PAKTool PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/PAKTool")
 foreach (config ${CMAKE_CONFIGURATION_TYPES})
     string(TOUPPER ${config} config_upper)
-    set_target_properties(PAKTool PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+    set_target_properties(PAKTool PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/PAKTool")
 endforeach ()
 
 target_link_libraries(PAKTool PRIVATE

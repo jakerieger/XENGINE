@@ -277,7 +277,22 @@ float InterleavedGradientNoise(float2 ScreenPos) {
 // slightly toward the light. Both are sized in shadow-map texels by
 // MeshRenderer, so they stay right as the map's coverage or size changes.
 float ShadowVisibility(float3 WorldPosition, float3 GeometricNormal, float NdotL, float2 ScreenPos) {
-    if (ShadowParams.x < 0.5 || NdotL <= 0.0) return 1.0;
+    // NdotL <= 0 (surface facing away from the light) used to also early-out
+    // here, back when this function's only caller multiplied its result into
+    // the direct-light term - a free skip, since EvaluateDirectLighting
+    // already zeroes a back-facing surface's direct contribution regardless
+    // of what Shadow says. It stopped being free once AmbientShadow (below,
+    // PSMain) started reading this same result to darken ambient/IBL light
+    // too - light that a back-facing surface still legitimately receives.
+    // Skipping the real shadow-map lookup there meant AmbientShadow jumped
+    // from the "unshadowed" fallback (1.0) straight to a real PCF value the
+    // instant NdotL crossed zero - a hard, visible per-frame pop as a
+    // surface (a crevice wall on a rotating prop, for one) turned to face
+    // the light, not a smooth transition. Sampling the map regardless of
+    // facing costs a bit more (roughly every back-facing-to-light pixel
+    // now pays for the full 5x5 PCF kernel too), but that's the price of
+    // AmbientShadow actually being continuous.
+    if (ShadowParams.x < 0.5) return 1.0;
 
     const float SinTheta = sqrt(saturate(1.0 - NdotL * NdotL));
     const float3 Offset = GeometricNormal * ShadowParams.z * SinTheta;
@@ -458,6 +473,6 @@ PSOutput PSMain(PSInput In) {
     const float2 CurrNdc = In.CurrClip.xy / In.CurrClip.w;
     const float2 PrevNdc = In.PrevClip.xy / In.PrevClip.w;
     Out.Velocity = (CurrNdc - PrevNdc) * float2(0.5, -0.5);
-
+    
     return Out;
 }

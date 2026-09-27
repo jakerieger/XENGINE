@@ -10,7 +10,7 @@
         "Transform": {
           "Position": [
             0.0,
-            0.25,
+            1.0,
             0.0
           ],
           "Rotation": [
@@ -20,9 +20,9 @@
             1.0
           ],
           "Scale": [
-            0.5,
-            0.5,
-            0.5
+            1.0,
+            1.0,
+            1.0
           ]
         },
         "Enabled": true
@@ -31,7 +31,7 @@
         {
           "Type": "MeshComponent",
           "Properties": {
-            "MeshAsset": 8564983877344598785
+            "MeshAsset": 3263604253546610921
           }
         },
         {
@@ -42,7 +42,7 @@
               1.0,
               1.0
             ],
-            "Metallic": 0.10000000149011612,
+            "Metallic": 0.0010000000474974513,
             "Roughness": 0.5,
             "AmbientOcclusion": 1.0,
             "Emissive": [
@@ -55,7 +55,8 @@
             "RoughnessMap": 12082153676810581867,
             "MetallicMap": 0,
             "AmbientOcclusionMap": 0,
-            "EmissiveMap": 0
+            "EmissiveMap": 0,
+            "Submesh": ""
           }
         },
         {
@@ -119,7 +120,8 @@
             "RoughnessMap": 11668384648996011613,
             "MetallicMap": 0,
             "AmbientOcclusionMap": 0,
-            "EmissiveMap": 0
+            "EmissiveMap": 0,
+            "Submesh": ""
           }
         }
       ]

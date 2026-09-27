@@ -14,6 +14,11 @@ using namespace Xen;
 
 void Sandbox::OnUpdate(f32 DeltaTime) {
     if (GetInputManager().GetKeyDown(Input::KeyCode::Escape)) { Quit(); }
+
+    // Forces a shader recompile+pipeline reload right now, regardless of
+    // whether ShaderHotReload's own file-watching noticed a change - a
+    // no-op in Release (see Game::ForceReloadShaders).
+    if (GetInputManager().GetKeyDown(Input::KeyCode::F9)) { ForceReloadShaders(); }
 }
 
 void Sandbox::OnRender() {
@@ -64,23 +69,6 @@ void Sandbox::OnRender() {
     }
     ImGui::End();
 
-    // Per-pass GPU time, from CommandBuffer::PushDebugGroup/
-    // PopDebugGroup scopes measured with GPU timestamp queries (see
-    // D3D12RenderDevice::GetLastFrameGpuTimings) - a few frames
-    // behind whatever's on screen right now (a timestamp can't be
-    // read back until the GPU has actually reached it, which this
-    // backend only guarantees once the same swap-chain buffer comes
-    // back around), not last-frame-exact the way the CPU-side Frame
-    // Stats above are. Indentation follows each scope's own nesting
-    // (e.g. "Depth prepass"/"SSAO" nest under "Meshes"; "Bloom",
-    // "Auto exposure metering" and "Post-process composite" are its
-    // siblings, all under PostProcess::Render; "FXAA" is a top-level
-    // scope of its own, recorded after MeshRenderer::Render returns).
-    // AlwaysAutoResize, not just an initial auto-fit: this window's
-    // first few frames have no data at all (see the comment above -
-    // GPU timing takes a few frames to start resolving), so sizing
-    // only once on first appearance would lock in a near-empty
-    // window's height and never grow to fit the real content later.
     ImGui::SetNextWindowPos(ImVec2(10, 340), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("GPU Profiler", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         const std::vector<RHI::GpuScopeTiming>& Timings = GetRenderDevice().GetLastFrameGpuTimings();
@@ -95,22 +83,16 @@ void Sandbox::OnRender() {
             ImGui::Separator();
             ImGui::Text("Total (top-level scopes): %.3f ms", TopLevelTotal);
 
-            // Rolling history of the line above, not the CPU-side Frame
-            // Stats delta - a fixed-size circular buffer (~4s at 60 FPS),
-            // static so it persists across calls without adding a member to
-            // Sandbox for a debug-only graph. Only fed once real timing data
-            // exists (this whole block is skipped otherwise), so the graph
-            // never gets polluted with the all-zero startup frames.
             static float FrameTimeHistory[240] = {};
             static int FrameTimeOffset         = 0;
-            static bool FrameTimeFilled         = false;
+            static bool FrameTimeFilled        = false;
 
             FrameTimeHistory[FrameTimeOffset] = TopLevelTotal;
             FrameTimeOffset                   = (FrameTimeOffset + 1) % IM_ARRAYSIZE(FrameTimeHistory);
             if (FrameTimeOffset == 0) FrameTimeFilled = true;
 
             const int SampleCount = FrameTimeFilled ? IM_ARRAYSIZE(FrameTimeHistory) : FrameTimeOffset;
-            float MaxSample        = 0.0f;
+            float MaxSample       = 0.0f;
             for (int i = 0; i < SampleCount; ++i) {
                 if (FrameTimeHistory[i] > MaxSample) MaxSample = FrameTimeHistory[i];
             }
@@ -123,18 +105,13 @@ void Sandbox::OnRender() {
                              FrameTimeFilled ? FrameTimeOffset : 0,
                              Overlay,
                              0.0f,
-                             MaxSample * 1.2f + 0.001f,  // +epsilon: a perfectly flat 0ms history would else divide by zero
+                             MaxSample * 1.2f +
+                               0.001f,  // +epsilon: a perfectly flat 0ms history would else divide by zero
                              ImVec2(0.0f, 80.0f));
         }
     }
     ImGui::End();
 
-    // The engine's own ring-buffer logger (Common/Log.hpp) - every LOG_INFO/
-    // WARN/ERR/CRIT/DBG call anywhere in the process, not just this demo's
-    // own. The buffer itself is a fixed-size ring (Logger::LOGGER_MAX_ENTRIES,
-    // currently 4096); snapshotted under its mutex (AssetLoader's worker
-    // threads log too) into a local copy first, so the actual ImGui:: calls
-    // - the slow part - run unlocked.
     ImGui::SetNextWindowPos(ImVec2(360, 10), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(700, 400), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Log")) {

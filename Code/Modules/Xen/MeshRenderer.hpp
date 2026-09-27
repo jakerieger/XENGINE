@@ -91,7 +91,11 @@ namespace Xen {
         // matrix nor the mesh's buffer handles/info get looked up twice.
         struct VisibleMesh {
             Actor* A;
-            PBRMaterialComponent* Material;
+            // Parallel to Info.Submeshes - resolved once here (by matching
+            // PBRMaterialComponent::GetSubmeshName() against each
+            // MeshSubmesh::MaterialName) rather than per-draw, same reason
+            // the mesh/buffer lookup below is done once, not per-pass.
+            std::vector<PBRMaterialComponent*> SubmeshMaterials;
             Float4x4 Model;
             RHI::BufferHandle VertexBuffer;
             RHI::BufferHandle IndexBuffer;
