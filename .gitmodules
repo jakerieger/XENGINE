@@ -1,6 +1,6 @@
-[submodule "Source/Vendor/imgui"]
-	path = Source/Vendor/imgui
-	url = https://github.com/ocornut/imgui.git
 [submodule "EngineContent"]
 	path = EngineContent
 	url = git@github.com:jakerieger/XENGINE.EngineContent.git
+[submodule "Source/Vendor/imgui"]
+	path = Source/Vendor/imgui
+	url = https://github.com/ocornut/imgui.git
