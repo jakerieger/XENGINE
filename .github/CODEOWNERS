@@ -1,8 +1,8 @@
 CMake/ @jakerieger
 Scripts/ @jakerieger
-Code/Modules/ @jakerieger
-Code/Shaders/ @jakerieger
-Code/Demos/ @jakerieger
-Code/Tools/ @jakerieger
+Source/Modules/ @jakerieger
+Source/Shaders/ @jakerieger
+Source/Demos/ @jakerieger
+Source/Tools/ @jakerieger
 bootstrap_engine.py @jakerieger
 **/CMakeLists.txt @jakerieger

@@ -1,5 +1,5 @@
 """
-Compiles engine shaders located in Code/Shaders and outputs them to Engine/Shaders.
+Compiles engine shaders located in Source/Shaders and outputs them to Engine/Shaders.
 """
 
 import subprocess
@@ -47,7 +47,7 @@ class ShaderCompiler:
     def __init__(self, root: Path | None = None):
         # Scripts/ lives one level below the repo root.
         root = root or Path(__file__).resolve().parent.parent
-        self.shader_sources = root / "Code" / "Shaders"
+        self.shader_sources = root / "Source" / "Shaders"
         self.shader_output = root / "EngineContent" / "Shaders"
 
     def _invoke_dxc(self, shader_file: Path, stage: str) -> None:

@@ -4,275 +4,784 @@
 
 ### Fixed (later same day)
 
-- `AmbientShadow` (`PBR.hlsl`, darkens ambient/IBL diffuse light near a directional-light shadow) was popping hard between frames on concave/self-shadowing geometry - a rotating prop's crevice walls in particular, confirmed by the report and reproduced. Root cause: `ShadowVisibility`'s `NdotL <= 0` early-out, a free optimization from when the function's only caller was the direct-light term (already zero for a back-facing surface regardless of shadow) - but `AmbientShadow` now reads the same result to darken ambient light a back-facing surface still legitimately receives, so skipping the real shadow-map lookup there meant it jumped straight from the "unshadowed" fallback (1.0) to a real PCF value the instant a surface's normal crossed `NdotL = 0`, instead of transitioning smoothly. Fixed by removing the early-out - the shadow map is now always sampled regardless of facing. Costs a bit more GPU time (every back-facing-to-light pixel now pays for the full 5x5 PCF kernel too).
-  - **Found while verifying this**: the fix appeared to do nothing on a plain rebuild+relaunch - not a shader bug, a separate, real `Game` constructor-ordering bug. `ShaderHotReload`'s loose-file override (`EngineContent/Shaders`, meant to let a freshly recompiled shader reach the running game without a full content repack) was mounted *after* `MeshRenderer`/`FXAA` already loaded and compiled their first-ever shader - so a shader recompiled moments ago and a plain relaunch (no live edit needed) could still see a stale packed pak if content packaging didn't happen to rerun alongside the shader-compile step (which runs unconditionally on every Debug build). Only a *live* edit-while-running ever exercised the loose override (via `ShaderHotReload::Poll`), which is why this went unnoticed until now. Fixed by moving the `ShaderHotReload::Initialize`/loose-source-mount block to immediately after asset mounting, before anything else loads its first shader.
-  - Verified quantitatively, not just by eye: sampled average brightness in a fixed crevice-region ROI across 80 rapid-fire-captured frames (~4 seconds, one capture every ~3 real frames) of the debug-only `Out.Color = float4(AmbientShadow.xxx, 1.0)` visualization - the trace is a smooth, continuous oscillation (135→149→119→150→119...) matching the prop's rotation, with zero discontinuities, confirmed both before the constructor-order fix (where the shader edit provably wasn't reaching the GPU at all - the debug view still showed the fully lit textured scene) and after (debug view showing the correct flat grayscale term, real fix confirmed working).
+- `AmbientShadow` (`PBR.hlsl`, darkens ambient/IBL diffuse light near a directional-light shadow) was popping hard
+  between frames on concave/self-shadowing geometry - a rotating prop's crevice walls in particular, confirmed by the
+  report and reproduced. Root cause: `ShadowVisibility`'s `NdotL <= 0` early-out, a free optimization from when the
+  function's only caller was the direct-light term (already zero for a back-facing surface regardless of shadow) - but
+  `AmbientShadow` now reads the same result to darken ambient light a back-facing surface still legitimately receives,
+  so skipping the real shadow-map lookup there meant it jumped straight from the "unshadowed" fallback (1.0) to a real
+  PCF value the instant a surface's normal crossed `NdotL = 0`, instead of transitioning smoothly. Fixed by removing the
+  early-out - the shadow map is now always sampled regardless of facing. Costs a bit more GPU time (every
+  back-facing-to-light pixel now pays for the full 5x5 PCF kernel too).
+    - **Found while verifying this**: the fix appeared to do nothing on a plain rebuild+relaunch - not a shader bug, a
+      separate, real `Game` constructor-ordering bug. `ShaderHotReload`'s loose-file override (`EngineContent/Shaders`,
+      meant to let a freshly recompiled shader reach the running game without a full content repack) was mounted *after*
+      `MeshRenderer`/`FXAA` already loaded and compiled their first-ever shader - so a shader recompiled moments ago and
+      a plain relaunch (no live edit needed) could still see a stale packed pak if content packaging didn't happen to
+      rerun alongside the shader-compile step (which runs unconditionally on every Debug build). Only a *live*
+      edit-while-running ever exercised the loose override (via `ShaderHotReload::Poll`), which is why this went
+      unnoticed until now. Fixed by moving the `ShaderHotReload::Initialize`/loose-source-mount block to immediately
+      after asset mounting, before anything else loads its first shader.
+    - Verified quantitatively, not just by eye: sampled average brightness in a fixed crevice-region ROI across 80
+      rapid-fire-captured frames (~4 seconds, one capture every ~3 real frames) of the debug-only
+      `Out.Color = float4(AmbientShadow.xxx, 1.0)` visualization - the trace is a smooth, continuous oscillation
+      (135→149→119→150→119...) matching the prop's rotation, with zero discontinuities, confirmed both before the
+      constructor-order fix (where the shader edit provably wasn't reaching the GPU at all - the debug view still showed
+      the fully lit textured scene) and after (debug view showing the correct flat grayscale term, real fix confirmed
+      working).
 
 ### Added
 
-- Multi-material mesh support: a mesh with several glTF material slots (a
-  Blender mesh with multiple material-slot assignments, textured per-slot in
-  Substance Painter) now renders each slot with its own material instead of
-  one `PBRMaterialComponent` blindly covering the whole thing. The
-  multi-primitive/multi-material data was already fully parsed by cgltf on
-  every load and simply discarded - `MeshCache::DecodeAsset` hard-coded
-  `meshes[0].primitives[0]` with a `LOG_WARN` that said outright "no submesh
-  support yet" (`MeshCache.cpp`). No RHI or shader changes were needed at
-  all: `RHI::CommandBuffer::DrawIndexed` already took `FirstIndex`/
+- Multi-material mesh support: a mesh with several glTF material slots (a Blender mesh with multiple material-slot
+  assignments, textured per-slot in Substance Painter) now renders each slot with its own material instead of one
+  `PBRMaterialComponent` blindly covering the whole thing. The multi-primitive/multi-material data was already fully
+  parsed by cgltf on every load and simply discarded - `MeshCache::DecodeAsset` hard-coded
+  `meshes[0].primitives[0]` with a `LOG_WARN` that said outright "no submesh support yet" (`MeshCache.cpp`). No RHI or
+  shader changes were needed at all: `RHI::CommandBuffer::DrawIndexed` already took `FirstIndex`/
   `VertexOffset`, and the D3D12 backend already forwarded both straight into
-  `DrawIndexedInstanced` - confirmed by reading the executor before writing
-  any of this, not assumed.
-  - `MeshCache::DecodeAsset` now loops every primitive in the glTF mesh
-    (still only the first *top-level* mesh - an unrelated, still-unsupported
-    concept, typically LOD/variants), concatenating every primitive's
-    vertices/indices into one shared vertex/index buffer per mesh asset and
-    rebasing each primitive's indices by the running vertex count at load
-    time, so a submesh needs only `FirstIndex`/`IndexCount` to slice out of
-    the shared buffer - no separate vertex offset. `MeshInfo` gained
-    `Submeshes` (`MeshSubmesh{FirstIndex, IndexCount, MaterialName}`,
-    `MaterialName` from `cgltf_material::name`) - always at least one entry,
-    even for a single-primitive mesh (one untagged submesh covering the
-    whole `IndexCount`, which keeps its existing meaning: total indices
-    across every submesh).
-  - `PBRMaterialComponent` gained an optional `SubmeshName` tag, matched
-    against a `MeshSubmesh::MaterialName` **by name**, not index - robust to
-    Blender re-exporting primitives in a different order. Textures/factors
-    are still hand-wired per material in C++/scene JSON, same as today, just
-    now potentially several `PBRMaterialComponent`s per actor instead of
-    one - `Actor::GetComponents<T>()` and generic component serialization
-    already supported that with zero component-system changes (confirmed by
-    reading `Actor.hpp`/`SceneSerializer.cpp` before assuming, not guessed).
-  - `MeshRenderer`'s frustum-culling collection now calls
-    `GetComponents<PBRMaterialComponent>()` (plural) and resolves each of
-    the mesh's submeshes to a matching material once per visible actor per
-    frame (an unmatched/untagged submesh falls back to the actor's first
-    material - also exactly what keeps every existing single-material scene
-    rendering identically, unchanged). The main draw loop now binds
-    `ObjectConstants`/the vertex+index buffers once per actor (shared,
-    unchanged) and loops per-submesh for the `MaterialConstants`/six-texture
-    binds and `DrawIndexed(Submesh.IndexCount, 1, Submesh.FirstIndex)` that
-    used to happen once per actor. `RenderDepthPrepass`/`RenderShadowPass`
-    needed **no changes** - both already draw an actor's entire index range
-    in one call, correct regardless of material count since depth-only
-    rendering doesn't care about materials.
-  - Verified with a temporary hand-generated 2-primitive/2-named-material
-    cube (`Content/meshes/multimat_test.gltf`, built the same way
-    `Scripts/generate_primitive_meshes.py` already generates its own test
-    primitives - no Blender/Substance asset was available in this
-    environment) and a temporary test actor with two `PBRMaterialComponent`s
-    tagged `SetSubmeshName("Red")`/`SetSubmeshName("Blue")`: the cube
-    rendered with three correctly-colored red faces and three blue, cast one
-    correct shadow, draw calls went from 33 to 37 (+4 - shadow pass, depth
-    prepass, and 2 main-pass submesh draws for the one new actor, exactly as
-    expected). Regression-checked against the existing single-material
-    teapot/ground scene (identical render, draw call count unchanged) before
-    and after. 0 log errors in Debug/Release; temporary mesh/test actor
-    fully reverted afterward (confirmed via `git diff`).
-  - **Not a bug in this feature, but worth remembering**: rebuilding
-    Release right after reverting the temporary test actor still crashed on
-    launch (`MeshCache::DecodeAsset: mesh asset ... not found`) - not a
-    regression, a self-inflicted build-ordering artifact. `SceneBuilder::
-    Build()` regenerates `Content/scenes/main.xscene` on disk at *runtime*,
-    every launch; a Release build's `xen_package_game_content` step packs
-    whatever that file looks like *at build time* into `Data.pxk`, which is
-    then Release's only source (no loose content dirs). Since the on-disk
-    scene was still the multimat-test version (last written by a Debug
-    launch before the revert), Release's build baked in a scene referencing
-    the already-deleted test mesh. Fixed by launching Debug once (which
-    regenerates a clean scene on disk from the reverted code) before
-    rebuilding Release again.
+  `DrawIndexedInstanced` - confirmed by reading the executor before writing any of this, not assumed.
+    - `MeshCache::DecodeAsset` now loops every primitive in the glTF mesh (still only the first *top-level* mesh - an
+      unrelated, still-unsupported concept, typically LOD/variants), concatenating every primitive's vertices/indices
+      into one shared vertex/index buffer per mesh asset and rebasing each primitive's indices by the running vertex
+      count at load time, so a submesh needs only `FirstIndex`/`IndexCount` to slice out of the shared buffer - no
+      separate vertex offset. `MeshInfo` gained
+      `Submeshes` (`MeshSubmesh{FirstIndex, IndexCount, MaterialName}`,
+      `MaterialName` from `cgltf_material::name`) - always at least one entry, even for a single-primitive mesh (one
+      untagged submesh covering the whole `IndexCount`, which keeps its existing meaning: total indices across every
+      submesh).
+    - `PBRMaterialComponent` gained an optional `SubmeshName` tag, matched against a `MeshSubmesh::MaterialName` **by
+      name**, not index - robust to Blender re-exporting primitives in a different order. Textures/factors are still
+      hand-wired per material in C++/scene JSON, same as today, just now potentially several `PBRMaterialComponent`s per
+      actor instead of one - `Actor::GetComponents<T>()` and generic component serialization already supported that with
+      zero component-system changes (confirmed by reading `Actor.hpp`/`SceneSerializer.cpp` before assuming, not
+      guessed).
+    - `MeshRenderer`'s frustum-culling collection now calls
+      `GetComponents<PBRMaterialComponent>()` (plural) and resolves each of the mesh's submeshes to a matching material
+      once per visible actor per frame (an unmatched/untagged submesh falls back to the actor's first material - also
+      exactly what keeps every existing single-material scene rendering identically, unchanged). The main draw loop now
+      binds
+      `ObjectConstants`/the vertex+index buffers once per actor (shared, unchanged) and loops per-submesh for the
+      `MaterialConstants`/six-texture binds and `DrawIndexed(Submesh.IndexCount, 1, Submesh.FirstIndex)` that used to
+      happen once per actor. `RenderDepthPrepass`/`RenderShadowPass`
+      needed **no changes** - both already draw an actor's entire index range in one call, correct regardless of
+      material count since depth-only rendering doesn't care about materials.
+    - Verified with a temporary hand-generated 2-primitive/2-named-material cube (`Content/meshes/multimat_test.gltf`,
+      built the same way
+      `Scripts/generate_primitive_meshes.py` already generates its own test primitives - no Blender/Substance asset was
+      available in this environment) and a temporary test actor with two `PBRMaterialComponent`s tagged
+      `SetSubmeshName("Red")`/`SetSubmeshName("Blue")`: the cube rendered with three correctly-colored red faces and
+      three blue, cast one correct shadow, draw calls went from 33 to 37 (+4 - shadow pass, depth prepass, and 2
+      main-pass submesh draws for the one new actor, exactly as expected). Regression-checked against the existing
+      single-material teapot/ground scene (identical render, draw call count unchanged) before and after. 0 log errors
+      in Debug/Release; temporary mesh/test actor fully reverted afterward (confirmed via `git diff`).
+    - **Not a bug in this feature, but worth remembering**: rebuilding Release right after reverting the temporary test
+      actor still crashed on launch (`MeshCache::DecodeAsset: mesh asset ... not found`) - not a regression, a
+      self-inflicted build-ordering artifact. `SceneBuilder::
+    Build()` regenerates `Content/scenes/main.xscene` on disk at *runtime*, every launch; a Release build's
+      `xen_package_game_content` step packs whatever that file looks like *at build time* into `Data.pxk`, which is then
+      Release's only source (no loose content dirs). Since the on-disk scene was still the multimat-test version (last
+      written by a Debug launch before the revert), Release's build baked in a scene referencing the already-deleted
+      test mesh. Fixed by launching Debug once (which regenerates a clean scene on disk from the reverted code) before
+      rebuilding Release again.
 
 ## 2026-09-24
 
 ### Added (later same day, Forward+ tile culling)
 
-- Real tiled Forward+ light culling, the deferred follow-on from the point/spot lights entry below: the D3D12 backend's UAV gap (no `D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS`, no UAV descriptor creation, `CmdType::BindStorageBuffer` a no-op stub) is now closed, and `PBR.hlsl`'s brute-force per-pixel light loop is replaced by a per-tile culled one - the engine's first real compute shader.
-  - **UAV backend support** (`D3D12RenderDevice.{hpp,cpp}`), scoped to raw byte-address buffers only, not textures (no `BindStorageTexture` command needed, `TextureUsage` untouched): `CreateBuffer` now sets `ALLOW_UNORDERED_ACCESS` and creates a raw-buffer UAV descriptor for `BufferUsage::Storage`, reusing the *same* shader-visible `CBV_SRV_UAV` heap and bump allocator textures already share their SRVs through (`AllocateSrvSlot`, a new `D3DBuffer::UavHeapIndex` field mirroring `D3DTexture::SrvHeapIndex`). `BindStorageBuffer`'s executor - previously the literal no-op stub found while researching this in the prior session - now resolves that heap slot into a real descriptor-table bind, mirroring `BindTexture`'s existing SRV path. `CmdType::PipelineBarrier`'s executor - also previously a no-op - now emits a real `D3D12_RESOURCE_BARRIER_TYPE_UAV` when `BarrierBits::StorageBuffer` is set: a Storage buffer is created directly into `UNORDERED_ACCESS` and never transitions away from it (no generic `D3DBuffer` state-tracking system was built - a deliberate scope decision, see the plan), so the compute-write-then-draw-read hazard needs an explicit UAV barrier, not a state transition (which would be skipped as a same-state no-op).
-  - **New `LightCulling` class** (`LightCulling.hpp/.cpp`, mirrors `SSAO`'s shape), dispatched from `MeshRenderer::Render` right after the depth prepass (same dependency SSAO has): one `[numthreads(16,16,1)]` compute shader (`Code/Shaders/LightCulling.hlsl`, new) per screen tile, reducing the tile's depth samples to a min/max NDC depth (`InterlockedMin`/`Max` in groupshared memory - depth's already `[0,1]`, so no float-sign-flip trick needed), unprojecting the tile's 4 screen corners at both depths into 8 world-space points via the *same* `InvViewProjection` `SSAO.hlsl`'s `WorldPosFromDepth` already uses (no new matrices needed anywhere), taking their AABB, and testing every scene light as a world-space sphere against it - survivors are compacted (groupshared `InterlockedAdd`) into a per-tile light-index list. A tile that's 100% sky short-circuits to a light count of 0 instead of building a degenerate box.
-  - `PBR.hlsl`'s per-pixel loop now iterates only its own tile's culled index list (`Include/LightCulling.hlsli`'s new `LightIndexList`/`TileLightGrid` `RWByteAddressBuffer`s, u0/u1) instead of every light in the scene; `LightData.hlsli`'s `Light` array itself is unchanged - tiling only adds an index-list layer on top of it. `FrameData.hlsli` gained one field (`TileGridAndSize`) so the pixel shader can turn `SV_Position` into a tile index; nothing else in the shared frame cbuffer moved.
-  - `GpuLight`/`LightConstants`/`MaxLights` (previously private to `MeshRenderer.cpp`) moved into a new shared `LightData.hpp`, since `LightCulling.cpp` needs the identical mirror to read the same `LightData` cbuffer - one byte-layout-sensitive struct instead of two independently-maintained copies.
-  - **Found and fixed while verifying this**: the very first launch logged a real D3D12 debug-layer error - `CreateBuffer`'s existing initial-data upload path (used to zero-fill the new `TileLightGrid` buffer at creation, so an uninitialized/failed compute shader still reports "0 lights" instead of reading garbage) copies the destination buffer's full `D3D12_RESOURCE_DESC` - including the newly-added UAV flag - onto its temporary UPLOAD-heap staging buffer, which D3D12 forbids (`ALLOW_RENDER_TARGET`/`ALLOW_UNORDERED_ACCESS` on an UPLOAD or READBACK heap is a hard error). Fixed by explicitly clearing `Flags` on the staging buffer's own resource desc - it's just a linear byte range for the CPU-write/GPU-copy, never a UAV target itself.
-  - Verified: a temporary 9x8 grid of 72 small-range (3.5 unit), distinctly colored point lights added to `SceneBuilder.hpp` rendered as correctly localized, correctly colored highlights across the floor with no seams or popping between tiles, and the teapot picked up different light colors on each side from its nearest neighbors - exactly the visual signature of correct per-tile culling, not just a larger flat loop. 0 UAV/barrier warnings in the D3D12 debug layer after the staging-buffer fix (only the pre-existing, already-documented `LoadingScreen` startup clear-value warnings remain). Debug/Release Demo.PBR and Debug Demo.Pong all rebuild and launch cleanly; the 72 test lights and their temporary includes were fully reverted from `SceneBuilder.hpp` afterward (confirmed via `git diff` showing no changes to that file).
+- Real tiled Forward+ light culling, the deferred follow-on from the point/spot lights entry below: the D3D12 backend's
+  UAV gap (no `D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS`, no UAV descriptor creation, `CmdType::BindStorageBuffer` a
+  no-op stub) is now closed, and `PBR.hlsl`'s brute-force per-pixel light loop is replaced by a per-tile culled one -
+  the engine's first real compute shader.
+    - **UAV backend support** (`D3D12RenderDevice.{hpp,cpp}`), scoped to raw byte-address buffers only, not textures (no
+      `BindStorageTexture` command needed, `TextureUsage` untouched): `CreateBuffer` now sets `ALLOW_UNORDERED_ACCESS`
+      and creates a raw-buffer UAV descriptor for `BufferUsage::Storage`, reusing the *same* shader-visible
+      `CBV_SRV_UAV` heap and bump allocator textures already share their SRVs through (`AllocateSrvSlot`, a new
+      `D3DBuffer::UavHeapIndex` field mirroring `D3DTexture::SrvHeapIndex`). `BindStorageBuffer`'s executor - previously
+      the literal no-op stub found while researching this in the prior session - now resolves that heap slot into a real
+      descriptor-table bind, mirroring `BindTexture`'s existing SRV path. `CmdType::PipelineBarrier`'s executor - also
+      previously a no-op - now emits a real `D3D12_RESOURCE_BARRIER_TYPE_UAV` when `BarrierBits::StorageBuffer` is set:
+      a Storage buffer is created directly into `UNORDERED_ACCESS` and never transitions away from it (no generic
+      `D3DBuffer` state-tracking system was built - a deliberate scope decision, see the plan), so the
+      compute-write-then-draw-read hazard needs an explicit UAV barrier, not a state transition (which would be skipped
+      as a same-state no-op).
+    - **New `LightCulling` class** (`LightCulling.hpp/.cpp`, mirrors `SSAO`'s shape), dispatched from
+      `MeshRenderer::Render` right after the depth prepass (same dependency SSAO has): one `[numthreads(16,16,1)]`
+      compute shader (`Source/Shaders/LightCulling.hlsl`, new) per screen tile, reducing the tile's depth samples to a
+      min/max NDC depth (`InterlockedMin`/`Max` in groupshared memory - depth's already `[0,1]`, so no float-sign-flip
+      trick needed), unprojecting the tile's 4 screen corners at both depths into 8 world-space points via the *same*
+      `InvViewProjection` `SSAO.hlsl`'s `WorldPosFromDepth` already uses (no new matrices needed anywhere), taking their
+      AABB, and testing every scene light as a world-space sphere against it - survivors are compacted (groupshared
+      `InterlockedAdd`) into a per-tile light-index list. A tile that's 100% sky short-circuits to a light count of 0
+      instead of building a degenerate box.
+    - `PBR.hlsl`'s per-pixel loop now iterates only its own tile's culled index list (`Include/LightCulling.hlsli`'s new
+      `LightIndexList`/`TileLightGrid` `RWByteAddressBuffer`s, u0/u1) instead of every light in the scene;
+      `LightData.hlsli`'s `Light` array itself is unchanged - tiling only adds an index-list layer on top of it.
+      `FrameData.hlsli` gained one field (`TileGridAndSize`) so the pixel shader can turn `SV_Position` into a tile
+      index; nothing else in the shared frame cbuffer moved.
+    - `GpuLight`/`LightConstants`/`MaxLights` (previously private to `MeshRenderer.cpp`) moved into a new shared
+      `LightData.hpp`, since `LightCulling.cpp` needs the identical mirror to read the same `LightData` cbuffer - one
+      byte-layout-sensitive struct instead of two independently-maintained copies.
+    - **Found and fixed while verifying this**: the very first launch logged a real D3D12 debug-layer error -
+      `CreateBuffer`'s existing initial-data upload path (used to zero-fill the new `TileLightGrid` buffer at creation,
+      so an uninitialized/failed compute shader still reports "0 lights" instead of reading garbage) copies the
+      destination buffer's full `D3D12_RESOURCE_DESC` - including the newly-added UAV flag - onto its temporary
+      UPLOAD-heap staging buffer, which D3D12 forbids (`ALLOW_RENDER_TARGET`/`ALLOW_UNORDERED_ACCESS` on an UPLOAD or
+      READBACK heap is a hard error). Fixed by explicitly clearing `Flags` on the staging buffer's own resource desc -
+      it's just a linear byte range for the CPU-write/GPU-copy, never a UAV target itself.
+    - Verified: a temporary 9x8 grid of 72 small-range (3.5 unit), distinctly colored point lights added to
+      `SceneBuilder.hpp` rendered as correctly localized, correctly colored highlights across the floor with no seams or
+      popping between tiles, and the teapot picked up different light colors on each side from its nearest neighbors -
+      exactly the visual signature of correct per-tile culling, not just a larger flat loop. 0 UAV/barrier warnings in
+      the D3D12 debug layer after the staging-buffer fix (only the pre-existing, already-documented `LoadingScreen`
+      startup clear-value warnings remain). Debug/Release Demo.PBR and Debug Demo.Pong all rebuild and launch cleanly;
+      the 72 test lights and their temporary includes were fully reverted from `SceneBuilder.hpp` afterward (confirmed
+      via `git diff` showing no changes to that file).
 
 ### Added
 
-- Point and spot lights - the next roadmap item after frustum culling/shader hot-reload. New `PointLightComponent` (color, intensity, range) and `SpotLightComponent` (+ direction from the owning actor's rotation, same derivation as `DirectionalLightComponent::GetDirection()`, plus inner/outer cone angles) - both per-actor, multi-instance components (the `MeshComponent`/`PBRMaterialComponent` pattern - "every actor that has one", not the scene-wide "first one found" singleton rule `AmbientOcclusionComponent`/`PostProcessComponent` use, since a scene can obviously want more than one point light).
-  - Deliberately a plain forward-rendered light list, not tile-based Forward+ culling: `MeshRenderer::Render` collects every point/spot light in the scene each frame (capped at `MaxLights` = 128) into a new `LightData` constant buffer (`b3`, `Code/Shaders/Include/LightData.hlsli`'s `Light` struct - position+range, color+intensity, direction+type, cone angles, matching `MeshRenderer.cpp`'s `GpuLight`/`LightConstants` byte-for-byte), and `PBR.hlsl`'s `PSMain` loops over all of them per-pixel. A real compute-shader-driven tiled light-culling pass (the actual "Forward+" part) needs UAV/`RWStructuredBuffer` support the D3D12 backend doesn't have today (confirmed by direct code search: no `D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS`, no UAV descriptor creation anywhere, `CmdType::BindStorageBuffer` is a literal no-op stub) - building that is a separate, later follow-on once a scene actually has enough lights to need it; a plain per-pixel loop over up to 128 lights costs the GPU nothing worth optimizing yet, and needed zero new RHI/backend work.
-  - `PBR.hlsl`'s Cook-Torrance BRDF evaluation (NDF/G/F, diffuse/specular split) was factored out of the directional-light block into a shared `EvaluateDirectLighting(N, V, L, ..., Radiance)`, called once for the directional light (`Radiance` includes its shadow term, as before - point/spot lights get no shadows, only the one directional light casts them) and once per point/spot light in the new loop, rather than duplicating the whole BRDF block per light type.
-  - Distance falloff uses Karis's windowed inverse-square function ("Real Shading in Unreal Engine 4", SIGGRAPH 2013) - physically-plausible 1/d² close to the light, smoothly windowed to exactly zero at `Range` instead of a hard cutoff that would pop as a light moves. Spot cone falloff is a squared smoothstep-like ramp between `InnerConeAngle` (fully lit) and `OuterConeAngle` (zero).
-  - Verified with a temporary point light (red) and spot light (initially too dim/narrow to read clearly against the scene's auto-exposure - a real, useful finding, not a bug: boosting intensity and widening the cone made it unambiguous) added to Demo.PBR's scene: the point light produced a correctly-falling-off red tint on the teapot and nearby floor, and the isolated, boosted spot light produced a crisp, correctly-shaped circular cone with a soft edge exactly where the light was aimed. 0 log errors in Debug/Release Demo.PBR and Debug Demo.Pong; both temporary test lights removed from `SceneBuilder.hpp` before wrapping up.
+- Point and spot lights - the next roadmap item after frustum culling/shader hot-reload. New `PointLightComponent`
+  (color, intensity, range) and `SpotLightComponent` (+ direction from the owning actor's rotation, same derivation as
+  `DirectionalLightComponent::GetDirection()`, plus inner/outer cone angles) - both per-actor, multi-instance components
+  (the `MeshComponent`/`PBRMaterialComponent` pattern - "every actor that has one", not the scene-wide "first one found"
+  singleton rule `AmbientOcclusionComponent`/`PostProcessComponent` use, since a scene can obviously want more than one
+  point light).
+    - Deliberately a plain forward-rendered light list, not tile-based Forward+ culling: `MeshRenderer::Render` collects
+      every point/spot light in the scene each frame (capped at `MaxLights` = 128) into a new `LightData` constant
+      buffer (`b3`, `Source/Shaders/Include/LightData.hlsli`'s `Light` struct - position+range, color+intensity,
+      direction+type, cone angles, matching `MeshRenderer.cpp`'s `GpuLight`/`LightConstants` byte-for-byte), and
+      `PBR.hlsl`'s `PSMain` loops over all of them per-pixel. A real compute-shader-driven tiled light-culling pass (the
+      actual "Forward+" part) needs UAV/`RWStructuredBuffer` support the D3D12 backend doesn't have today (confirmed by
+      direct code search: no `D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS`, no UAV descriptor creation anywhere,
+      `CmdType::BindStorageBuffer` is a literal no-op stub) - building that is a separate, later follow-on once a scene
+      actually has enough lights to need it; a plain per-pixel loop over up to 128 lights costs the GPU nothing worth
+      optimizing yet, and needed zero new RHI/backend work.
+    - `PBR.hlsl`'s Cook-Torrance BRDF evaluation (NDF/G/F, diffuse/specular split) was factored out of the
+      directional-light block into a shared `EvaluateDirectLighting(N, V, L, ..., Radiance)`, called once for the
+      directional light (`Radiance` includes its shadow term, as before - point/spot lights get no shadows, only the one
+      directional light casts them) and once per point/spot light in the new loop, rather than duplicating the whole
+      BRDF block per light type.
+    - Distance falloff uses Karis's windowed inverse-square function ("Real Shading in Unreal Engine 4", SIGGRAPH
+      2013) - physically-plausible 1/d² close to the light, smoothly windowed to exactly zero at `Range` instead of a
+      hard cutoff that would pop as a light moves. Spot cone falloff is a squared smoothstep-like ramp between
+      `InnerConeAngle` (fully lit) and `OuterConeAngle` (zero).
+    - Verified with a temporary point light (red) and spot light (initially too dim/narrow to read clearly against the
+      scene's auto-exposure - a real, useful finding, not a bug: boosting intensity and widening the cone made it
+      unambiguous) added to Demo.PBR's scene: the point light produced a correctly-falling-off red tint on the teapot
+      and nearby floor, and the isolated, boosted spot light produced a crisp, correctly-shaped circular cone with a
+      soft edge exactly where the light was aimed. 0 log errors in Debug/Release Demo.PBR and Debug Demo.Pong; both
+      temporary test lights removed from `SceneBuilder.hpp` before wrapping up.
 
 ## 2026-09-23
 
 ### Added (later same day, Log window)
 
-- A "Log" ImGui window in Demo.PBR, alongside the existing Frame Stats/GPU Profiler ones - every `LOG_INFO`/`WARN`/`ERR`/`CRIT`/`DBG` call in the process (not just this demo's own), read from the engine's existing ring-buffer `Logger` (`Common/Log.hpp`, `Logger::LOGGER_MAX_ENTRIES` = 4096). Snapshotted under `Logger::GetBufferMutex()` into a local copy first (a background `AssetLoader` worker thread logs too) so the actual `ImGui::` calls - the slow part - run unlocked. Color-coded by severity (yellow warnings, red errors/critical, gray debug), scrolls in its own child region, and sticks to the bottom on new lines only if the view was already there (so scrolling up to read history doesn't get yanked back down).
-  - Verified: shows every line from a real session (asset mount summary, the D3D12 loading-screen warnings in yellow, scene actor listing) with correct auto-scroll behavior, 0 log errors.
+- A "Log" ImGui window in Demo.PBR, alongside the existing Frame Stats/GPU Profiler ones - every `LOG_INFO`/`WARN`/
+  `ERR`/`CRIT`/`DBG` call in the process (not just this demo's own), read from the engine's existing ring-buffer
+  `Logger` (`Common/Log.hpp`, `Logger::LOGGER_MAX_ENTRIES` = 4096). Snapshotted under `Logger::GetBufferMutex()` into a
+  local copy first (a background `AssetLoader` worker thread logs too) so the actual `ImGui::` calls - the slow part -
+  run unlocked. Color-coded by severity (yellow warnings, red errors/critical, gray debug), scrolls in its own child
+  region, and sticks to the bottom on new lines only if the view was already there (so scrolling up to read history
+  doesn't get yanked back down).
+    - Verified: shows every line from a real session (asset mount summary, the D3D12 loading-screen warnings in yellow,
+      scene actor listing) with correct auto-scroll behavior, 0 log errors.
 
 ### Added (later same day, shader hot-reload + frustum culling)
 
-- **Shader hot-reload**, the next roadmap item after TAA - edit a `Code/Shaders/*.hlsl` file while Demo.PBR is running and see the change without a rebuild or relaunch. New `ShaderHotReload` class (`ShaderHotReload.hpp/.cpp`), Debug-only (`XEN_WITH_SHADER_HOT_RELOAD`, same on-by-default-in-Debug/off-in-Release convention as `DebugUI.hpp`'s `XEN_WITH_DEBUG_UI` - every method a safe no-op in Release, so `Game`'s call sites need no `#if` of their own).
-  - `Game::TickFrame` polls it once a frame (throttled internally to ~4x/second, not every frame): a changed `.hlsl` gets recompiled through `dxc.exe` with the same `-T`/`-E`/`-Fo` invocation `Scripts/compile_engine_shaders.py` already uses at build time, writing into `EngineContent/Shaders` - the same directory the offline build already writes into and PAKTool already packs from. A changed `Include/*.hlsli` recompiles every top-level shader instead (no per-shader include-dependency tracking, so this is the safe, if coarse, fallback).
-  - The recompiled DXIL doesn't need a pak rebuild to actually reach the running game: `Game::Game` mounts a `PAK::LooseFileSource` over `EngineContent/Shaders` at the highest priority band `AssetRegistry` supports, ahead of every packed/loose source `MountAssets` itself sets up - a `LooseFileSource` re-reads its file fresh on every `Load()` call (no caching), so the very next `Assets.Load()` for that shader picks up the new bytes with nothing else to invalidate.
-  - `Poll()` returning true tells `Game::ReloadShaders()` to `Shutdown()`+`Initialize()` every subsystem that owns a pipeline built from `Code/Shaders` (`MeshRenderer`, `FXAA`) - coarse (every pipeline reloads, not just the one that changed) but simple and safe: destroying and recreating a `PipelineHandle`/`ShaderHandle` needs no `IRenderDevice::WaitIdle`, since the D3D12 backend's deferred-delete queue (fence-tagged retirement, the same mechanism `Viewport::Resize` already relies on for textures) already makes that safe without one.
-  - **dxc.exe isn't on this process's own PATH** - only on the Visual Studio dev-tools one the build itself runs under - so its absolute location is resolved once at CMake configure time (`find_program` in `XenGame.cmake`) and baked into the generated per-game settings (`AssetSettings::EngineDxcPath`) alongside the new `EngineShaderSourceDir`/`EngineShaderOutputDir` (both Debug-only, empty in Release).
-  - **Found and fixed while verifying this**: `std::system()`'s command string can't just wrap the exe path and every argument in their own `"..."` pairs - `cmd.exe`'s `/C` argument parsing only special-cases exactly two quote characters (its documented rule for preserving a quoted, space-containing program path); with more (four pairs here: the exe, `-Fo`'s target, the source file, the redirect target), it falls back to blindly stripping the first and last quote characters anywhere in the whole string, silently corrupting an unrelated pair - manifested as `dxc.exe`'s own real path (`...\Windows Kits\10\bin\...`, which has a space in "Program Files (x86)") failing with "The directory name is invalid." Fixed by routing the actual dxc invocation through a scratch `.bat` file instead: a batch file's own lines don't go through the `/C` heuristic, so the only thing that still needs quoting is the single call to launch it - exactly the two-quote case `cmd.exe` already handles correctly.
-  - Verified end-to-end, bidirectionally: with Demo.PBR running, tinting `PBR.hlsl`'s final `Color` green and saving turned the live scene green within about a second (log: `recompiled PBR.hlsl` → `reloading render pipelines...`), and reverting the edit turned it back - both with 0 log errors. Release Demo.PBR logs no hot-reload activity at all (compiled out); Debug Demo.Pong initializes it harmlessly (it has no PBR content to reload, same soft-fail convention as `MeshRenderer`/`FXAA`'s own optional initialization).
-- **Frustum culling** - the item after that: `MeshRenderer` no longer processes every mesh actor unconditionally every frame. A new per-frame pass (`ExtractFrustumPlanes`/`ComputeWorldAabb`/`AabbIntersectsFrustum`, `MeshRenderer.cpp`) extracts the camera's 6 view-frustum planes (Gribb-Hartmann, adapted for DirectXMath's row-vector convention: "column *c* of the ViewProjection matrix" is the linear function of world position that produces clip-space component *c*, not a row) and tests each visible-candidate actor's world-space AABB (its mesh's local `BoundsMin`/`BoundsMax`, transformed by all 8 corners through the actor's world matrix - the same technique `RenderShadowPass` already uses to fit the shadow volume) against them with the standard "positive vertex" test.
-  - The result (`MeshRenderer::VisibleMesh`: actor, material, world matrix, buffer handles, mesh info - resolved once) is computed a single time per frame and shared by both the depth prepass and the main color pass, which previously each re-walked the scene and re-fetched the same mesh/buffer/matrix data independently; `RenderDepthPrepass`'s signature changed from `(const Scene&, ViewProjection, MeshCache&)` to `(const std::vector<VisibleMesh>&, ViewProjection)` accordingly. A small, real efficiency win alongside the actual culling, not just a correctness fix.
-  - Shadow-map casters are deliberately **not** camera-frustum-culled - a caster outside the camera's view can still throw its shadow into it (already noted in `RenderShadowPass`'s own comment), so naive camera-frustum culling there would be a visible correctness bug, not an optimization. Left for a future light-frustum-specific pass if it's ever worth the complexity.
-  - New `MeshRenderer::GetLastVisibleMeshCount()`/`GetLastCulledMeshCount()`, wired into Demo.PBR's "Frame Stats" ImGui window (`Meshes: N visible, M culled`) - both for this verification and as a standing signal for future work (frustum culling matters a lot more once a scene has more than two actors).
-  - Verified with a temporary actor placed at `(500, 0, 0)`, far outside the camera's view: `Meshes: 2 visible, 1 culled` in Frame Stats, confirmed visually correct in a screenshot (the two real actors render exactly as before), 0 log errors, then removed before committing anything.
+- **Shader hot-reload**, the next roadmap item after TAA - edit a `Source/Shaders/*.hlsl` file while Demo.PBR is running
+  and see the change without a rebuild or relaunch. New `ShaderHotReload` class (`ShaderHotReload.hpp/.cpp`), Debug-only
+  (`XEN_WITH_SHADER_HOT_RELOAD`, same on-by-default-in-Debug/off-in-Release convention as `DebugUI.hpp`'s
+  `XEN_WITH_DEBUG_UI` - every method a safe no-op in Release, so `Game`'s call sites need no `#if` of their own).
+    - `Game::TickFrame` polls it once a frame (throttled internally to ~4x/second, not every frame): a changed `.hlsl`
+      gets recompiled through `dxc.exe` with the same `-T`/`-E`/`-Fo` invocation `Scripts/compile_engine_shaders.py`
+      already uses at build time, writing into `EngineContent/Shaders` - the same directory the offline build already
+      writes into and PAKTool already packs from. A changed `Include/*.hlsli` recompiles every top-level shader instead
+      (no per-shader include-dependency tracking, so this is the safe, if coarse, fallback).
+    - The recompiled DXIL doesn't need a pak rebuild to actually reach the running game: `Game::Game` mounts a
+      `PAK::LooseFileSource` over `EngineContent/Shaders` at the highest priority band `AssetRegistry` supports, ahead
+      of every packed/loose source `MountAssets` itself sets up - a `LooseFileSource` re-reads its file fresh on every
+      `Load()` call (no caching), so the very next `Assets.Load()` for that shader picks up the new bytes with nothing
+      else to invalidate.
+    - `Poll()` returning true tells `Game::ReloadShaders()` to `Shutdown()`+`Initialize()` every subsystem that owns a
+      pipeline built from `Source/Shaders` (`MeshRenderer`, `FXAA`) - coarse (every pipeline reloads, not just the one
+      that changed) but simple and safe: destroying and recreating a `PipelineHandle`/`ShaderHandle` needs no
+      `IRenderDevice::WaitIdle`, since the D3D12 backend's deferred-delete queue (fence-tagged retirement, the same
+      mechanism `Viewport::Resize` already relies on for textures) already makes that safe without one.
+    - **dxc.exe isn't on this process's own PATH** - only on the Visual Studio dev-tools one the build itself runs
+      under - so its absolute location is resolved once at CMake configure time (`find_program` in `XenGame.cmake`) and
+      baked into the generated per-game settings (`AssetSettings::EngineDxcPath`) alongside the new
+      `EngineShaderSourceDir`/`EngineShaderOutputDir` (both Debug-only, empty in Release).
+    - **Found and fixed while verifying this**: `std::system()`'s command string can't just wrap the exe path and every
+      argument in their own `"..."` pairs - `cmd.exe`'s `/C` argument parsing only special-cases exactly two quote
+      characters (its documented rule for preserving a quoted, space-containing program path); with more (four pairs
+      here: the exe, `-Fo`'s target, the source file, the redirect target), it falls back to blindly stripping the first
+      and last quote characters anywhere in the whole string, silently corrupting an unrelated pair - manifested as
+      `dxc.exe`'s own real path (`...\Windows Kits\10\bin\...`, which has a space in "Program Files (x86)") failing with
+      "The directory name is invalid." Fixed by routing the actual dxc invocation through a scratch `.bat` file instead:
+      a batch file's own lines don't go through the `/C` heuristic, so the only thing that still needs quoting is the
+      single call to launch it - exactly the two-quote case `cmd.exe` already handles correctly.
+    - Verified end-to-end, bidirectionally: with Demo.PBR running, tinting `PBR.hlsl`'s final `Color` green and saving
+      turned the live scene green within about a second (log: `recompiled PBR.hlsl` → `reloading render pipelines...`),
+      and reverting the edit turned it back - both with 0 log errors. Release Demo.PBR logs no hot-reload activity at
+      all (compiled out); Debug Demo.Pong initializes it harmlessly (it has no PBR content to reload, same soft-fail
+      convention as `MeshRenderer`/`FXAA`'s own optional initialization).
+- **Frustum culling** - the item after that: `MeshRenderer` no longer processes every mesh actor unconditionally every
+  frame. A new per-frame pass (`ExtractFrustumPlanes`/`ComputeWorldAabb`/`AabbIntersectsFrustum`, `MeshRenderer.cpp`)
+  extracts the camera's 6 view-frustum planes (Gribb-Hartmann, adapted for DirectXMath's row-vector convention: "column
+  *c* of the ViewProjection matrix" is the linear function of world position that produces clip-space component *c*, not
+  a row) and tests each visible-candidate actor's world-space AABB (its mesh's local `BoundsMin`/`BoundsMax`,
+  transformed by all 8 corners through the actor's world matrix - the same technique `RenderShadowPass` already uses to
+  fit the shadow volume) against them with the standard "positive vertex" test.
+    - The result (`MeshRenderer::VisibleMesh`: actor, material, world matrix, buffer handles, mesh info - resolved once)
+      is computed a single time per frame and shared by both the depth prepass and the main color pass, which previously
+      each re-walked the scene and re-fetched the same mesh/buffer/matrix data independently; `RenderDepthPrepass`'s
+      signature changed from `(const Scene&, ViewProjection, MeshCache&)` to
+      `(const std::vector<VisibleMesh>&, ViewProjection)` accordingly. A small, real efficiency win alongside the actual
+      culling, not just a correctness fix.
+    - Shadow-map casters are deliberately **not** camera-frustum-culled - a caster outside the camera's view can still
+      throw its shadow into it (already noted in `RenderShadowPass`'s own comment), so naive camera-frustum culling
+      there would be a visible correctness bug, not an optimization. Left for a future light-frustum-specific pass if
+      it's ever worth the complexity.
+    - New `MeshRenderer::GetLastVisibleMeshCount()`/`GetLastCulledMeshCount()`, wired into Demo.PBR's "Frame Stats"
+      ImGui window (`Meshes: N visible, M culled`) - both for this verification and as a standing signal for future work
+      (frustum culling matters a lot more once a scene has more than two actors).
+    - Verified with a temporary actor placed at `(500, 0, 0)`, far outside the camera's view:
+      `Meshes: 2 visible, 1 culled` in Frame Stats, confirmed visually correct in a screenshot (the two real actors
+      render exactly as before), 0 log errors, then removed before committing anything.
 
 ### Changed (later same day)
 
-- Every concrete `IComponent` implementation in `Code/Modules/Xen` moved into a new `Components/` subdirectory (`AmbientOcclusionComponent`, `AntiAliasingComponent`, `AudioSourceComponent`, `CameraComponent`, `DirectionalLightComponent`, `EnvironmentComponent`, `FPPlayerController`, `MeshComponent`, `PBRMaterialComponent`, `PostProcessComponent`, `SpriteComponent`) - a pure file move (`git mv`, history preserved), no behavior change. `Component.hpp` (the base `IComponent` interface) and `ComponentRegistry.hpp/.cpp` (the registration macro/registry) stay at the module root as core infrastructure, not components themselves. Every include of a moved header - both inside the engine (quoted, e.g. `MeshRenderer.cpp`, `Scene.hpp`) and from the two demos (angle-bracket `<Xen/...>`) - gained a `Components/` prefix; a component file's own includes of its *siblings* or of root-level infrastructure needed no changes at all, since both still resolve via the existing include-path search (same-directory, then the Xen root already on `-I`). `CMakeLists.txt`'s source list gained a `# Engine/Components` block mirroring the existing `# Engine/Backends` one. Verified: Debug/Release Demo.PBR and Debug Demo.Pong all rebuild and run cleanly (0 log errors, same pre-existing loading-screen-only warnings as before).
+- Every concrete `IComponent` implementation in `Source/Modules/Xen` moved into a new `Components/` subdirectory
+  (`AmbientOcclusionComponent`, `AntiAliasingComponent`, `AudioSourceComponent`, `CameraComponent`,
+  `DirectionalLightComponent`, `EnvironmentComponent`, `FPPlayerController`, `MeshComponent`, `PBRMaterialComponent`,
+  `PostProcessComponent`, `SpriteComponent`) - a pure file move (`git mv`, history preserved), no behavior change.
+  `Component.hpp` (the base `IComponent` interface) and `ComponentRegistry.hpp/.cpp` (the registration macro/registry)
+  stay at the module root as core infrastructure, not components themselves. Every include of a moved header - both
+  inside the engine (quoted, e.g. `MeshRenderer.cpp`, `Scene.hpp`) and from the two demos (angle-bracket `<Xen/...>`) -
+  gained a `Components/` prefix; a component file's own includes of its *siblings* or of root-level infrastructure
+  needed no changes at all, since both still resolve via the existing include-path search (same-directory, then the Xen
+  root already on `-I`). `CMakeLists.txt`'s source list gained a `# Engine/Components` block mirroring the existing
+  `# Engine/Backends` one. Verified: Debug/Release Demo.PBR and Debug Demo.Pong all rebuild and run cleanly (0 log
+  errors, same pre-existing loading-screen-only warnings as before).
 
 ### Added (later same day, TAA)
 
-- Temporal anti-aliasing - the next item on the confirmed roadmap after SSAO, and the "complete fix" FXAA (spatial-only) was always meant to hand off to once shading/specular aliasing (not just geometric edges) needed solving (see FXAA.hpp's own doc comment from earlier this session). New `TAA` class (`TAA.hpp/.cpp`, `Code/Shaders/TAAResolve.hlsl`): jitters the camera's projection by a sub-pixel offset each frame (Halton(2,3), the standard low-discrepancy sequence, cycled over 8 samples) and temporally accumulates the result into a ping-ponged history buffer, reprojected by per-pixel motion vectors so both a static scene converges toward a supersampled image and a moving one still tracks correctly.
-  - `AntiAliasingComponent` grew into what its own doc comment already said it would once a second technique existed: a `Technique` choice (`None`/`FXAA`/`TAA`, default `TAA` - it supersedes FXAA, not a peer to run alongside it) alongside separate `FXAA::Settings`/`TAA::Settings`. `Game.cpp` only runs FXAA when `Technique == FXAA`; TAA (when picked) resolves inside `MeshRenderer::Render`, before `PostProcess`, since it needs the linear-HDR scene color and motion vectors PostProcess doesn't otherwise touch - by the time `Game.cpp` would run FXAA, TAA has already resolved and there's nothing FXAA would usefully add.
-  - **Motion vectors**, the real new piece of infrastructure this needed: `PBR.hlsl`'s and `Sky.hlsl`'s pixel shaders now write a second render target (MRT - `MeshRenderer`'s main pass and `_SkyPipeline` both declare `ColorAttachmentCount = 2`, a new RG16F `_MotionVectorsTarget` alongside `_SceneColorTarget`) holding each pixel's screen-space UV displacement since last frame. Computed from clip positions that are deliberately UNJITTERED (`FrameData.hlsli` gained `UnjitteredViewProjection`/`InvUnjitteredViewProjection`/`PrevViewProjection` alongside the now-jittered `ViewProjection`) - jitter itself must never register as motion, or every static pixel would "move" a little every frame with nothing to actually resolve. A moving/rotating actor's own motion counts too, not just the camera's: `ObjectConstants` gained `PrevModel`, sourced from a new `MeshRenderer::_PrevModelMatrices` map (keyed by the actor's stable `ActorHandle`, updated once per actor per frame). The sky background - a fullscreen triangle with no world position of its own - gets its velocity by reconstructing its current NDC point via the unjittered inverse projection and reprojecting through last frame's matrix instead; the current half of that round-trip is an identity (documented in `Sky.hlsl`), so only the previous-frame reprojection is actually computed.
-  - The resolve pass (`TAAResolve.hlsl`) reprojects history by the motion vector, AABB-clamps the reprojected sample against the current frame's own 3x3 neighborhood (read via `Load`, the exact unfiltered texel grid, not `Sample` - a clamp built from already-blurred taps would just be a worse clamp) to bound ghosting after an occlusion/disocclusion, and blends in a small fraction of the new frame (`TAA::Settings::BlendFactor`, default 0.1) each frame. Falls back to the current frame's color unblended on the very first frame and wherever the reprojected UV lands off-screen (a pixel a camera pan just revealed has no valid history to blend with yet).
-  - Verified: the demo's rotating teapot showed no ghosting/smearing trail across two screenshots taken mid-rotation - the tell a broken `PrevModel` (assuming every actor is stationary) would have left, since the object's own motion is what that field exists for. GPU Profiler (see the entry below) confirms TAA resolves in ~0.06-0.09ms as its own top-level scope. 0 log errors in Debug/Release Demo.PBR and Debug Demo.Pong (2D-only, `MeshRenderer` never initializes there - confirms this is a clean no-op on that path, same as FXAA's own precedent); the 4 warnings that remain in every config are the same pre-existing `LoadingScreen` swap-chain ones documented earlier today, unrelated to this change.
+- Temporal anti-aliasing - the next item on the confirmed roadmap after SSAO, and the "complete fix" FXAA (spatial-only)
+  was always meant to hand off to once shading/specular aliasing (not just geometric edges) needed solving (see
+  FXAA.hpp's own doc comment from earlier this session). New `TAA` class (`TAA.hpp/.cpp`,
+  `Source/Shaders/TAAResolve.hlsl`): jitters the camera's projection by a sub-pixel offset each frame (Halton (2,3), the
+  standard low-discrepancy sequence, cycled over 8 samples) and temporally accumulates the result into a ping-ponged
+  history buffer, reprojected by per-pixel motion vectors so both a static scene converges toward a supersampled image
+  and a moving one still tracks correctly.
+    - `AntiAliasingComponent` grew into what its own doc comment already said it would once a second technique existed:
+      a `Technique` choice (`None`/`FXAA`/`TAA`, default `TAA` - it supersedes FXAA, not a peer to run alongside it)
+      alongside separate `FXAA::Settings`/`TAA::Settings`. `Game.cpp` only runs FXAA when `Technique == FXAA`; TAA (when
+      picked) resolves inside `MeshRenderer::Render`, before `PostProcess`, since it needs the linear-HDR scene color
+      and motion vectors PostProcess doesn't otherwise touch - by the time `Game.cpp` would run FXAA, TAA has already
+      resolved and there's nothing FXAA would usefully add.
+    - **Motion vectors**, the real new piece of infrastructure this needed: `PBR.hlsl`'s and `Sky.hlsl`'s pixel shaders
+      now write a second render target (MRT - `MeshRenderer`'s main pass and `_SkyPipeline` both declare
+      `ColorAttachmentCount = 2`, a new RG16F `_MotionVectorsTarget` alongside `_SceneColorTarget`) holding each pixel's
+      screen-space UV displacement since last frame. Computed from clip positions that are deliberately UNJITTERED
+      (`FrameData.hlsli` gained `UnjitteredViewProjection`/`InvUnjitteredViewProjection`/`PrevViewProjection` alongside
+      the now-jittered `ViewProjection`) - jitter itself must never register as motion, or every static pixel would
+      "move" a little every frame with nothing to actually resolve. A moving/rotating actor's own motion counts too, not
+      just the camera's: `ObjectConstants` gained `PrevModel`, sourced from a new `MeshRenderer::_PrevModelMatrices` map
+      (keyed by the actor's stable `ActorHandle`, updated once per actor per frame). The sky background - a fullscreen
+      triangle with no world position of its own - gets its velocity by reconstructing its current NDC point via the
+      unjittered inverse projection and reprojecting through last frame's matrix instead; the current half of that
+      round-trip is an identity (documented in `Sky.hlsl`), so only the previous-frame reprojection is actually
+      computed.
+    - The resolve pass (`TAAResolve.hlsl`) reprojects history by the motion vector, AABB-clamps the reprojected sample
+      against the current frame's own 3x3 neighborhood (read via `Load`, the exact unfiltered texel grid, not `Sample` -
+      a clamp built from already-blurred taps would just be a worse clamp) to bound ghosting after an
+      occlusion/disocclusion, and blends in a small fraction of the new frame (`TAA::Settings::BlendFactor`, default
+      0.1) each frame. Falls back to the current frame's color unblended on the very first frame and wherever the
+      reprojected UV lands off-screen (a pixel a camera pan just revealed has no valid history to blend with yet).
+    - Verified: the demo's rotating teapot showed no ghosting/smearing trail across two screenshots taken mid-rotation -
+      the tell a broken `PrevModel` (assuming every actor is stationary) would have left, since the object's own motion
+      is what that field exists for. GPU Profiler (see the entry below) confirms TAA resolves in ~0.06-0.09ms as its own
+      top-level scope. 0 log errors in Debug/Release Demo.PBR and Debug Demo.Pong (2D-only, `MeshRenderer` never
+      initializes there - confirms this is a clean no-op on that path, same as FXAA's own precedent); the 4 warnings
+      that remain in every config are the same pre-existing `LoadingScreen` swap-chain ones documented earlier today,
+      unrelated to this change.
 
 ### Added (later same day, GPU Profiler)
 
-- A "GPU Profiler" ImGui window in Demo.PBR, alongside the existing "Frame Stats" window: the same per-pass breakdown, now with real per-pass GPU time. `IRenderDevice::GetLastFrameGpuTimings()` (new) returns each `CommandBuffer::PushDebugGroup`/`PopDebugGroup` scope's duration - those calls were already threaded through every render pass this session (SSAO, the depth prepass, bloom, auto exposure, FXAA, ...) but the D3D12 backend had only ever executed them as no-ops.
-  - Measured with GPU timestamp queries (`ID3D12QueryHeap`, `D3D12_QUERY_HEAP_TYPE_TIMESTAMP`), not a CPU clock - the two can diverge a lot, since the CPU may have moved on to recording next frame's commands long before the GPU actually executes this one. One query heap (128 slots) and one `MaxFramesInFlight`-deep ring of READBACK buffers; `EndFrame` resolves this frame's queries into its ring slot, and `BeginFrame` reads back whichever slot's frame the existing `WaitForFrame` fence wait just guaranteed the GPU has actually finished - the same frame-in-flight safety guarantee every other per-frame-slot resource in this backend already relies on. Non-fatal to create (`LOG_WARN` and the feature is just absent) so a driver/platform without timestamp support doesn't take anything else down with it.
-  - Scopes are recorded in *push* order, not pop order: `PushDebugGroup` immediately appends a placeholder entry (patched with its end timestamp when the matching `PopDebugGroup` runs) rather than only recording anything at Pop time. Pop order is innermost-first, which would put a scope's children before the scope's own header line in the list (caught while verifying this feature - the first version showed "Depth prepass"/"SSAO" printed *before* "Meshes" instead of nested under it, correct depths but backwards order); push order is a normal depth-first traversal, so a nested scope's own line always comes immediately before its children's.
-  - `ImGuiWindowFlags_AlwaysAutoResize`, since the window's size otherwise locks in from whatever its first-ever rendered frame looked like - which for this data is near-empty (GPU timestamps take a few frames to round-trip before `GetLastFrameGpuTimings()` returns anything).
-  - Verified: real, sensible, correctly-nested values every frame (e.g. Sprites 0.005ms; Meshes 3.4ms, with Depth prepass 0.2ms and SSAO ~0.6-2.0ms nested under it; Bloom, auto exposure metering, post-process composite and FXAA each under 0.4ms) with 0 log errors, in Debug and Release Demo.PBR.
+- A "GPU Profiler" ImGui window in Demo.PBR, alongside the existing "Frame Stats" window: the same per-pass breakdown,
+  now with real per-pass GPU time. `IRenderDevice::GetLastFrameGpuTimings()` (new) returns each
+  `CommandBuffer::PushDebugGroup`/`PopDebugGroup` scope's duration - those calls were already threaded through every
+  render pass this session (SSAO, the depth prepass, bloom, auto exposure, FXAA, ...) but the D3D12 backend had only
+  ever executed them as no-ops.
+    - Measured with GPU timestamp queries (`ID3D12QueryHeap`, `D3D12_QUERY_HEAP_TYPE_TIMESTAMP`), not a CPU clock - the
+      two can diverge a lot, since the CPU may have moved on to recording next frame's commands long before the GPU
+      actually executes this one. One query heap (128 slots) and one `MaxFramesInFlight`-deep ring of READBACK buffers;
+      `EndFrame` resolves this frame's queries into its ring slot, and `BeginFrame` reads back whichever slot's frame
+      the existing `WaitForFrame` fence wait just guaranteed the GPU has actually finished - the same frame-in-flight
+      safety guarantee every other per-frame-slot resource in this backend already relies on. Non-fatal to create
+      (`LOG_WARN` and the feature is just absent) so a driver/platform without timestamp support doesn't take anything
+      else down with it.
+    - Scopes are recorded in *push* order, not pop order: `PushDebugGroup` immediately appends a placeholder entry
+      (patched with its end timestamp when the matching `PopDebugGroup` runs) rather than only recording anything at Pop
+      time. Pop order is innermost-first, which would put a scope's children before the scope's own header line in the
+      list (caught while verifying this feature - the first version showed "Depth prepass"/"SSAO" printed *before*
+      "Meshes" instead of nested under it, correct depths but backwards order); push order is a normal depth-first
+      traversal, so a nested scope's own line always comes immediately before its children's.
+    - `ImGuiWindowFlags_AlwaysAutoResize`, since the window's size otherwise locks in from whatever its first-ever
+      rendered frame looked like - which for this data is near-empty (GPU timestamps take a few frames to round-trip
+      before `GetLastFrameGpuTimings()` returns anything).
+    - Verified: real, sensible, correctly-nested values every frame (e.g. Sprites 0.005ms; Meshes 3.4ms, with Depth
+      prepass 0.2ms and SSAO ~0.6-2.0ms nested under it; Bloom, auto exposure metering, post-process composite and FXAA
+      each under 0.4ms) with 0 log errors, in Debug and Release Demo.PBR.
 
 ### Fixed (later same day)
 
 - D3D12 debug-layer warnings that fired every frame, all real (measurable, if small) GPU cost, not noise:
-  - **id 1328** (`CreateCommittedResource1: Ignoring InitialState D3D12_RESOURCE_STATE_COPY_DEST`): a DEFAULT-heap buffer with initial data was created requesting `COPY_DEST`, but a buffer is always effectively created in `COMMON` regardless of what's requested - the warning was correct, that request just did nothing. Now requests `COMMON` to begin with; the actual transition into `COPY_DEST` for the upload (an explicit barrier right before `CopyBufferRegion`) is unchanged and still valid, since buffers implicitly promote from `COMMON` to whatever state their next real use needs.
-  - **id 820/821** (`ClearRenderTargetView`/`ClearDepthStencilView: The application did not pass any clear value to resource creation`): `TextureDesc` gained `OptimizedClear` (a `ClearValue`, moved up from next to `RenderPassDesc` so it's available here), wired into `D3D12RenderDevice::CreateTexture`'s `D3D12_CLEAR_VALUE` argument (previously always `nullptr`) - Format is always the real RTV/DSV format, never a depth+sampled texture's typeless resource format. `ClearValue`'s own default changed from opaque black (`0,0,0,1`) to transparent black (`0,0,0,0`) to match what the overwhelming majority of this engine's offscreen color targets actually clear to (verified nothing relied on the old default - every real `RenderPassDesc` construction path already overwrites it explicitly); depth's default (1.0, far plane) already matched everywhere. Fixed the two remaining real mismatches this surfaced instead of leaving them for a new "clear values do not match" warning to replace the old one: `EnvironmentBaker`'s bake pass and `SSAO`'s raw target both cleared to an arbitrary non-default value despite every texel getting fully overwritten regardless, so both now just take the default. `Viewport`'s color target gained a real, non-arbitrary case - `SpriteRenderer` clears it to a *configurable* background color (default `0.1, 0.1, 0.1, 1.0`, matching `SpriteRenderer::Config::ClearColor`'s own default) - so `Viewport::Initialize`/`Resize` now accept and remember that color and set `OptimizedClear` to match.
-  - **Remaining warnings, left alone on purpose**: `LoadingScreen` clears the swap chain's own back buffer directly (`RenderPassDesc::SwapChain`), which can't carry an app-specified optimized clear value the way a `CreateTexture`-backed resource can - DXGI owns that resource, not `CreateCommittedResource`. Confirmed by log timestamp that every remaining occurrence happens strictly before `Loaded scene: Main` - a few slightly-slower clears during a sub-second startup phase, not a sustained per-frame gameplay cost. Verified zero warnings of any kind once a scene finishes loading, in both `Demo.PBR` (Debug and Release) and `Demo.Pong`.
+    - **id 1328** (`CreateCommittedResource1: Ignoring InitialState D3D12_RESOURCE_STATE_COPY_DEST`): a DEFAULT-heap
+      buffer with initial data was created requesting `COPY_DEST`, but a buffer is always effectively created in
+      `COMMON` regardless of what's requested - the warning was correct, that request just did nothing. Now requests
+      `COMMON` to begin with; the actual transition into `COPY_DEST` for the upload (an explicit barrier right before
+      `CopyBufferRegion`) is unchanged and still valid, since buffers implicitly promote from `COMMON` to whatever state
+      their next real use needs.
+    - **id 820/821** (`ClearRenderTargetView`/
+      `ClearDepthStencilView: The application did not pass any clear value to resource creation`): `TextureDesc` gained
+      `OptimizedClear` (a `ClearValue`, moved up from next to `RenderPassDesc` so it's available here), wired into
+      `D3D12RenderDevice::CreateTexture`'s `D3D12_CLEAR_VALUE` argument (previously always `nullptr`) - Format is always
+      the real RTV/DSV format, never a depth+sampled texture's typeless resource format. `ClearValue`'s own default
+      changed from opaque black (`0,0,0,1`) to transparent black (`0,0,0,0`) to match what the overwhelming majority of
+      this engine's offscreen color targets actually clear to (verified nothing relied on the old default - every real
+      `RenderPassDesc` construction path already overwrites it explicitly); depth's default (1.0, far plane) already
+      matched everywhere. Fixed the two remaining real mismatches this surfaced instead of leaving them for a new "clear
+      values do not match" warning to replace the old one: `EnvironmentBaker`'s bake pass and `SSAO`'s raw target both
+      cleared to an arbitrary non-default value despite every texel getting fully overwritten regardless, so both now
+      just take the default. `Viewport`'s color target gained a real, non-arbitrary case - `SpriteRenderer` clears it to
+      a *configurable* background color (default `0.1, 0.1, 0.1, 1.0`, matching `SpriteRenderer::Config::ClearColor`'s
+      own default) - so `Viewport::Initialize`/`Resize` now accept and remember that color and set `OptimizedClear` to
+      match.
+    - **Remaining warnings, left alone on purpose**: `LoadingScreen` clears the swap chain's own back buffer directly
+      (`RenderPassDesc::SwapChain`), which can't carry an app-specified optimized clear value the way a `CreateTexture`
+      -backed resource can - DXGI owns that resource, not `CreateCommittedResource`. Confirmed by log timestamp that
+      every remaining occurrence happens strictly before `Loaded scene: Main` - a few slightly-slower clears during a
+      sub-second startup phase, not a sustained per-frame gameplay cost. Verified zero warnings of any kind once a scene
+      finishes loading, in both `Demo.PBR` (Debug and Release) and `Demo.Pong`.
 
 ### Added
 
-- FXAA, the first piece of the anti-aliasing work flagged as a follow-on throughout 2026-09-22's fixes (bloom's Karis average and the shadow map's dithered PCF could each only partially paper over an aliasing problem neither was actually built to solve). Timothy Lottes' original NVIDIA algorithm (2009), the widely-circulated 4-tap "whitepaper appendix" version - a single fullscreen-triangle pass (`FXAA.hlsl`) that estimates an edge direction from the four diagonal neighbors' luma and blends along it. New `FXAA` class (`FXAA.hpp/.cpp`), run at the `Game` level - not owned by `MeshRenderer`/`PostProcess` the way bloom is, since it applies to the *whole* composited frame (2D and 3D together), after `MeshRenderer::Render` (which includes PostProcess's own tonemap/composite) and before `IRenderDevice::CopyToSwapChain`. New `AntiAliasingComponent` (scene-wide, "first one found" rule like `PostProcessComponent`) exposes `Enabled` - deliberately the only knob, since the algorithm itself has no tunables; on by default.
-  - Verified directly: with it off, the monkey's silhouette shows visible stairstep jaggies against the sky at any zoom; with it on, the same edge is smooth. Confirmed the 2D-only demo (`Demo.Pong`, no `MeshRenderer`) still renders cleanly through the same code path - FXAA runs on `Viewport::GetColorTarget()` regardless of whether any 3D content exists.
-  - Spatial only, not temporal: this smooths whatever a single frame's luma edges look like, geometric or shading alike (a jagged silhouette and an aliased specular highlight are indistinguishable to a filter that only looks at luma), but a genuinely aliasing highlight still changes frame to frame - just with cleaner edges each time. The user chose "FXAA now, TAA later" from a plan discussion weighing MSAA (real RHI work - multisampled resources, a resolve step - for a fix that only touches geometric edges, not the shading aliasing that's caused most of what's actually been reported), SSAA (simplest, but 4x the shading cost for 2x2) and TAA (the complete fix for both aliasing categories including the temporal flicker, but needs motion vectors, a jittered projection, a history buffer and ghost-clamping - a bigger feature, not a same-session lift). TAA remains a planned follow-on.
-- SSAO (screen-space ambient occlusion), next on the same roadmap. Two fullscreen-triangle passes (`SSAO.hlsl`, `SSAOBlur.hlsl` - new `SSAO` class) darken a surface's ambient (both diffuse and specular) IBL contribution near contact points and crevices, reconstructing a per-pixel position and normal from depth alone via screen-space derivatives - this is a forward renderer with no G-buffer, so there's no normal to read otherwise. New `AmbientOcclusionComponent` (scene-wide, same "first one found" rule) exposes `Enabled`, `Radius`, `Power` and `Bias`; on by default.
-  - **This needed a real depth prepass**, MeshRenderer's first genuinely new render-pass stage this session (every previous feature was a bolt-on post-process): SSAO's result has to exist *before* `PBR.hlsl` shades a single pixel (it's multiplied into the ambient term there), but a forward pass's own depth isn't finished until shading is - the chicken-and-egg a deferred renderer's G-buffer sidesteps for free. `RenderDepthPrepass` (reusing `Shadow.hlsl`'s vertex shader unchanged - it only ever transforms by whatever `ViewProjection` `FrameData` holds, camera or light) renders every actor depth-only into `Viewport`'s own depth buffer first; the main pass then reads that back with `LoadOp::Load` and `CompareOp::LessEqual` (not the usual `Less`, since every fragment now legitimately re-tests against its own already-written depth) instead of clearing and redoing the work - which also caps the main pass's overdraw, the way any z-prepass does, not just enabling SSAO. `Viewport`'s depth target gained `TextureUsage::Sampled` (the same `DepthTarget | Sampled` combination the shadow map already used) so SSAO can read it back.
-  - New scene-level `MaterialSlot::SSAO` (t10/s10, `TextureSlotCount` now 11) and `FrameData::InvScreenSizeAndPad`, so `PBR.hlsl` can turn `SV_Position` into the screen UV SSAO is sampled by (it's a full-screen texture, unrelated to a surface's own UV).
-  - Verified two ways: rendering `SSAOTerm` directly in place of the shaded color showed a clear, correctly-shaped contact-darkening halo on the floor around the monkey's base (and grain from the 16-sample kernel, visibly softened by the blur pass) rather than a flat, uniform result; separately, a direct A/B (toggling `AmbientOcclusionComponent::Enabled`) was attempted but the demo's `RotatingComponent` made timed screenshots unreliable for comparison, so the direct-visualization check above is the one that actually confirmed it.
-  - **Fixed along the way**: `RenderDepthPrepass` bound the frame's `ViewProjection` constant buffer *before* calling `BindPipeline`, not after - backwards from every other pass in this file (`RenderShadowPass` gets it right). `CmdType::BindPipeline` calls `SetGraphicsRootSignature` whenever a pipeline's layout differs from whatever was last bound, which invalidates every previously-set root argument per the D3D12 contract - so that bind was recorded against the wrong (stale) root signature and silently discarded once the depth prepass's own (different, smaller) layout took over. Manifested as every material rendering flat white/gray, IBL-shading-shaped but with no albedo or metal tint at all - not a depth or geometry bug, since nothing about *shape* was wrong, only material color. Caught by comparing a fresh screenshot against an expected-identical one taken minutes earlier with no relevant code difference between them.
+- FXAA, the first piece of the anti-aliasing work flagged as a follow-on throughout 2026-09-22's fixes (bloom's Karis
+  average and the shadow map's dithered PCF could each only partially paper over an aliasing problem neither was
+  actually built to solve). Timothy Lottes' original NVIDIA algorithm (2009), the widely-circulated 4-tap "whitepaper
+  appendix" version - a single fullscreen-triangle pass (`FXAA.hlsl`) that estimates an edge direction from the four
+  diagonal neighbors' luma and blends along it. New `FXAA` class (`FXAA.hpp/.cpp`), run at the `Game` level - not owned
+  by `MeshRenderer`/`PostProcess` the way bloom is, since it applies to the *whole* composited frame (2D and 3D
+  together), after `MeshRenderer::Render` (which includes PostProcess's own tonemap/composite) and before
+  `IRenderDevice::CopyToSwapChain`. New `AntiAliasingComponent` (scene-wide, "first one found" rule like
+  `PostProcessComponent`) exposes `Enabled` - deliberately the only knob, since the algorithm itself has no tunables; on
+  by default.
+    - Verified directly: with it off, the monkey's silhouette shows visible stairstep jaggies against the sky at any
+      zoom; with it on, the same edge is smooth. Confirmed the 2D-only demo (`Demo.Pong`, no `MeshRenderer`) still
+      renders cleanly through the same code path - FXAA runs on `Viewport::GetColorTarget()` regardless of whether any
+      3D content exists.
+    - Spatial only, not temporal: this smooths whatever a single frame's luma edges look like, geometric or shading
+      alike (a jagged silhouette and an aliased specular highlight are indistinguishable to a filter that only looks at
+      luma), but a genuinely aliasing highlight still changes frame to frame - just with cleaner edges each time. The
+      user chose "FXAA now, TAA later" from a plan discussion weighing MSAA (real RHI work - multisampled resources, a
+      resolve step - for a fix that only touches geometric edges, not the shading aliasing that's caused most of what's
+      actually been reported), SSAA (simplest, but 4x the shading cost for 2x2) and TAA (the complete fix for both
+      aliasing categories including the temporal flicker, but needs motion vectors, a jittered projection, a history
+      buffer and ghost-clamping - a bigger feature, not a same-session lift). TAA remains a planned follow-on.
+- SSAO (screen-space ambient occlusion), next on the same roadmap. Two fullscreen-triangle passes (`SSAO.hlsl`,
+  `SSAOBlur.hlsl` - new `SSAO` class) darken a surface's ambient (both diffuse and specular) IBL contribution near
+  contact points and crevices, reconstructing a per-pixel position and normal from depth alone via screen-space
+  derivatives - this is a forward renderer with no G-buffer, so there's no normal to read otherwise. New
+  `AmbientOcclusionComponent` (scene-wide, same "first one found" rule) exposes `Enabled`, `Radius`, `Power` and `Bias`;
+  on by default.
+    - **This needed a real depth prepass**, MeshRenderer's first genuinely new render-pass stage this session (every
+      previous feature was a bolt-on post-process): SSAO's result has to exist *before* `PBR.hlsl` shades a single pixel
+      (it's multiplied into the ambient term there), but a forward pass's own depth isn't finished until shading is -
+      the chicken-and-egg a deferred renderer's G-buffer sidesteps for free. `RenderDepthPrepass` (reusing `Shadow.hlsl`
+      's vertex shader unchanged - it only ever transforms by whatever `ViewProjection` `FrameData` holds, camera or
+      light) renders every actor depth-only into `Viewport`'s own depth buffer first; the main pass then reads that back
+      with `LoadOp::Load` and `CompareOp::LessEqual` (not the usual `Less`, since every fragment now legitimately
+      re-tests against its own already-written depth) instead of clearing and redoing the work - which also caps the
+      main pass's overdraw, the way any z-prepass does, not just enabling SSAO. `Viewport`'s depth target gained
+      `TextureUsage::Sampled` (the same `DepthTarget | Sampled` combination the shadow map already used) so SSAO can
+      read it back.
+    - New scene-level `MaterialSlot::SSAO` (t10/s10, `TextureSlotCount` now 11) and `FrameData::InvScreenSizeAndPad`, so
+      `PBR.hlsl` can turn `SV_Position` into the screen UV SSAO is sampled by (it's a full-screen texture, unrelated to
+      a surface's own UV).
+    - Verified two ways: rendering `SSAOTerm` directly in place of the shaded color showed a clear, correctly-shaped
+      contact-darkening halo on the floor around the monkey's base (and grain from the 16-sample kernel, visibly
+      softened by the blur pass) rather than a flat, uniform result; separately, a direct A/B (toggling
+      `AmbientOcclusionComponent::Enabled`) was attempted but the demo's `RotatingComponent` made timed screenshots
+      unreliable for comparison, so the direct-visualization check above is the one that actually confirmed it.
+    - **Fixed along the way**: `RenderDepthPrepass` bound the frame's `ViewProjection` constant buffer *before* calling
+      `BindPipeline`, not after - backwards from every other pass in this file (`RenderShadowPass` gets it right).
+      `CmdType::BindPipeline` calls `SetGraphicsRootSignature` whenever a pipeline's layout differs from whatever was
+      last bound, which invalidates every previously-set root argument per the D3D12 contract - so that bind was
+      recorded against the wrong (stale) root signature and silently discarded once the depth prepass's own (different,
+      smaller) layout took over. Manifested as every material rendering flat white/gray, IBL-shading-shaped but with no
+      albedo or metal tint at all - not a depth or geometry bug, since nothing about *shape* was wrong, only material
+      color. Caught by comparing a fresh screenshot against an expected-identical one taken minutes earlier with no
+      relevant code difference between them.
 
 ## 2026-09-22
 
 ### Fixed (later same day)
 
-- `PBRMaterialComponent`'s `Metallic` scalar defaulted to 0, not 1 - every other channel already defaults to its own multiplicative identity (`Albedo` white, `AmbientOcclusion` 1), since a texture's sampled value always *multiplies* the matching scalar (glTF's convention, per the class comment), never replaces it. At the old default, `Metallic * MetallicMap.Sample(...).r` was `0 * anything == 0` regardless of what the map contained, so assigning a `MetallicMap` alone visibly did nothing - only calling `SetMetallic` worked, which looked like the map was broken when the map was never the problem. Now defaults to 1, matching glTF's own `metallicFactor` default too.
-- Shadows read as faded/washed out under a bright HDRI: `PBR.hlsl`'s image-based lighting was (correctly, physically) never touched by the directional light's shadow map at all - only `DirectLight` was - but with a strong sky HDRI, ambient alone could keep a fully shadowed diffuse surface almost as bright as a lit one, so the shadow's only visible effect was the loss of a direct specular highlight. `DirectionalLightComponent` gains `ShadowAmbientDarkening` (0..1, default 0.6): a deliberately non-physical "contact darkening" of just the diffuse IBL term (never specular - a reflective surface still legitimately shows the environment in shadow) by the same shadow factor `DirectLight` already uses, scaled by this knob. 0 keeps today's physically-pure behavior.
-- Bloom "sparkled" - small bright spots flickering under motion, most visible on the demo's rotating metallic monkey - rather than glowing smoothly. `BloomDownsample.hlsl`'s level-0 bright-pass extraction averaged its 4 box-filter taps evenly, so one extreme outlier (an aliased, sub-pixel-narrow specular highlight - exactly what an un-antialiased rough-metal reflection produces) still dominated the average and got thresholded in; as the highlight's exact texel shifted frame to frame under rotation, which block crossed threshold shifted with it. Now uses a Karis average (Brian Karis's SIGGRAPH 2014 mobile-bloom talk - the same one this whole bloom technique already comes from) at level 0 only: each tap is weighted by `1/(1+luminance)` before averaging, so a firefly contributes almost nothing instead of dominating. The deeper fix - real specular anti-aliasing, so highlights like this don't alias in the first place - is part of the anti-aliasing work this was already headed toward, not done here.
-- Environment/IBL brightness and contrast: no change made here yet - most likely the same root cause as the bloom sparkle above (un-antialiased, per-pixel-sharp specular highlights reading as "blown out" even after auto exposure correctly normalizes the frame's overall level), to be addressed by the same anti-aliasing work. `EnvironmentBaker`'s prefilter/irradiance convolution and the split-sum IBL math in `PBR.hlsl` were checked directly (roughness-to-mip mapping, cosine-weighted irradiance normalization, no `EnvironmentComponent` intensity multiplier) and found consistent with standard practice - no bug found there.
-- Blocky, shadow-map-texel-aligned edges on both the monkey's own self-shadowing and its cast shadow on the floor - visibly not tracking the mesh's own smooth rotation, which was the tell that this wasn't the usual acne-from-insufficient-bias problem (that moves with the mesh's geometry) but the shadow map's own fixed grid becoming visible. Root cause: the single-cascade shadow map is sized to the *camera's whole view frustum* out to `ShadowDistance` (40 by default, a reasonable size for a typical outdoor scene), not to whatever's actually near the subject - but Demo.PBR's camera sits only ~4 units from a ~2-unit-wide monkey, so at the default distance the 2048-texel map's ~94-unit-diameter coverage left the monkey barely 40-50 texels wide. Fixed at the demo level (not the engine default, which is fine for a normal-scale scene): `Demo.PBR/Runtime/main.cpp` now calls `SetShadowDistance(15.0f)`, roughly tripling the effective texel density where this scene needs it. Confirmed smooth, anti-aliased shadow edges at multiple rotation angles afterward.
-- A second, finer layer of grainy/speckled noise right at shadow boundaries, on top of the `ShadowDistance` fix above - reported as still looking "acned" after that fix, and most likely always present at a subtle level (previous same-day fix, `ShadowAmbientDarkening`, is what made shadows dark enough to actually scrutinize this closely). `PBR.hlsl`'s `ShadowVisibility` PCF only averaged 9 taps (3x3), a 1/9-of-full-range staircase of discrete light/dark comparison outcomes across the penumbra - fine enough detail to read as noise on an otherwise-smooth flat receiver. Widened to 5x5 (25 taps, still cheap - one small dedicated depth target), a 1/25 staircase that reads as a smooth gradient instead.
-- The real cause of the above: a coherent, rippled "rings" pattern across the *whole* floor (confirmed by rendering `ShadowVisibility`'s return value directly), not localized to the monkey's shadow at all - which ruled out both the 5x5 PCF change and `ShadowDistance` as the actual fix, and ruled out the ground plane's own tessellation (it's a single flat quad, `generate_primitive_meshes.py`'s `build_plane` - no per-vertex variation to be periodic in the first place). Two filtering-side hypotheses were tried and both *measurably made no difference* to the pattern (kept anyway, as real hardening for a different, distance-dependent aliasing problem - see below): rotating the PCF kernel per pixel (`InterleavedGradientNoise`, Jimenez's SIGGRAPH 2014 technique) and widening it adaptively to the true screen-pixel footprint (`fwidth(UV)`). Neither touching *which* nearby texels get read changed anything, which pointed at the comparison *value* itself being marginal rather than undersampled: the receiver's depth (re-derived per-pixel in `PBR.hlsl` from an already-interpolated `WorldPosition`) and the shadow pass's own rasterized depth (`Shadow.hlsl`, a completely different interpolation path for the same physical point) are close enough, at the old bias, to flip pass/fail smoothly across the surface - not noise, a coherent function of position. Confirmed directly: raising `ShadowBias`/`ShadowNormalBias` from 1.0/1.5 to 4.0/3.0 texels eliminated the rings completely with no peter-panning at the monkey's contact shadow. Fixed as the new *engine* default (not a demo-level override, unlike `ShadowDistance` - bias is already texel-scaled, and this was a basic light-angle-over-a-flat-plane case that should hold up generally), `DirectionalLightComponent.hpp`.
-  - Kept, as real (if here unproven) hardening rather than reverted: `ShadowVisibility` now takes the receiver's screen position and rotates its 5x5 PCF kernel per pixel by an interleaved-gradient-noise angle, and widens the kernel's tap spacing to at least half of `fwidth(UV)` (never narrower than before). Distinct problem from the bias-marginality above - undersampling a shadow map that has no mip chain at a grazing/receding angle is classic minification aliasing, which *would* show as the same kind of coherent ripple at a large enough `ShadowDistance` or grazing angle, just wasn't the dominant effect at the distances this demo actually exercises.
+- `PBRMaterialComponent`'s `Metallic` scalar defaulted to 0, not 1 - every other channel already defaults to its own
+  multiplicative identity (`Albedo` white, `AmbientOcclusion` 1), since a texture's sampled value always *multiplies*
+  the matching scalar (glTF's convention, per the class comment), never replaces it. At the old default,
+  `Metallic * MetallicMap.Sample(...).r` was `0 * anything == 0` regardless of what the map contained, so assigning a
+  `MetallicMap` alone visibly did nothing - only calling `SetMetallic` worked, which looked like the map was broken when
+  the map was never the problem. Now defaults to 1, matching glTF's own `metallicFactor` default too.
+- Shadows read as faded/washed out under a bright HDRI: `PBR.hlsl`'s image-based lighting was (correctly, physically)
+  never touched by the directional light's shadow map at all - only `DirectLight` was - but with a strong sky HDRI,
+  ambient alone could keep a fully shadowed diffuse surface almost as bright as a lit one, so the shadow's only visible
+  effect was the loss of a direct specular highlight. `DirectionalLightComponent` gains `ShadowAmbientDarkening` (0..1,
+  default 0.6): a deliberately non-physical "contact darkening" of just the diffuse IBL term (never specular - a
+  reflective surface still legitimately shows the environment in shadow) by the same shadow factor `DirectLight` already
+  uses, scaled by this knob. 0 keeps today's physically-pure behavior.
+- Bloom "sparkled" - small bright spots flickering under motion, most visible on the demo's rotating metallic monkey -
+  rather than glowing smoothly. `BloomDownsample.hlsl`'s level-0 bright-pass extraction averaged its 4 box-filter taps
+  evenly, so one extreme outlier (an aliased, sub-pixel-narrow specular highlight - exactly what an un-antialiased
+  rough-metal reflection produces) still dominated the average and got thresholded in; as the highlight's exact texel
+  shifted frame to frame under rotation, which block crossed threshold shifted with it. Now uses a Karis average (Brian
+  Karis's SIGGRAPH 2014 mobile-bloom talk - the same one this whole bloom technique already comes from) at level 0 only:
+  each tap is weighted by `1/(1+luminance)` before averaging, so a firefly contributes almost nothing instead of
+  dominating. The deeper fix - real specular anti-aliasing, so highlights like this don't alias in the first place - is
+  part of the anti-aliasing work this was already headed toward, not done here.
+- Environment/IBL brightness and contrast: no change made here yet - most likely the same root cause as the bloom
+  sparkle above (un-antialiased, per-pixel-sharp specular highlights reading as "blown out" even after auto exposure
+  correctly normalizes the frame's overall level), to be addressed by the same anti-aliasing work. `EnvironmentBaker`'s
+  prefilter/irradiance convolution and the split-sum IBL math in `PBR.hlsl` were checked directly (roughness-to-mip
+  mapping, cosine-weighted irradiance normalization, no `EnvironmentComponent` intensity multiplier) and found
+  consistent with standard practice - no bug found there.
+- Blocky, shadow-map-texel-aligned edges on both the monkey's own self-shadowing and its cast shadow on the floor -
+  visibly not tracking the mesh's own smooth rotation, which was the tell that this wasn't the usual
+  acne-from-insufficient-bias problem (that moves with the mesh's geometry) but the shadow map's own fixed grid becoming
+  visible. Root cause: the single-cascade shadow map is sized to the *camera's whole view frustum* out to
+  `ShadowDistance` (40 by default, a reasonable size for a typical outdoor scene), not to whatever's actually near the
+  subject - but Demo.PBR's camera sits only ~4 units from a ~2-unit-wide monkey, so at the default distance the
+  2048-texel map's ~94-unit-diameter coverage left the monkey barely 40-50 texels wide. Fixed at the demo level (not the
+  engine default, which is fine for a normal-scale scene): `Demo.PBR/Runtime/main.cpp` now calls
+  `SetShadowDistance(15.0f)`, roughly tripling the effective texel density where this scene needs it. Confirmed smooth,
+  anti-aliased shadow edges at multiple rotation angles afterward.
+- A second, finer layer of grainy/speckled noise right at shadow boundaries, on top of the `ShadowDistance` fix above -
+  reported as still looking "acned" after that fix, and most likely always present at a subtle level (previous same-day
+  fix, `ShadowAmbientDarkening`, is what made shadows dark enough to actually scrutinize this closely). `PBR.hlsl`'s
+  `ShadowVisibility` PCF only averaged 9 taps (3x3), a 1/9-of-full-range staircase of discrete light/dark comparison
+  outcomes across the penumbra - fine enough detail to read as noise on an otherwise-smooth flat receiver. Widened to
+  5x5 (25 taps, still cheap - one small dedicated depth target), a 1/25 staircase that reads as a smooth gradient
+  instead.
+- The real cause of the above: a coherent, rippled "rings" pattern across the *whole* floor (confirmed by rendering
+  `ShadowVisibility`'s return value directly), not localized to the monkey's shadow at all - which ruled out both the
+  5x5 PCF change and `ShadowDistance` as the actual fix, and ruled out the ground plane's own tessellation (it's a
+  single flat quad, `generate_primitive_meshes.py`'s `build_plane` - no per-vertex variation to be periodic in the first
+  place). Two filtering-side hypotheses were tried and both *measurably made no difference* to the pattern (kept anyway,
+  as real hardening for a different, distance-dependent aliasing problem - see below): rotating the PCF kernel per pixel
+  (`InterleavedGradientNoise`, Jimenez's SIGGRAPH 2014 technique) and widening it adaptively to the true screen-pixel
+  footprint (`fwidth(UV)`). Neither touching *which* nearby texels get read changed anything, which pointed at the
+  comparison *value* itself being marginal rather than undersampled: the receiver's depth (re-derived per-pixel in
+  `PBR.hlsl` from an already-interpolated `WorldPosition`) and the shadow pass's own rasterized depth (`Shadow.hlsl`, a
+  completely different interpolation path for the same physical point) are close enough, at the old bias, to flip
+  pass/fail smoothly across the surface - not noise, a coherent function of position. Confirmed directly: raising
+  `ShadowBias`/`ShadowNormalBias` from 1.0/1.5 to 4.0/3.0 texels eliminated the rings completely with no peter-panning
+  at the monkey's contact shadow. Fixed as the new *engine* default (not a demo-level override, unlike
+  `ShadowDistance` - bias is already texel-scaled, and this was a basic light-angle-over-a-flat-plane case that should
+  hold up generally), `DirectionalLightComponent.hpp`.
+    - Kept, as real (if here unproven) hardening rather than reverted: `ShadowVisibility` now takes the receiver's
+      screen position and rotates its 5x5 PCF kernel per pixel by an interleaved-gradient-noise angle, and widens the
+      kernel's tap spacing to at least half of `fwidth(UV)` (never narrower than before). Distinct problem from the
+      bias-marginality above - undersampling a shadow map that has no mip chain at a grazing/receding angle is classic
+      minification aliasing, which *would* show as the same kind of coherent ripple at a large enough `ShadowDistance`
+      or grazing angle, just wasn't the dominant effect at the distances this demo actually exercises.
 
 ### Added
 
-- Bloom and exposure control. `MeshRenderer` now renders the scene (PBR + sky) into a private linear-HDR target (`RGBA16F`) instead of tonemapping per-pixel straight into the Viewport's LDR color target; a new `PostProcess` runs after it, every pass a fullscreen triangle like `EnvironmentBaker`'s bake passes (no compute shaders anywhere in this engine yet):
-  - Bloom is the "physically based" mip-chain technique from Call of Duty: Advanced Warfare's SIGGRAPH 2014 presentation: a soft-thresholded bright pass (`BloomDownsample.hlsl`, Unity's quadratic-knee curve) seeds a chain of progressively half-sized mips of one texture, downsampled with a 4-tap box filter; a second pass (`BloomUpsample.hlsl`) blends them back up into each other with a 3x3 tent filter and additive blending, leaving mip 0 a multi-scale glow. Levels stop at 6 or an 8-texel side, whichever comes first.
-  - The composite pass (`PostProcessComposite.hlsl`) adds the bloom result back in, multiplies by exposure, then tonemaps with the ACES filmic curve (replacing the old Reinhard) and gamma-encodes - `Include/Tonemap.hlsli`'s new home for both. It's alpha-blended over whatever was already in the Viewport's color target using the scene render's own alpha (1 only where `PBR.hlsl`/`Sky.hlsl` actually wrote a pixel), so 2D sprites drawn earlier in the frame are left alone exactly as the old direct-render-with-Load did.
-  - New `PostProcessComponent` (scene-wide, "first one found" rule like `EnvironmentComponent`/`DirectionalLightComponent`) exposes `Exposure`, `BloomEnabled`, `BloomThreshold`, `BloomSoftKnee` and `BloomIntensity`. A scene with none renders with `PostProcess::Settings`'s defaults (exposure 1, bloom on).
-  - `PBR.hlsl`/`Sky.hlsl` no longer tonemap - they write plain linear HDR color (alpha 1), which is what makes the offscreen target's alpha channel double as a "did this pixel get drawn" mask for the composite's blend.
-- Demo.PBR's light is now a bit brighter (intensity 3) and its `PostProcessComponent` lowers the bloom threshold slightly, so the monkey's own specular highlights bloom visibly, not just the HDRI's sun.
-- Asset encryption is now optional per-pak instead of unconditional. `PAKTool pack` gained `-e,--encrypt` (off by default); without it, an asset's compressed bytes are written as-is, skipping AES-256-CTR entirely, which is most of what packing a large content set costs. `PakHeader` gained an `Encrypted` flag (format version 3 - a v2 pak is no longer readable, consistent with the v1->v2 bump for the salt); `PakFileSource` skips both the key-check and the decrypt step on a pak built without it. `xen_package_game_content` (`XenGame.cmake`) now passes `--encrypt=$<CONFIG:Release>` to every `PAKTool pack` call, so only a Release build pays for it - Debug/RelWithDebInfo content packs and loads noticeably faster, which matters once total content passes a gigabyte. (Written as an explicit `--encrypt=0/1` value rather than the more obvious `$<$<CONFIG:Release>:--encrypt>`: for a `POST_BUILD add_custom_command`, the latter leaves a stray empty `""` argument in every non-Release config instead of disappearing, which `PAKTool` then rejects.)
-- GPU mip generation for ordinary (LDR) textures, closing the gap behind `TextureCache::Config::GenerateMips` (now on by default - previously the flag existed but had no working implementation at all, see Fixed). New `MipGenerator` box-filters each mip from the one below it, one fullscreen-triangle pass per level, the same shape as `EnvironmentBaker`'s bake passes. `TextureCache::UploadEntry` gives a texture `ColorTarget` usage and invokes it right after mip 0 uploads when `GenerateMips` is on and the generator initialized; not fatal otherwise - the texture just keeps one mip, as before. This is what a material texture minified on screen needs to not alias - a real-world (not synthetic) texture at typical viewing distance showed this clearly once one was in the demo content.
-  - New `CommandBuffer::CopyTexture` / `IRenderDevice` executor case (whole-subresource `CopyTextureRegion`, `Src`/`Dst` must be different textures - see below).
-- Auto exposure. `PostProcess::Settings` gains `AutoExposureEnabled` (on by default), `AutoExposureKey` (0.18, "18% middle gray"), `AutoExposureMin/MaxLuminance` clamps and separate `AutoExposureAdaptUp/DownSeconds` time constants; `PostProcessComponent` exposes all of them. Three new fullscreen-triangle passes run before the composite pass each frame, every level its own texture rather than mips of one (no `CommandBuffer::CopyTexture` needed - see Fixed below for why that matters elsewhere):
-  - `LuminanceMeasure.hlsl` box-downsamples the HDR scene to half its resolution while converting to log2 luminance; `LuminanceReduce.hlsl` halves that (log-averaged, an approximation of the geometric mean - the reason one bright window doesn't dominate the metered value) down to exactly 1x1.
-  - `LuminanceAdapt.hlsl` blends the previous frame's adapted luminance toward this frame's measured value over `AdaptUp/DownSeconds`, ping-ponging between two persistent 1x1 textures (asymmetric so a scene getting brighter pulls exposure down faster than a scene getting darker brings it back up - a pupil constricting faster than it dilates).
-  - `PostProcessComposite.hlsl` derives `Exposure` as `Key / clamp(AdaptedLuminance, Min, Max)` when auto exposure is on, falling back to the existing manual `Exposure` field otherwise - a third texture slot (t2/s2), always bound (`SceneTex` again, inert, when unavailable), same convention as the bloom texture slot.
-  - Root cause this closes: an HDRI's radiance values aren't normalized to any particular range - `ibl/maps/studio.hdr` measured an average luminance of 0.71 (max ~24.5 at its light fixture), and the ACES filmic curve (`Tonemap.hlsli`) already reads ~91% white at a linear input of 1.0, so a fixed `Exposure = 1.0` blew almost the entire frame to white. Auto exposure meters this instead of requiring a per-HDRI hand-tuned constant.
-  - `MeshRenderer::Render` and `PostProcess::Render` both gained a `DeltaTime` parameter (auto exposure's adaptation needs real frame time); threaded through from `Game::TickFrame`.
+- Bloom and exposure control. `MeshRenderer` now renders the scene (PBR + sky) into a private linear-HDR target
+  (`RGBA16F`) instead of tonemapping per-pixel straight into the Viewport's LDR color target; a new `PostProcess` runs
+  after it, every pass a fullscreen triangle like `EnvironmentBaker`'s bake passes (no compute shaders anywhere in this
+  engine yet):
+    - Bloom is the "physically based" mip-chain technique from Call of Duty: Advanced Warfare's SIGGRAPH 2014
+      presentation: a soft-thresholded bright pass (`BloomDownsample.hlsl`, Unity's quadratic-knee curve) seeds a chain
+      of progressively half-sized mips of one texture, downsampled with a 4-tap box filter; a second pass
+      (`BloomUpsample.hlsl`) blends them back up into each other with a 3x3 tent filter and additive blending, leaving
+      mip 0 a multi-scale glow. Levels stop at 6 or an 8-texel side, whichever comes first.
+    - The composite pass (`PostProcessComposite.hlsl`) adds the bloom result back in, multiplies by exposure, then
+      tonemaps with the ACES filmic curve (replacing the old Reinhard) and gamma-encodes - `Include/Tonemap.hlsli`'s new
+      home for both. It's alpha-blended over whatever was already in the Viewport's color target using the scene
+      render's own alpha (1 only where `PBR.hlsl`/`Sky.hlsl` actually wrote a pixel), so 2D sprites drawn earlier in the
+      frame are left alone exactly as the old direct-render-with-Load did.
+    - New `PostProcessComponent` (scene-wide, "first one found" rule like `EnvironmentComponent`/
+      `DirectionalLightComponent`) exposes `Exposure`, `BloomEnabled`, `BloomThreshold`, `BloomSoftKnee` and
+      `BloomIntensity`. A scene with none renders with `PostProcess::Settings`'s defaults (exposure 1, bloom on).
+    - `PBR.hlsl`/`Sky.hlsl` no longer tonemap - they write plain linear HDR color (alpha 1), which is what makes the
+      offscreen target's alpha channel double as a "did this pixel get drawn" mask for the composite's blend.
+- Demo.PBR's light is now a bit brighter (intensity 3) and its `PostProcessComponent` lowers the bloom threshold
+  slightly, so the monkey's own specular highlights bloom visibly, not just the HDRI's sun.
+- Asset encryption is now optional per-pak instead of unconditional. `PAKTool pack` gained `-e,--encrypt` (off by
+  default); without it, an asset's compressed bytes are written as-is, skipping AES-256-CTR entirely, which is most of
+  what packing a large content set costs. `PakHeader` gained an `Encrypted` flag (format version 3 - a v2 pak is no
+  longer readable, consistent with the v1->v2 bump for the salt); `PakFileSource` skips both the key-check and the
+  decrypt step on a pak built without it. `xen_package_game_content` (`XenGame.cmake`) now passes
+  `--encrypt=$<CONFIG:Release>` to every `PAKTool pack` call, so only a Release build pays for it - Debug/RelWithDebInfo
+  content packs and loads noticeably faster, which matters once total content passes a gigabyte. (Written as an explicit
+  `--encrypt=0/1` value rather than the more obvious `$<$<CONFIG:Release>:--encrypt>`: for a
+  `POST_BUILD add_custom_command`, the latter leaves a stray empty `""` argument in every non-Release config instead of
+  disappearing, which `PAKTool` then rejects.)
+- GPU mip generation for ordinary (LDR) textures, closing the gap behind `TextureCache::Config::GenerateMips` (now on by
+  default - previously the flag existed but had no working implementation at all, see Fixed). New `MipGenerator`
+  box-filters each mip from the one below it, one fullscreen-triangle pass per level, the same shape as
+  `EnvironmentBaker`'s bake passes. `TextureCache::UploadEntry` gives a texture `ColorTarget` usage and invokes it right
+  after mip 0 uploads when `GenerateMips` is on and the generator initialized; not fatal otherwise - the texture just
+  keeps one mip, as before. This is what a material texture minified on screen needs to not alias - a real-world (not
+  synthetic) texture at typical viewing distance showed this clearly once one was in the demo content.
+    - New `CommandBuffer::CopyTexture` / `IRenderDevice` executor case (whole-subresource `CopyTextureRegion`, `Src`/
+      `Dst` must be different textures - see below).
+- Auto exposure. `PostProcess::Settings` gains `AutoExposureEnabled` (on by default), `AutoExposureKey` (0.18, "18%
+  middle gray"), `AutoExposureMin/MaxLuminance` clamps and separate `AutoExposureAdaptUp/DownSeconds` time constants;
+  `PostProcessComponent` exposes all of them. Three new fullscreen-triangle passes run before the composite pass each
+  frame, every level its own texture rather than mips of one (no `CommandBuffer::CopyTexture` needed - see Fixed below
+  for why that matters elsewhere):
+    - `LuminanceMeasure.hlsl` box-downsamples the HDR scene to half its resolution while converting to log2 luminance;
+      `LuminanceReduce.hlsl` halves that (log-averaged, an approximation of the geometric mean - the reason one bright
+      window doesn't dominate the metered value) down to exactly 1x1.
+    - `LuminanceAdapt.hlsl` blends the previous frame's adapted luminance toward this frame's measured value over
+      `AdaptUp/DownSeconds`, ping-ponging between two persistent 1x1 textures (asymmetric so a scene getting brighter
+      pulls exposure down faster than a scene getting darker brings it back up - a pupil constricting faster than it
+      dilates).
+    - `PostProcessComposite.hlsl` derives `Exposure` as `Key / clamp(AdaptedLuminance, Min, Max)` when auto exposure is
+      on, falling back to the existing manual `Exposure` field otherwise - a third texture slot (t2/s2), always bound
+      (`SceneTex` again, inert, when unavailable), same convention as the bloom texture slot.
+    - Root cause this closes: an HDRI's radiance values aren't normalized to any particular range -
+      `ibl/maps/studio.hdr` measured an average luminance of 0.71 (max ~24.5 at its light fixture), and the ACES filmic
+      curve (`Tonemap.hlsli`) already reads ~91% white at a linear input of 1.0, so a fixed `Exposure = 1.0` blew almost
+      the entire frame to white. Auto exposure meters this instead of requiring a per-HDRI hand-tuned constant.
+    - `MeshRenderer::Render` and `PostProcess::Render` both gained a `DeltaTime` parameter (auto exposure's adaptation
+      needs real frame time); threaded through from `Game::TickFrame`.
 
 ### Fixed
 
-- `D3D12RenderDevice::CreateTexture`'s handling of `TextureDesc::MipLevels == 0` ("the full chain," per its own doc comment) was dead code that had never actually run: it resolved to a single mip instead, because nothing had ever requested a full chain until `GenerateMips`'s GPU path existed to do so. Now computed correctly from `Width`/`Height`.
-- Reading one mip of a texture via SRV while rendering into a *different* mip of that same texture as a render target - what both `MipGenerator` and `PostProcess`'s bloom downsample/upsample chain do every level past the first - had two compounding bugs, both invisible until now because this GPU (and its driver) tolerated the wrong state and still produced correct-looking pixels most of the time:
-  - This backend tracks a texture's resource state once for the whole resource, not per subresource, and `CommandBuffer::BindTexture`'s own convenience "self-transition" (see its comment) fought the render pass's own transition on every draw, leaving the destination mip in the wrong state at draw time (an actual D3D12 validation error, `id 538`, once something made it visible - see below). Fixed by reading the source mip through a copy into a separate scratch texture instead of the texture's own SRV, sidestepping the conflict rather than requiring real per-subresource barrier tracking.
-  - `MipGenerator`'s first attempt at that fix (a single scratch texture, resized smaller every level) had a second, worse bug: `EnsureScratch` destroyed and recreated it mid-loop, before any of the loop's *recorded* commands had actually been submitted - and a destroyed texture's handle ID is freed and reused immediately, so every earlier `BindTexture`/`CopyTexture` in that same not-yet-submitted command buffer silently ended up pointing at whatever scratch texture existed *last*, not the one live when each was recorded. Rendered as a fully black mesh once a scene actually exercised it. Fixed by submitting once per mip level (`MipGenerator` runs once per texture load, so the extra GPU round-trips cost nothing that matters) instead of once for the whole chain; `PostProcess`'s bloom chain runs every frame and can't afford that, so it uses one persistent scratch texture *per level* instead (recreated only when the chain itself resizes, in `EnsureBloomChain`, same as `_BloomChain`).
-- Debug-layer validation (routed to the log since 2026-09-21) turned up the D3D12 error above only once the demo's content included a real, non-synthetic PBR texture set - the engine's own earlier procedural/authored textures happened not to trigger it.
+- `D3D12RenderDevice::CreateTexture`'s handling of `TextureDesc::MipLevels == 0` ("the full chain," per its own doc
+  comment) was dead code that had never actually run: it resolved to a single mip instead, because nothing had ever
+  requested a full chain until `GenerateMips`'s GPU path existed to do so. Now computed correctly from `Width`/`Height`.
+- Reading one mip of a texture via SRV while rendering into a *different* mip of that same texture as a render target -
+  what both `MipGenerator` and `PostProcess`'s bloom downsample/upsample chain do every level past the first - had two
+  compounding bugs, both invisible until now because this GPU (and its driver) tolerated the wrong state and still
+  produced correct-looking pixels most of the time:
+    - This backend tracks a texture's resource state once for the whole resource, not per subresource, and
+      `CommandBuffer::BindTexture`'s own convenience "self-transition" (see its comment) fought the render pass's own
+      transition on every draw, leaving the destination mip in the wrong state at draw time (an actual D3D12 validation
+      error, `id 538`, once something made it visible - see below). Fixed by reading the source mip through a copy into
+      a separate scratch texture instead of the texture's own SRV, sidestepping the conflict rather than requiring real
+      per-subresource barrier tracking.
+    - `MipGenerator`'s first attempt at that fix (a single scratch texture, resized smaller every level) had a second,
+      worse bug: `EnsureScratch` destroyed and recreated it mid-loop, before any of the loop's *recorded* commands had
+      actually been submitted - and a destroyed texture's handle ID is freed and reused immediately, so every earlier
+      `BindTexture`/`CopyTexture` in that same not-yet-submitted command buffer silently ended up pointing at whatever
+      scratch texture existed *last*, not the one live when each was recorded. Rendered as a fully black mesh once a
+      scene actually exercised it. Fixed by submitting once per mip level (`MipGenerator` runs once per texture load, so
+      the extra GPU round-trips cost nothing that matters) instead of once for the whole chain; `PostProcess`'s bloom
+      chain runs every frame and can't afford that, so it uses one persistent scratch texture *per level* instead
+      (recreated only when the chain itself resizes, in `EnsureBloomChain`, same as `_BloomChain`).
+- Debug-layer validation (routed to the log since 2026-09-21) turned up the D3D12 error above only once the demo's
+  content included a real, non-synthetic PBR texture set - the engine's own earlier procedural/authored textures
+  happened not to trigger it.
 
 ## 2026-09-21
 
 ### Added
 
-- Directional-light shadows. `MeshRenderer` now renders a depth-only shadow pass (`Shadow.hlsl`, no pixel stage) into a single D32 shadow map before the main pass, and `PBR.hlsl` darkens the light's direct contribution by a PCF-filtered lookup (a comparison sampler plus 3x3 taps). The map is one orthographic cascade fitted to a bounding sphere of the camera's view frustum out to `ShadowDistance`, its origin snapped to whole texels so shadow edges don't crawl as the camera moves, and its depth range pulled back to reach every caster between the light and that volume. Acne is handled at the receiver - a normal offset scaled by the surface's angle to the light, plus a small constant depth bias - so casters render with no culling and no rasterizer bias. Only ambient/IBL light is unshadowed; a bright sun baked into the HDRI still lights shadowed areas.
-  - `DirectionalLightComponent` gains `CastShadows`, `ShadowDistance` (default 40), `ShadowResolution` (default 2048), `ShadowBias`, `ShadowNormalBias` and `ShadowSoftness`; the bias and softness values are in shadow-map texels so they stay right when the distance or resolution changes. Shadows need a perspective camera; a scene with no real light actor (the renderer's fallback light) has none.
-  - `MaterialSlot::ShadowMap` (t8/s8) is a new standardized slot, so `TextureSlotCount` is now 9. A frame with no shadow pass binds a 1x1 stand-in map instead of leaving the slot unbound.
-  - RHI: `SamplerDesc::Compare`/`CompareFunc` (D3D12 comparison filters), and `GraphicsPipelineDesc::FragmentShader` is now optional, for depth-only pipelines. `MeshInfo` carries local-space `BoundsMin`/`BoundsMax`, computed while decoding.
-  - `compile_engine_shaders.py` only compiles the stages a shader actually defines, so a vertex-only shader no longer needs a dummy `PSMain`.
-- The D3D12 debug layer's messages now go to the engine log (Debug builds only, where validation is on): warnings, errors and corruption at the matching log level, with the message ID. A warning repeated every frame is logged in full three times and then noted once as suppressed; errors and corruption are never suppressed. Previously they only reached an attached debugger.
+- Directional-light shadows. `MeshRenderer` now renders a depth-only shadow pass (`Shadow.hlsl`, no pixel stage) into a
+  single D32 shadow map before the main pass, and `PBR.hlsl` darkens the light's direct contribution by a PCF-filtered
+  lookup (a comparison sampler plus 3x3 taps). The map is one orthographic cascade fitted to a bounding sphere of the
+  camera's view frustum out to `ShadowDistance`, its origin snapped to whole texels so shadow edges don't crawl as the
+  camera moves, and its depth range pulled back to reach every caster between the light and that volume. Acne is handled
+  at the receiver - a normal offset scaled by the surface's angle to the light, plus a small constant depth bias - so
+  casters render with no culling and no rasterizer bias. Only ambient/IBL light is unshadowed; a bright sun baked into
+  the HDRI still lights shadowed areas.
+    - `DirectionalLightComponent` gains `CastShadows`, `ShadowDistance` (default 40), `ShadowResolution` (default 2048),
+      `ShadowBias`, `ShadowNormalBias` and `ShadowSoftness`; the bias and softness values are in shadow-map texels so
+      they stay right when the distance or resolution changes. Shadows need a perspective camera; a scene with no real
+      light actor (the renderer's fallback light) has none.
+    - `MaterialSlot::ShadowMap` (t8/s8) is a new standardized slot, so `TextureSlotCount` is now 9. A frame with no
+      shadow pass binds a 1x1 stand-in map instead of leaving the slot unbound.
+    - RHI: `SamplerDesc::Compare`/`CompareFunc` (D3D12 comparison filters), and `GraphicsPipelineDesc::FragmentShader`
+      is now optional, for depth-only pipelines. `MeshInfo` carries local-space `BoundsMin`/`BoundsMax`, computed while
+      decoding.
+    - `compile_engine_shaders.py` only compiles the stages a shader actually defines, so a vertex-only shader no longer
+      needs a dummy `PSMain`.
+- The D3D12 debug layer's messages now go to the engine log (Debug builds only, where validation is on): warnings,
+  errors and corruption at the matching log level, with the message ID. A warning repeated every frame is logged in full
+  three times and then noted once as suppressed; errors and corruption are never suppressed. Previously they only
+  reached an attached debugger.
 
 ### Changed
 
-- Demo.PBR gains a ground plane for the shadow to land on, and its light now points down and toward the camera. Its old rotation (pitch +45 degrees) actually pointed the light upward - DirectXMath's positive pitch tilts -Z forward toward +Y - so a floor would have received no direct light at all.
-- The loading screen no longer has a progress bar, only the spinner, now centered. `LoadingProgress` is still passed to `Game::OnLoadingScreen` for games that draw their own; `LoadingScreen::Config::Track` is gone.
+- Demo.PBR gains a ground plane for the shadow to land on, and its light now points down and toward the camera. Its old
+  rotation (pitch +45 degrees) actually pointed the light upward - DirectXMath's positive pitch tilts -Z forward toward
+  +Y - so a floor would have received no direct light at all.
+- The loading screen no longer has a progress bar, only the spinner, now centered. `LoadingProgress` is still passed to
+  `Game::OnLoadingScreen` for games that draw their own; `LoadingScreen::Config::Track` is gone.
 
 ## 2026-09-20
 
 ### Added
 
-- A loading screen for launch and scene transitions, backed by real background loading. Previously every load was synchronous on the main thread - nothing pumped the window's messages or presented a frame, so the window sat unpainted and Windows marked it "Not Responding" (a Debug launch with an 8K HDRI is ~14 s, ~10 s of it AES + LZ4 unpacking). Now:
-  - `AssetLoader` (`AssetLoader.hpp/.cpp`) unpacks and decodes assets on worker threads (up to 3, with a small bound on decoded-but-not-uploaded assets so an 8K HDRI can't pile up in RAM) while the main thread does the GPU half - creating and uploading the resource, inserting it into the cache - a few milliseconds' worth per frame via `Pump`. A worker's failure (missing or undecodable asset) is rethrown on the main thread exactly where the old synchronous load threw it. `TextureCache`/`MeshCache` are split at their existing seam for this (`DecodeAsset` - pure CPU, thread-safe - and `AdoptPreloaded` - GPU, main thread); `Acquire`/`Preload` share the same two halves.
-  - `Game` has a real loading state: `ApplyPendingSceneChange` tears down the old scene, deserializes the new one, and begins a load; `TickFrame` runs `TickLoading` until it finishes (no `OnUpdate`/scene tick against a scene that doesn't exist yet), then `OnSceneLoaded`/`BeginPlay` as before - every `Acquire` is a cache hit. A scene change requested mid-load cancels it (workers stopped and joined, partially-loaded assets dropped) and starts the new one. `IsLoading()`, `GetLoadingScreen()`, and a `virtual bool OnLoadingScreen(const LoadingProgress&)` hook (return true if you drew your own) are the game-facing surface.
-  - `LoadingScreen` (`LoadingScreen.hpp/.cpp`): a background and a spinner (no progress bar; `LoadingProgress` is still passed to `OnLoadingScreen` for games that draw their own), drawn straight into the swap chain by its own tiny embedded-HLSL pipeline - no pak asset, no font, no scene, so it works before anything is mounted and in release builds. It only appears once a load has run `ShowDelaySeconds` (0.3), so quick scene changes stay instant, and then stays at least `MinVisibleSeconds` (0.4), so it never flashes. The launch paints a background frame immediately, so the window is never a blank rectangle.
-  - While the loading screen is up, the scene's environment is baked under it (`MeshRenderer::PrepareEnvironment`, factored out of `Render`) instead of hitching the first real frame.
+- A loading screen for launch and scene transitions, backed by real background loading. Previously every load was
+  synchronous on the main thread - nothing pumped the window's messages or presented a frame, so the window sat
+  unpainted and Windows marked it "Not Responding" (a Debug launch with an 8K HDRI is ~14 s, ~10 s of it AES + LZ4
+  unpacking). Now:
+    - `AssetLoader` (`AssetLoader.hpp/.cpp`) unpacks and decodes assets on worker threads (up to 3, with a small bound
+      on decoded-but-not-uploaded assets so an 8K HDRI can't pile up in RAM) while the main thread does the GPU half -
+      creating and uploading the resource, inserting it into the cache - a few milliseconds' worth per frame via `Pump`.
+      A worker's failure (missing or undecodable asset) is rethrown on the main thread exactly where the old synchronous
+      load threw it. `TextureCache`/`MeshCache` are split at their existing seam for this (`DecodeAsset` - pure CPU,
+      thread-safe - and `AdoptPreloaded` - GPU, main thread); `Acquire`/`Preload` share the same two halves.
+    - `Game` has a real loading state: `ApplyPendingSceneChange` tears down the old scene, deserializes the new one, and
+      begins a load; `TickFrame` runs `TickLoading` until it finishes (no `OnUpdate`/scene tick against a scene that
+      doesn't exist yet), then `OnSceneLoaded`/`BeginPlay` as before - every `Acquire` is a cache hit. A scene change
+      requested mid-load cancels it (workers stopped and joined, partially-loaded assets dropped) and starts the new
+      one. `IsLoading()`, `GetLoadingScreen()`, and a `virtual bool OnLoadingScreen(const LoadingProgress&)` hook
+      (return true if you drew your own) are the game-facing surface.
+    - `LoadingScreen` (`LoadingScreen.hpp/.cpp`): a background and a spinner (no progress bar; `LoadingProgress` is
+      still passed to `OnLoadingScreen` for games that draw their own), drawn straight into the swap chain by its own
+      tiny embedded-HLSL pipeline - no pak asset, no font, no scene, so it works before anything is mounted and in
+      release builds. It only appears once a load has run `ShowDelaySeconds` (0.3), so quick scene changes stay instant,
+      and then stays at least `MinVisibleSeconds` (0.4), so it never flashes. The launch paints a background frame
+      immediately, so the window is never a blank rectangle.
+    - While the loading screen is up, the scene's environment is baked under it (`MeshRenderer::PrepareEnvironment`,
+      factored out of `Render`) instead of hitching the first real frame.
 
 ### Fixed
 
-- The scene-load path preloaded every texture with the default `Srgb = false`, so `TextureCache::Acquire`'s "an already-resident entry is reused as-is" rule silently defeated `PBRMaterialComponent`'s request for an sRGB albedo/emissive map - the earlier per-texture sRGB fix never took effect in a real scene load. `PropertyMeta` gained `Srgb`, set on the albedo and emissive references; the asset gatherer carries it into each `LoadRequest`, so those maps are now loaded `RGBA8_SRGB` up front. (Albedo colors come out darker and more saturated than before - what they were always meant to be.)
-- `PakFileSource::LoadFull` shared one `std::ifstream` seek position, so concurrent loads would have raced; the seek+read is now under a mutex (decrypt and decompress stay outside it, so workers still unpack in parallel). `Logger` wrote the log file and console outside its lock, so lines from a worker thread could interleave; the whole write is now under it.
+- The scene-load path preloaded every texture with the default `Srgb = false`, so `TextureCache::Acquire`'s "an
+  already-resident entry is reused as-is" rule silently defeated `PBRMaterialComponent`'s request for an sRGB
+  albedo/emissive map - the earlier per-texture sRGB fix never took effect in a real scene load. `PropertyMeta` gained
+  `Srgb`, set on the albedo and emissive references; the asset gatherer carries it into each `LoadRequest`, so those
+  maps are now loaded `RGBA8_SRGB` up front. (Albedo colors come out darker and more saturated than before - what they
+  were always meant to be.)
+- `PakFileSource::LoadFull` shared one `std::ifstream` seek position, so concurrent loads would have raced; the
+  seek+read is now under a mutex (decrypt and decompress stay outside it, so workers still unpack in parallel). `Logger`
+  wrote the log file and console outside its lock, so lines from a worker thread could interleave; the whole write is
+  now under it.
 
 ## 2026-09-19
 
 ### Added
 
-- `RHI::FrameStats::TriangleCount`, tallied per Draw/DrawIndexed call for TriangleList/TriangleStrip topologies - shown in Demo.PBR's Frame Stats window.
-- Resident-byte tracking on `TextureCache`/`MeshCache` (`GetResidentBytes()`) and a new `IRenderDevice::GetMemoryStats()` (GPU allocated/reserved/usage/budget via D3D12MA's budget query, plus process RAM) - both exposed to any demo's debug UI, not folded into per-frame `FrameStats`. Demo.PBR's Frame Stats window shows both.
-- Real image-based lighting in `PBR.hlsl`, replacing the old flat `0.03 * Albedo` ambient constant (which gave a `Metallic = 1` surface nothing to show at all - a full metal has zero diffuse response by definition): a Radiance `.hdr` equirectangular environment map supplies the incoming light (sampled at `N` for diffuse, at the reflection vector for specular), and a baked split-sum BRDF LUT supplies how much of it the material reflects (`F0 * scale + bias`).
-  - `EnvironmentComponent` (scene-wide, first one found wins - same rule as the directional light) references the `.hdr` asset; a scene with none binds a dim placeholder sky, so the shader never branches on "is there an environment".
-  - `TextureCache` decodes Radiance `.hdr` files (detected from content) to packed RGBA16F with a full mip pyramid, using its own streaming decoder (`RadianceHdr.hpp/.cpp`) instead of stb_image's: stb decodes the whole image to 32-bit float first (an 8K capture is half a gigabyte of floats, plus copies for the pyramid, well over a gigabyte at peak), whereas this decodes one scanline at a time - flat or run-length-encoded - and folds it straight into a box-downsampled RGBA16F image, so peak memory is the capped output plus a scanline. `TextureCache::Config::MaxHdrWidth` (default 4096) caps the width kept on the GPU; a wider capture is downsampled by powers of two while it's decoded. Values are clamped to half-float range so a bright sun disc can't become infinity, and the pyramid's 2x2 box filter weights the two rows by cos(latitude), since an equirect row near a pole covers far less of the sphere.
-  - The BRDF LUT is a 256x256 RG16F texture rendered once at `MeshRenderer::Initialize` by `Code/Shaders/BRDFIntegrate.hlsl` (GGX importance-sampled integration, fullscreen triangle from `SV_VertexID`, no bindings).
-  - Three new scene-level binding slots - `Environment` (t5/s5, the prefiltered specular cube), `Irradiance` (t6/s6, the diffuse cube) and `BrdfLut` (t7/s7) - bound once per frame rather than per draw; see `MaterialBindings.hlsli`/`.hpp`.
-  - `IRenderDevice::SubmitAndWait()`: execute a `CommandBuffer` immediately and block until the GPU finishes, outside the `BeginFrame`/`EndFrame` cycle and with no present - what a one-shot bake pass needs, the same way `UploadTexture` is already synchronous.
-  - `Scripts/generate_test_hdri.py` writes a synthetic sky+sun test map (not shipped content).
-  - Prefiltered true cube maps, not a raw sample: `EnvironmentBaker` (`EnvironmentBaker.hpp/.cpp`) bakes the environment on the GPU, the first frame a scene has one, into (a) a GGX-prefiltered specular cube whose mip chain is one roughness per mip - so `PBR.hlsl` reads a blurry reflection with one sample - and (b) a 32x32-per-face cosine-convolved irradiance cube for diffuse. Cubes rather than equirect: uniform texel density (no pole pinching), hardware-seamless filtering across faces, and lookup is the direction itself (no `atan2`/`asin` per sample). `PrefilterEnvironment.hlsl`/`IrradianceConvolve.hlsl` importance-sample the equirect source at a mip chosen from each sample's pdf (filtered importance sampling, so a sun disc spreads smoothly instead of speckling), using the source texel's solid angle at that sample's own latitude rather than the image-wide average (which over-filtered the equator and under-filtered the poles). A face is a quarter of the source width, power of two, capped at 1024. The baked pair is rebaked if the scene's environment changes; a scene with none binds a tiny placeholder sky/ground cube for both.
-  - Roughness maps to a mip by lobe width, not linearly: mip 0 is a mirror and each level above it halves the lobe every `1 / ROUGHNESS_MIP_SCALE` mips, so blur grows as fast as the texels do instead of spending most mips on nearly-identical mirror-sharp levels. `RoughnessForMip` (what the baker bakes each mip with) and `MipForRoughness` (what `PBR.hlsl` samples) are one pair of functions in `Include/Common.hlsli`, so the two can't drift apart.
-  - D3D12 now supports cube and array textures (`TextureType::TextureCube`/`Texture2DArray` were declared but ignored: every texture got a plain 2D SRV): a cube is six slices with a `TEXTURECUBE` SRV, an array gets a `TEXTURE2DARRAY` one, and a color-target texture gets one render-target view per (layer, mip) so a render pass can target a single mip of a single slice (`ColorAttachment::MipLevel`/`ArrayLayer`, previously ignored). The pass viewport is that mip's own extent. The offscreen RTV heap grew from 32 to 512 slots to fit a cube's faces times its mips.
-  - Shared shader code moved into includes, per the standardized-shader-input direction: `Include/Common.hlsli` (`PI`, the equirect and cube-face direction mappings, the roughness<->mip pair, Hammersley/GGX sampling), `Include/Fullscreen.hlsli` (the `SV_VertexID` fullscreen triangle), `Include/FrameData.hlsli` (the per-frame `b0` layout, declared once for every mesh shader) and `Include/Tonemap.hlsli` (so a lit surface and the sky behind it share one exposure/gamma).
-  - The environment can be drawn as the scene's background: `Sky.hlsl` draws one fullscreen triangle at the far plane after the meshes (depth-tested `LessEqual` against a buffer cleared to 1.0, never written), unprojecting each pixel through `InvViewProjection` to a world-space ray into mip 0 of the prefiltered cube - the source itself, undegraded by any lobe. It shares `PBR.hlsl`'s pipeline layout, so `MeshRenderer` switches to it mid-pass with every binding already in place. `EnvironmentComponent::SetShowBackground` (on by default, reflected) turns it off while keeping the lighting.
+- `RHI::FrameStats::TriangleCount`, tallied per Draw/DrawIndexed call for TriangleList/TriangleStrip topologies - shown
+  in Demo.PBR's Frame Stats window.
+- Resident-byte tracking on `TextureCache`/`MeshCache` (`GetResidentBytes()`) and a new
+  `IRenderDevice::GetMemoryStats()` (GPU allocated/reserved/usage/budget via D3D12MA's budget query, plus process RAM) -
+  both exposed to any demo's debug UI, not folded into per-frame `FrameStats`. Demo.PBR's Frame Stats window shows both.
+- Real image-based lighting in `PBR.hlsl`, replacing the old flat `0.03 * Albedo` ambient constant (which gave a
+  `Metallic = 1` surface nothing to show at all - a full metal has zero diffuse response by definition): a Radiance
+  `.hdr` equirectangular environment map supplies the incoming light (sampled at `N` for diffuse, at the reflection
+  vector for specular), and a baked split-sum BRDF LUT supplies how much of it the material reflects
+  (`F0 * scale + bias`).
+    - `EnvironmentComponent` (scene-wide, first one found wins - same rule as the directional light) references the
+      `.hdr` asset; a scene with none binds a dim placeholder sky, so the shader never branches on "is there an
+      environment".
+    - `TextureCache` decodes Radiance `.hdr` files (detected from content) to packed RGBA16F with a full mip pyramid,
+      using its own streaming decoder (`RadianceHdr.hpp/.cpp`) instead of stb_image's: stb decodes the whole image to
+      32-bit float first (an 8K capture is half a gigabyte of floats, plus copies for the pyramid, well over a gigabyte
+      at peak), whereas this decodes one scanline at a time - flat or run-length-encoded - and folds it straight into a
+      box-downsampled RGBA16F image, so peak memory is the capped output plus a scanline.
+      `TextureCache::Config::MaxHdrWidth` (default 4096) caps the width kept on the GPU; a wider capture is downsampled
+      by powers of two while it's decoded. Values are clamped to half-float range so a bright sun disc can't become
+      infinity, and the pyramid's 2x2 box filter weights the two rows by cos (latitude), since an equirect row near a
+      pole covers far less of the sphere.
+    - The BRDF LUT is a 256x256 RG16F texture rendered once at `MeshRenderer::Initialize` by
+      `Source/Shaders/BRDFIntegrate.hlsl` (GGX importance-sampled integration, fullscreen triangle from `SV_VertexID`,
+      no bindings).
+    - Three new scene-level binding slots - `Environment` (t5/s5, the prefiltered specular cube), `Irradiance` (t6/s6,
+      the diffuse cube) and `BrdfLut` (t7/s7) - bound once per frame rather than per draw; see `MaterialBindings.hlsli`/
+      `.hpp`.
+    - `IRenderDevice::SubmitAndWait()`: execute a `CommandBuffer` immediately and block until the GPU finishes, outside
+      the `BeginFrame`/`EndFrame` cycle and with no present - what a one-shot bake pass needs, the same way
+      `UploadTexture` is already synchronous.
+    - `Scripts/generate_test_hdri.py` writes a synthetic sky+sun test map (not shipped content).
+    - Prefiltered true cube maps, not a raw sample: `EnvironmentBaker` (`EnvironmentBaker.hpp/.cpp`) bakes the
+      environment on the GPU, the first frame a scene has one, into (a) a GGX-prefiltered specular cube whose mip chain
+      is one roughness per mip - so `PBR.hlsl` reads a blurry reflection with one sample - and (b) a 32x32-per-face
+      cosine-convolved irradiance cube for diffuse. Cubes rather than equirect: uniform texel density (no pole
+      pinching), hardware-seamless filtering across faces, and lookup is the direction itself (no `atan2`/`asin` per
+      sample). `PrefilterEnvironment.hlsl`/`IrradianceConvolve.hlsl` importance-sample the equirect source at a mip
+      chosen from each sample's pdf (filtered importance sampling, so a sun disc spreads smoothly instead of speckling),
+      using the source texel's solid angle at that sample's own latitude rather than the image-wide average (which
+      over-filtered the equator and under-filtered the poles). A face is a quarter of the source width, power of two,
+      capped at 1024. The baked pair is rebaked if the scene's environment changes; a scene with none binds a tiny
+      placeholder sky/ground cube for both.
+    - Roughness maps to a mip by lobe width, not linearly: mip 0 is a mirror and each level above it halves the lobe
+      every `1 / ROUGHNESS_MIP_SCALE` mips, so blur grows as fast as the texels do instead of spending most mips on
+      nearly-identical mirror-sharp levels. `RoughnessForMip` (what the baker bakes each mip with) and `MipForRoughness`
+      (what `PBR.hlsl` samples) are one pair of functions in `Include/Common.hlsli`, so the two can't drift apart.
+    - D3D12 now supports cube and array textures (`TextureType::TextureCube`/`Texture2DArray` were declared but ignored:
+      every texture got a plain 2D SRV): a cube is six slices with a `TEXTURECUBE` SRV, an array gets a `TEXTURE2DARRAY`
+      one, and a color-target texture gets one render-target view per (layer, mip) so a render pass can target a single
+      mip of a single slice (`ColorAttachment::MipLevel`/`ArrayLayer`, previously ignored). The pass viewport is that
+      mip's own extent. The offscreen RTV heap grew from 32 to 512 slots to fit a cube's faces times its mips.
+    - Shared shader code moved into includes, per the standardized-shader-input direction: `Include/Common.hlsli` (`PI`,
+      the equirect and cube-face direction mappings, the roughness<->mip pair, Hammersley/GGX sampling),
+      `Include/Fullscreen.hlsli` (the `SV_VertexID` fullscreen triangle), `Include/FrameData.hlsli` (the per-frame `b0`
+      layout, declared once for every mesh shader) and `Include/Tonemap.hlsli` (so a lit surface and the sky behind it
+      share one exposure/gamma).
+    - The environment can be drawn as the scene's background: `Sky.hlsl` draws one fullscreen triangle at the far plane
+      after the meshes (depth-tested `LessEqual` against a buffer cleared to 1.0, never written), unprojecting each
+      pixel through `InvViewProjection` to a world-space ray into mip 0 of the prefiltered cube - the source itself,
+      undegraded by any lobe. It shares `PBR.hlsl`'s pipeline layout, so `MeshRenderer` switches to it mid-pass with
+      every binding already in place. `EnvironmentComponent::SetShowBackground` (on by default, reflected) turns it off
+      while keeping the lighting.
 
 ### Fixed
 
-- `TextureCache` always created textures as `RGBA8_UNORM`, with a cache-*wide* `SrgbTextures` config flag nothing ever set - so a color texture like an albedo/emissive map (authored in sRGB) was sampled as raw, un-linearized bytes and then gamma-encoded a second time by `PBR.hlsl`'s own tonemap pass, desaturating and darkening it. Since one `TextureCache` is shared between sprites (which want raw passthrough - displayed as-authored, no lighting) and PBR material channels (where albedo/emissive need sRGB decode but normal/metallic-roughness/occlusion must NOT be decoded, per glTF), a cache-wide flag couldn't express this correctly. Replaced with a per-`Acquire`/`Preload` `Srgb` parameter; `PBRMaterialComponent` now requests it only for its Albedo/Emissive channels.
-- `D3D12RenderDevice::UploadTexture` hardcoded a 4-bytes-per-pixel source row pitch ("RGBA8 - the only format the texture cache uploads today"), which would have silently corrupted any wider-format upload (an HDR texture reads the wrong byte range on every row). The pitch now comes from the resource's actual format.
-- `D3D12RenderDevice::UploadTexture` transitioned only the uploaded subresource from a hardcoded `COMMON`, then recorded one state for the whole resource - wrong for a texture uploaded one mip at a time (the first-uploaded mip ended up in a different state from the rest). It now transitions the whole resource from its tracked state.
-- `PipelineLayoutDesc::MAX_BINDINGS` was 16 with an unchecked `Binding()` - MeshRenderer's layout is now 19 (3 cbuffers + 8 texture/sampler pairs), so the 17th binding would have written out of bounds. Raised to 32.
+- `TextureCache` always created textures as `RGBA8_UNORM`, with a cache- *wide* `SrgbTextures` config flag nothing ever
+  set - so a color texture like an albedo/emissive map (authored in sRGB) was sampled as raw, un-linearized bytes and
+  then gamma-encoded a second time by `PBR.hlsl`'s own tonemap pass, desaturating and darkening it. Since one
+  `TextureCache` is shared between sprites (which want raw passthrough - displayed as-authored, no lighting) and PBR
+  material channels (where albedo/emissive need sRGB decode but normal/metallic-roughness/occlusion must NOT be decoded,
+  per glTF), a cache-wide flag couldn't express this correctly. Replaced with a per-`Acquire`/`Preload` `Srgb`
+  parameter; `PBRMaterialComponent` now requests it only for its Albedo/Emissive channels.
+- `D3D12RenderDevice::UploadTexture` hardcoded a 4-bytes-per-pixel source row pitch ("RGBA8 - the only format the
+  texture cache uploads today"), which would have silently corrupted any wider-format upload (an HDR texture reads the
+  wrong byte range on every row). The pitch now comes from the resource's actual format.
+- `D3D12RenderDevice::UploadTexture` transitioned only the uploaded subresource from a hardcoded `COMMON`, then recorded
+  one state for the whole resource - wrong for a texture uploaded one mip at a time (the first-uploaded mip ended up in
+  a different state from the rest). It now transitions the whole resource from its tracked state.
+- `PipelineLayoutDesc::MAX_BINDINGS` was 16 with an unchecked `Binding()` - MeshRenderer's layout is now 19 (3
+  cbuffers + 8 texture/sampler pairs), so the 17th binding would have written out of bounds. Raised to 32.
 
 ## 2026-09-18
 
 ### Added
 
-- Mesh loading via glTF/GLB (using the vendored `cgltf` single-header parser), replacing the old custom `.xmesh` binary format.
-- `plane`, `sphere`, and `cylinder` primitive generators in `generate_primitive_meshes.py` (previously cube-only), each emitting a self-contained `.gltf` with an embedded base64 buffer.
-- Working `.pakignore` filtering in PAKTool's `pack` command: glob patterns (`*`, `?`), `#` comments, and no-`/` patterns matching by filename at any depth. The patterns were previously parsed and printed but never actually applied to the scanned file list.
-- A `DebugUI` layer (Dear ImGui, docking branch) that any `Game` subclass can draw into from `OnRender` with ordinary `ImGui::` calls - `Game::BeginFrame`/`EndFrame` already bracket a frame, and Win32 input is forwarded/withheld correctly (dragging a debug window no longer also moves the game camera or spins the mouse-look). Compiled out entirely in release builds (`DebugUI.hpp`'s `XEN_WITH_DEBUG_UI`, on by default whenever `NDEBUG` isn't defined). `Demo.PBR` now shows a small "Frame Stats" window as a working example.
-- Texture support for `PBRMaterialComponent`: albedo, normal, metallic-roughness (glTF's own G=roughness/B=metallic packing), ambient-occlusion, and emissive maps, each optional - an unassigned channel falls back to a white (or flat-normal) placeholder that multiplies through as the identity, so the existing constant-factor-only workflow keeps working unchanged.
-- A standardized binding-slot convention for mesh-rendering shaders (`Code/Shaders/Include/MaterialBindings.hlsli`, mirrored in `Code/Modules/Xen/MaterialBindings.hpp`): `b0`/`b1`/`b2` for frame/object/material data and `t0-t4`/`s0-s4` for the five material texture channels, fixed for every pipeline built this way - a normal map is always `t1`, regardless of which shader you're looking at.
+- Mesh loading via glTF/GLB (using the vendored `cgltf` single-header parser), replacing the old custom `.xmesh` binary
+  format.
+- `plane`, `sphere`, and `cylinder` primitive generators in `generate_primitive_meshes.py` (previously cube-only), each
+  emitting a self-contained `.gltf` with an embedded base64 buffer.
+- Working `.pakignore` filtering in PAKTool's `pack` command: glob patterns (`*`, `?`), `#` comments, and no-`/`
+  patterns matching by filename at any depth. The patterns were previously parsed and printed but never actually applied
+  to the scanned file list.
+- A `DebugUI` layer (Dear ImGui, docking branch) that any `Game` subclass can draw into from `OnRender` with ordinary
+  `ImGui::` calls - `Game::BeginFrame`/`EndFrame` already bracket a frame, and Win32 input is forwarded/withheld
+  correctly (dragging a debug window no longer also moves the game camera or spins the mouse-look). Compiled out
+  entirely in release builds (`DebugUI.hpp`'s `XEN_WITH_DEBUG_UI`, on by default whenever `NDEBUG` isn't defined).
+  `Demo.PBR` now shows a small "Frame Stats" window as a working example.
+- Texture support for `PBRMaterialComponent`: albedo, normal, metallic-roughness (glTF's own G=roughness/B=metallic
+  packing), ambient-occlusion, and emissive maps, each optional - an unassigned channel falls back to a white (or
+  flat-normal) placeholder that multiplies through as the identity, so the existing constant-factor-only workflow keeps
+  working unchanged.
+- A standardized binding-slot convention for mesh-rendering shaders (`Source/Shaders/Include/MaterialBindings.hlsli`,
+  mirrored in `Source/Modules/Xen/MaterialBindings.hpp`): `b0`/`b1`/`b2` for frame/object/material data and `t0-t4`/
+  `s0-s4` for the five material texture channels, fixed for every pipeline built this way - a normal map is always `t1`,
+  regardless of which shader you're looking at.
 
 ### Changed
 
-- The engine now adopts glTF's right-handed, +Y-up, -Z-forward coordinate convention directly (`CameraComponent`, `DirectionalLightComponent`) instead of converting on import.
-- D3D12 rasterizer front-face winding mapping updated to match the new right-handed camera pipeline (a mesh's screen-space winding depends on the view/projection pipeline's handedness, not just the NDC-to-viewport Y flip).
+- The engine now adopts glTF's right-handed, +Y-up, -Z-forward coordinate convention directly (`CameraComponent`,
+  `DirectionalLightComponent`) instead of converting on import.
+- D3D12 rasterizer front-face winding mapping updated to match the new right-handed camera pipeline (a mesh's
+  screen-space winding depends on the view/projection pipeline's handedness, not just the NDC-to-viewport Y flip).
 
 ### Removed
 
@@ -280,7 +789,20 @@
 
 ### Fixed
 
-- `compile_engine_shaders.py` crashing under MSBuild's captured console codepage due to a non-ASCII character in a print statement.
-- PAKTool's `pack` command failing when `.pakignore` patterns filter out every file in a content directory (e.g. a placeholder-only `Engine/Environment`, whose only files are `.keep` markers now excluded by the repo's own `.pakignore`) - that's the correct, expected outcome and now produces a valid 0-asset pak instead of a build-breaking error.
-- `D3D12RenderDevice::CreateSampler`'s point/linear filter encoding: it packed `(min, mag, mip)` into a plain 3-bit `0-7` value, but `D3D12_FILTER`'s real point/linear values aren't contiguous (min is bit 4, mag bit 2, mip bit 0, e.g. `D3D12_FILTER_MIN_MAG_MIP_LINEAR` is `0x15`, not `0x7`). Every sampler in the engine had used `MipMode::None` until now, which happened to alias onto a value the driver silently tolerated; the first `MipMode::Linear` (trilinear) sampler - `MeshRenderer`'s new material sampler - produced a genuinely invalid filter that removed the D3D12 device outright (confirmed via the debug layer: "CreateSampler2: Filter unrecognized").
-- `PBR.hlsl`'s new normal mapping: a mesh with no authored `TANGENT` attribute (glTF's own optional field - most DCC exporters, including Blender's default glTF export, omit it) arrived with an all-zero tangent, and `normalize()`-ing that is NaN, poisoning every lighting term for the whole mesh. Falls back to an arbitrary-but-valid tangent basis instead, which is exactly correct for the common case (no normal map assigned) and merely arbitrary (not NaN) if one ever is assigned to a tangent-less mesh.
+- `compile_engine_shaders.py` crashing under MSBuild's captured console codepage due to a non-ASCII character in a print
+  statement.
+- PAKTool's `pack` command failing when `.pakignore` patterns filter out every file in a content directory (e.g. a
+  placeholder-only `Engine/Environment`, whose only files are `.keep` markers now excluded by the repo's own
+  `.pakignore`) - that's the correct, expected outcome and now produces a valid 0-asset pak instead of a build-breaking
+  error.
+- `D3D12RenderDevice::CreateSampler`'s point/linear filter encoding: it packed `(min, mag, mip)` into a plain 3-bit
+  `0-7` value, but `D3D12_FILTER`'s real point/linear values aren't contiguous (min is bit 4, mag bit 2, mip bit 0, e.g.
+  `D3D12_FILTER_MIN_MAG_MIP_LINEAR` is `0x15`, not `0x7`). Every sampler in the engine had used `MipMode::None` until
+  now, which happened to alias onto a value the driver silently tolerated; the first `MipMode::Linear` (trilinear)
+  sampler - `MeshRenderer`'s new material sampler - produced a genuinely invalid filter that removed the D3D12 device
+  outright (confirmed via the debug layer: "CreateSampler2: Filter unrecognized").
+- `PBR.hlsl`'s new normal mapping: a mesh with no authored `TANGENT` attribute (glTF's own optional field - most DCC
+  exporters, including Blender's default glTF export, omit it) arrived with an all-zero tangent, and `normalize()`-ing
+  that is NaN, poisoning every lighting term for the whole mesh. Falls back to an arbitrary-but-valid tangent basis
+  instead, which is exactly correct for the common case (no normal map assigned) and merely arbitrary (not NaN) if one
+  ever is assigned to a tangent-less mesh.

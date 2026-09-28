@@ -1,0 +1,404 @@
+//
+// Created by Jake Rieger on 9/8/2026.
+//
+
+#pragma once
+
+#include <Common/XenCommon.hpp>
+#include <Common/Platform.hpp>
+
+#include "AssetLoader.hpp"
+#include "AssetSettings.hpp"
+#include "DebugUI.hpp"
+#include "EngineConfig.hpp"
+#include "FXAA.hpp"
+#include "LoadingScreen.hpp"
+#include "MeshCache.hpp"
+#include "MeshRenderer.hpp"
+#include "Scene.hpp"
+#include "ShaderHotReload.hpp"
+#include "SpriteBatcher.hpp"
+#include "SpriteRenderer.hpp"
+#include "Viewport.hpp"
+#include "Window.hpp"
+#include "Input.hpp"
+
+#include <XenPAK/AssetMount.hpp>
+#include <XenPAK/AssetRegistry.hpp>
+
+#include <chrono>
+#include <filesystem>
+
+namespace Xen {
+    /// @brief Root object. Owns engine services, the active scene, and the
+    /// main loop.
+    ///
+    /// Subclass it and override the On* hooks for game-specific behavior:
+    ///
+    ///     ```cpp
+    ///     class MyGame final : public Game {
+    ///         using Game::Game;
+    ///         void OnStartup() override { LoadSceneFromFile("scenes/level1.json"); }
+    ///         void OnUpdate(f32 Dt) override { ... }
+    ///     };
+    ///
+    ///     MyGame G(Config{}, Assets);
+    ///     G.Run();
+    ///     ```
+    class Game {
+    public:
+        Game(const std::string& Title, const PAK::AssetMountConfig& MountConfig);
+
+        /// @brief Embedded mode, for an editor: renders into its own
+        /// _MainViewport (sized InitialWidth x InitialHeight) using Device,
+        /// which the caller owns and must keep alive for at least as long as
+        /// this Game - no Window, no swap chain, no DebugUI of its own (an
+        /// embedding editor owns exactly one DebugUI/ImGuiContext across its
+        /// whole UI, including whatever panel displays this Game's own
+        /// Viewport - see DebugUI::GetOrCreateSceneTextureID). Drive it with
+        /// StartEmbedded() once, then TickEmbedded(DeltaTime) per editor
+        /// frame, instead of Run()/RunLoop() - those still assume a Window
+        /// and are for the standalone constructor above only.
+        Game(RHI::IRenderDevice& Device, const PAK::AssetMountConfig& MountConfig, u32 InitialWidth, u32 InitialHeight);
+
+        virtual ~Game();
+
+        Game(const Game&)            = delete;
+        Game& operator=(const Game&) = delete;
+
+        void Run();
+        void RunFrames(u32 FrameCount);
+
+        /// @brief Embedded-mode equivalent of the OnStartup()+
+        /// ApplyPendingSceneChange() pair Run() does before entering its own
+        /// loop - call once after constructing an embedded Game, before the
+        /// first TickEmbedded.
+        void StartEmbedded();
+
+        /// @brief Embedded-mode equivalent of one RunLoop() iteration's
+        /// TickFrame call - drives fixed/variable update and renders into
+        /// _MainViewport, but never touches a swap chain or DebugUI (the
+        /// embedding editor's own frame is what does that, with this Game's
+        /// _MainViewport.GetColorTarget() sampled into one of its panels).
+        /// The caller is responsible for its own frame pacing/delta time and
+        /// for calling SetViewport when the hosting panel resizes.
+        void TickEmbedded(f32 DeltaTime);
+
+        void Quit();
+
+        NODISCARD bool IsRunning() const { return _Running; };
+
+        void LoadScene(AssetID SceneAsset);
+        void LoadSceneFromFile(std::filesystem::path Path);
+        void UnloadScene();
+
+        NODISCARD bool IsSceneChangePending() const { return _PendingSceneChange; };
+
+        /// @brief Whether a scene is currently being loaded. The scene's assets
+        /// are unpacked and decoded on worker threads while the main thread
+        /// keeps the window alive and, once the load has been running for
+        /// LoadingScreen::Config::ShowDelaySeconds, draws a loading screen.
+        /// There is no active scene until it finishes: OnUpdate/OnRender don't
+        /// run and GetActiveScene() is null. A scene change requested during a
+        /// load cancels it and starts the new one.
+        NODISCARD bool IsLoading() const { return _Load != nullptr; }
+
+        /// @brief The built-in loading screen - tweak its Config (colors,
+        /// show delay, minimum time on screen) from OnStartup, or replace it
+        /// outright by overriding OnLoadingScreen.
+        NODISCARD LoadingScreen& GetLoadingScreen() { return _LoadingScreen; }
+        NODISCARD Scene* GetActiveScene() const { return _ActiveScene.get(); };
+
+        NODISCARD const EngineContext& GetContext() const { return _Context; }
+        NODISCARD TextureCache& GetTextures() const { return *_Textures; }
+        NODISCARD MeshCache& GetMeshes() const { return *_Meshes; }
+        NODISCARD SpriteBatcher& GetBatcher() { return _SpriteBatcher; }
+        NODISCARD SpriteRenderer& GetRenderer() { return _SpriteRenderer; }
+        NODISCARD MeshRenderer& GetMeshRenderer() { return _MeshRenderer; }
+        NODISCARD Viewport& GetMainViewport() { return _MainViewport; }
+        NODISCARD RHI::IRenderDevice& GetRenderDevice() const { return *_RenderDevice; }
+        NODISCARD Window& GetWindow() const { return *_Window; }
+
+        /// @brief An embedded Game (see the editor constructor) has no
+        /// Window of its own, and therefore no real input capture yet
+        /// (play-in-editor input routing is separate, later work) - falls
+        /// back to an always-empty InputManager rather than null-dereferencing
+        /// _Window, so game code written against this call doesn't need its
+        /// own "am I embedded" branch just to stay crash-safe.
+        NODISCARD InputManager& GetInputManager() const {
+            return _Window ? _Window->GetInputManager() : _EmbeddedInputManager;
+        }
+
+        /// @brief Dear ImGui layer - draw debug windows (frame stats, dev
+        /// tools, a console, ...) from OnRender with ordinary ImGui:: calls;
+        /// BeginFrame/EndFrame already bracket it for you. Compiled out
+        /// (IsInitialized() always false) in a release build - see
+        /// DebugUI.hpp's XEN_WITH_DEBUG_UI.
+        NODISCARD DebugUI& GetDebugUI() { return _DebugUI; }
+
+        NODISCARD u64 GetFrameCount() const { return _FrameCount; }
+        NODISCARD f32 GetLastFrameDelta() const { return _LastDelta; }
+
+        void SetFixedTimeStep(const f32 Step) {
+            if (Step > 0.0f) _FixedTimeStep = Step;
+        }
+
+        /// @brief How far into the next fixed step this frame is rendering,
+        /// in [0, 1).
+        ///
+        /// Fixed-step simulation and variable-rate rendering do not line up:
+        /// at 144Hz with a 60Hz step, two out of every five frames draw an
+        /// unchanged position. That reads as stutter even though the
+        /// simulation is perfectly smooth. Interpolating rendered transforms
+        /// between the previous and current fixed state by this value is the
+        /// fix - see the note below.
+        NODISCARD f32 GetFixedAlpha() const { return _FixedTimeStep > 0.0f ? _Accumulator / _FixedTimeStep : 0.0f; }
+
+        /// @brief Pushes a framebuffer size to everything that needs one.
+        ///
+        /// Resizes the swap chain, the main Viewport's color target (kept
+        /// the same size as the swap chain so CopyToSwapChain stays a valid
+        /// plain copy - see Viewport::Initialize), and feeds the size to the
+        /// batcher's active camera, which is what decides how much world
+        /// fits on screen. Miss any of these and something stays 0x0 or
+        /// stale while the others resize around it.
+        void SetViewport(u32 Width, u32 Height);
+
+        /// @brief Recompiles every engine shader right now and reloads
+        /// every subsystem that owns a pipeline built from one
+        /// (MeshRenderer, FXAA) - for a game-defined "reload shaders" key
+        /// bind, as opposed to ShaderHotReload's own automatic file-change
+        /// polling in TickFrame. Debug-only in effect
+        /// (XEN_WITH_SHADER_HOT_RELOAD) - a safe no-op in Release, same
+        /// convention as ShaderHotReload itself. Call outside BeginFrame/
+        /// EndFrame, same constraint the automatic reload path already has.
+        void ForceReloadShaders();
+
+    protected:
+        // --- Lifecycle hooks (override these) ---------------------------
+
+        /// @brief After services are up, before the first frame. Load the
+        /// first scene here.
+        virtual void OnStartup() {}
+
+        /// @brief After the loop ends and the scene is torn down.
+        virtual void OnShutdown() {}
+
+        /// @brief After a scene is loaded and its assets are resident, but
+        /// BEFORE BeginPlay - so game code can inject actors or wire
+        /// references that should exist from the scene's first frame.
+        virtual void OnSceneLoaded(Scene& S) { (void)S; }
+
+        /// @brief Before a scene is torn down, while its actors are still
+        /// alive and inspectable.
+        virtual void OnSceneUnloading(Scene& S) { (void)S; }
+
+        /// @brief Fixed-step update. May run zero or several times per frame.
+        /// Physics and anything needing determinism belongs here.
+        virtual void OnFixedUpdate(const f32 FixedDelta) { (void)FixedDelta; }
+
+        /// @brief Once per frame with the real elapsed time. Camera smoothing,
+        /// input polling, anything framerate-dependent.
+        virtual void OnUpdate(const f32 DeltaTime) { (void)DeltaTime; }
+
+        /// @brief After the draw list is built, before it is submitted.
+        virtual void OnRender() {}
+
+        /// @brief Once per frame while a scene loads (and the loading screen
+        /// is due), inside an active frame - between BeginFrame and EndFrame.
+        /// Draw your own loading screen into the swap chain and return true,
+        /// or return false (the default) for the built-in spinner.
+        /// Nothing else runs meanwhile: no scene exists yet.
+        virtual bool OnLoadingScreen(const LoadingProgress& Progress) {
+            (void)Progress;
+            return false;
+        }
+
+    private:
+        enum class PendingKind : u8 { None, LoadAsset, LoadFile, Unload };
+
+        void RunLoop();
+        void TickFrame(f32 DeltaTime);
+        void ApplyPendingSceneChange();
+        void TearDownActiveScene();
+        void FinishSceneLoad(std::unique_ptr<Scene> Loaded);
+
+        void BeginSceneLoad(std::unique_ptr<Scene> Loaded);
+        void TickLoading(f32 DeltaTime);
+        void DrawLoadingFrame(const LoadingProgress& Progress, f32 DeltaTime, bool WarmUpEnvironment);
+
+        /// @brief Abandons a load in progress (joins its workers) and drops
+        /// whatever assets it had already made resident.
+        void CancelLoad();
+
+        /// @brief The part of construction identical between both
+        /// constructors - asset mounting, ShaderHotReload's loose-source
+        /// mount, the texture/mesh caches, MeshRenderer/FXAA - everything
+        /// that only ever needed IRenderDevice&, never a Window. Runs after
+        /// _RenderDevice and _MainViewport are already valid, however this
+        /// Game came by them.
+        void InitializeContent(const PAK::AssetMountConfig& MountConfig);
+
+        EngineConfig _EngineConfig {};
+        AudioConfig _AudioConfig {};
+
+        std::unique_ptr<PAK::AssetRegistry> _Assets;
+        std::unique_ptr<TextureCache> _Textures;
+        std::unique_ptr<MeshCache> _Meshes;
+        EngineContext _Context {};
+        SpriteBatcher _SpriteBatcher;
+
+        // Both null/unused in embedded mode - an embedded Game has no
+        // window of its own (see the editor constructor) and never captures
+        // input directly yet.
+        std::unique_ptr<Window> _Window;
+        mutable InputManager _EmbeddedInputManager;
+
+        // Non-owning whenever this Game didn't create the device itself -
+        // _OwnedDevice is what actually holds it in that case, and stays
+        // null in embedded mode (the caller/editor owns the device and must
+        // outlive this Game). Every other use of _RenderDevice in this class
+        // is unaffected by which constructor ran - it's always just a valid
+        // pointer either way.
+        RHI::IRenderDevice* _RenderDevice {nullptr};
+        std::unique_ptr<RHI::IRenderDevice> _OwnedDevice;
+
+        // True only for the editor constructor - gates the handful of
+        // TickFrame steps that don't apply without a Window/swap chain of
+        // this Game's own (see TickFrame/TickLoading).
+        bool _Embedded {false};
+
+        Viewport _MainViewport;
+        SpriteRenderer _SpriteRenderer;
+
+        // Optional: initialization fails softly (no PBR shader asset in a
+        // 2D-only game's content is not an error) and Render() no-ops while
+        // uninitialized, so a game with no 3D content pays nothing for this.
+        MeshRenderer _MeshRenderer;
+
+        // Runs after _MeshRenderer, on the fully composited frame (2D and 3D
+        // together) - not owned by MeshRenderer/PostProcess the way bloom is,
+        // since it applies to the whole Viewport regardless of whether this
+        // game has any 3D content at all. Same soft-failure convention as
+        // above: no shader asset just means no anti-aliasing.
+        FXAA _FXAA;
+
+        // Dev-only (see ShaderHotReload.hpp) - permanently inert in a
+        // Release build. Polled once a frame in TickFrame; a change reloads
+        // every subsystem above that owns a pipeline built from
+        // Source/Shaders (see ReloadShaders).
+        ShaderHotReload _ShaderHotReload;
+        void ReloadShaders();
+
+        // Declared after _OwnedDevice (destroyed before it, in reverse
+        // declaration order) so DebugUI::~DebugUI's WaitIdle() call still
+        // has a live device to call it on - a backstop, since ~Game()
+        // shuts it down explicitly anyway (see there). Unused in embedded
+        // mode (never Initialize()'d - see the editor constructor), where
+        // _OwnedDevice is null anyway and this ordering is moot.
+        DebugUI _DebugUI;
+
+        LoadingScreen _LoadingScreen;
+
+        // A scene mid-load: deserialized but not yet active, its assets being
+        // unpacked by the loader's workers. Declared after the caches and the
+        // device (so it's destroyed before them - its workers use both) and
+        // reset explicitly in ~Game as well.
+        struct LoadState {
+            std::unique_ptr<Scene> Incoming;
+            AssetLoader Loader;
+            std::chrono::steady_clock::time_point Start;
+            std::chrono::steady_clock::time_point VisibleSince;
+            bool Visible {false};     // the loading screen has appeared
+            bool AssetsDone {false};  // every asset is resident; waiting out the minimum on-screen time
+        };
+        std::unique_ptr<LoadState> _Load;
+
+        std::unique_ptr<Scene> _ActiveScene;
+
+        bool _PendingSceneChange {false};
+        PendingKind _PendingKind {PendingKind::None};
+        AssetID _PendingAsset {};
+        std::filesystem::path _PendingPath {};
+
+        bool _Running {false};
+        f32 _Accumulator {0.0f};
+        f32 _LastDelta {0.0f};
+        u64 _FrameCount {0};
+        f32 _FixedTimeStep {1.0f / 60.0f};
+        u32 _MaxFixedStepsPerFrame {5};
+        f32 _MaxFrameDelta {0.25f};
+    };
+
+    /// @brief Sets the process's working directory to the parent of the
+    /// executable's own directory.
+    ///
+    /// The game executable builds to <output>/Bin64/, one level below
+    /// Config/, Data.pxk and Engine/ (see README.md's Game Distribution
+    /// Output layout) - every relative path in the engine
+    /// (EngineConfig::Read("Config/..."), InputMap::Load,
+    /// AssetMountConfig::PakFiles, and BuildMountConfig's own exists()
+    /// checks) is still written unprefixed, so the process's working
+    /// directory has to be the parent of wherever the .exe actually is, not
+    /// the .exe's own directory (which is what a normal launch defaults to).
+    ///
+    /// Call this before anything that resolves a relative path -
+    /// BuildMountConfig included, since its exists() filtering for dev-mode
+    /// paks would otherwise resolve against the wrong directory and
+    /// silently drop every pak. RunGame calls this already; a game whose
+    /// wWinMain doesn't go through RunGame (main.cpp in both XenPong and
+    /// XenPBRDemo hand-roll their own instead, at the moment) must call it
+    /// directly as the very first thing it does.
+    inline void FixContentWorkingDirectory() {
+        wchar_t ExePathBuf[MAX_PATH];
+        if (::GetModuleFileNameW(nullptr, ExePathBuf, MAX_PATH) > 0) {
+            const std::filesystem::path ContentRoot = std::filesystem::path(ExePathBuf).parent_path().parent_path();
+            ::SetCurrentDirectoryW(ContentRoot.c_str());
+        }
+    }
+
+    inline void AttachConsole(const std::string& Name) {
+        ::AllocConsole();
+
+        FILE* FilePointer;
+        freopen_s(&FilePointer, "CONOUT$", "w", stdout);
+        freopen_s(&FilePointer, "CONOUT$", "w", stderr);
+        freopen_s(&FilePointer, "CONIN$", "r", stdin);
+
+        std::ios::sync_with_stdio(true);
+
+        ::SetConsoleTitleA(std::string(Name + " | Console").c_str());
+    }
+
+    template<typename GameClass>
+    void RunGame(const std::string& Name, const AssetSettings& Settings) noexcept {
+        ASSERT_BASE_OF(Game, GameClass);
+
+        FixContentWorkingDirectory();
+
+        ProcessCommandLineArguments Args {};
+        if (!GetProcessCommandLineArguments(Args)) {
+            LOG_ERR("Failed to get command line arguments");
+            return;
+        }
+
+        const auto MountConfig = BuildMountConfig(Settings, Args.Argc, Args.Argv);
+
+        try {
+#ifndef NDEBUG
+            AttachConsole(Name);
+#endif
+
+            GameClass {Name, MountConfig}.Run();
+        } catch (const EngineException& Ex) {
+            std::fprintf(stderr, "%s\n", Ex.what());
+            std::exit(1);
+        }
+    }
+}  // namespace Xen
+
+#define XEN_GAME(GameClass, Title)                                                                                     \
+    int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {                                                            \
+        Xen::RunGame<GameClass>(Title, Xen::Generated::GameSettings());                                                \
+        return 0;                                                                                                      \
+    }

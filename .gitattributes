@@ -2,9 +2,11 @@
 #=                   [ VENDORED ]                    =#
 # Entire directories
 Scripts/* linguist-vendored
-Code/Vendor/* linguist-vendored
-Code/XenPong/Config/* linguist-vendored
-Code/XenPong/Content/* linguist-vendored
+Source/Vendor/* linguist-vendored
+Source/Sandbox/Config/* linguist-vendored
+Source/Sandbox/Content/* linguist-vendored
+Source/Tools/XED/Config/* linguist-vendored
+Source/Tools/XED/Resource/* linguist-vendored
 # Specific files
 CMakeLists.txt linguist-vendored
 # File extenions
