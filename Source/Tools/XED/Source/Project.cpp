@@ -16,6 +16,7 @@ namespace Xen {
 
         return LoadFromString(Buf.str(), PrxjPath.parent_path());
     }
+
     std::optional<Project> ProjectSerializer::LoadFromString(const std::string& JsonStr,
                                                              const std::filesystem::path& ProjectRoot) {
         Json Root = Json::parse(JsonStr);

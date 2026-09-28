@@ -12,7 +12,7 @@
 #include <string>
 
 namespace Xen {
-    class DebugUI;
+    class IUIOverlay;
 
     class Window {
     public:
@@ -28,9 +28,12 @@ namespace Xen {
         /// before the engine's own handling (see HandleMessage), and raw
         /// keyboard/mouse input is withheld from InputManager while UI
         /// reports it wants that input (WantsCaptureMouse/Keyboard), so
-        /// e.g. dragging a debug window doesn't also spin the game camera.
-        /// Pass nullptr to detach. Not owned.
-        void SetDebugUI(DebugUI* UI) { _DebugUI = UI; }
+        /// e.g. dragging a UI window doesn't also spin the game camera. UI
+        /// is whatever implements IUIOverlay - DebugUI (a standalone game's
+        /// own Debug/Release-gated overlay) or the editor's own always-on
+        /// UI class; Window doesn't know or care which. Pass nullptr to
+        /// detach. Not owned.
+        void SetUIOverlay(IUIOverlay* UI) { _UIOverlay = UI; }
 
         NODISCARD bool ShouldClose() const { return _ShouldClose; }
 
@@ -83,6 +86,6 @@ namespace Xen {
         bool _Resized {false};
         bool _ShouldClose {false};
         InputManager _InputManager;
-        DebugUI* _DebugUI {nullptr};
+        IUIOverlay* _UIOverlay {nullptr};
     };
 }  // namespace Xen

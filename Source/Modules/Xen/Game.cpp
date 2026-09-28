@@ -70,7 +70,7 @@ namespace Xen {
         // Not fatal if this fails (or is compiled out - see DebugUI.hpp's
         // XEN_WITH_DEBUG_UI): every call on an uninitialized DebugUI is a
         // safe no-op, so a game just doesn't get debug windows.
-        if (_DebugUI.Initialize(*_RenderDevice, *_Window)) { _Window->SetDebugUI(&_DebugUI); }
+        if (_DebugUI.Initialize(*_RenderDevice, *_Window)) { _Window->SetUIOverlay(&_DebugUI); }
 
         // WithDepth is always on: the cost (one extra texture) is trivial
         // next to the alternative of threading a "does this game want 3D"
@@ -213,7 +213,7 @@ namespace Xen {
         // while the device is unambiguously alive. The declaration order in
         // Game.hpp would get this right anyway; doing it here makes the
         // dependency visible instead of implicit.
-        if (_Window) _Window->SetDebugUI(nullptr);
+        if (_Window) _Window->SetUIOverlay(nullptr);
         _DebugUI.Shutdown();
         _SpriteRenderer.Shutdown();
         _LoadingScreen.Shutdown();
@@ -316,9 +316,10 @@ namespace Xen {
         if (_RenderDevice && !_Embedded) _RenderDevice->SetSwapChainSize(Width, Height);
 
         // Viewport::Resize destroys and recreates _MainViewport's color
-        // target under a new resource - and an embedding editor's DebugUI
-        // samples that target through one fixed SRV heap slot, rewritten in
-        // place every frame (see DebugUI::GetOrCreateSceneTextureID). With
+        // target under a new resource - and an embedding editor's own UI
+        // layer samples that target through one fixed SRV heap slot,
+        // rewritten in place every frame (see EditorUI::
+        // GetOrCreateSceneTextureID in the XED module). With
         // frames in flight, a still-executing draw from a couple of
         // BeginFrame/EndFrame calls ago can reference that same heap slot;
         // without waiting here, the CPU rewrites its descriptor to point at
@@ -451,10 +452,11 @@ namespace Xen {
             //
             // Embedded mode skips this whole block: it has nothing to copy
             // FXAA's result INTO (no swap chain of its own) or overlay a
-            // DebugUI on top of (an embedding editor owns exactly one
-            // DebugUI across its whole UI, not one per embedded Game) -
-            // whoever embeds this Game instead samples _MainViewport.
-            // GetColorTarget() directly (see DebugUI::GetOrCreateSceneTextureID),
+            // DebugUI on top of - it has no DebugUI at all in embedded mode,
+            // and doesn't know or care that an editor with its own, entirely
+            // separate UI layer exists. Whoever embeds this Game instead
+            // samples _MainViewport.GetColorTarget() directly (see
+            // EditorUI::GetOrCreateSceneTextureID in the XED module),
             // unaffected by FXAA either way since it never writes back into
             // that texture (see FXAA::Render's own comment).
             if (!_Embedded) {

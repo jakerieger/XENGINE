@@ -149,6 +149,11 @@ namespace PrettySignature {
     inline std::string Here(const std::source_location& loc = std::source_location::current()) {
         return TidyMSVC(TrimSignature(loc.function_name()));
     }
+
+    inline std::string HereName(const std::source_location& loc = std::source_location::current()) {
+        std::string name = TidyMSVC(QualifiedName(loc.function_name()));
+        return name;
+    }
 }  // namespace PrettySignature
 
 #if defined(_MSC_VER) && !defined(__clang__)
@@ -157,3 +162,4 @@ namespace PrettySignature {
     #define PSIG_RAW __PRETTY_FUNCTION__
 #endif
 #define PSIG_HERE (::PrettySignature::TidyMSVC(::PrettySignature::TrimSignature(PSIG_RAW)))
+#define PSIG_NAME (::PrettySignature::TidyMSVC(::PrettySignature::QualifiedName(PSIG_RAW)) + "()")

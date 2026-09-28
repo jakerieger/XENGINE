@@ -6,7 +6,7 @@
 #include <Common/Exception.hpp>
 
 #include "Window.hpp"
-#include "DebugUI.hpp"
+#include "UIOverlay.hpp"
 
 #include <vector>
 
@@ -149,13 +149,15 @@ namespace Xen {
     }
 
     LRESULT Window::HandleMessage(const HWND Handle, const UINT Msg, const WPARAM WParam, const LPARAM LParam) {
-        // Forwarded first (when DebugUI is active) for Dear ImGui's own
+        // Forwarded first (when a UI overlay is attached) for Dear ImGui's own
         // input/IME handling - except WM_SETCURSOR, whose "handled" return n
         // value doesn't mean "the mouse is over a Dear ImGui window"
         // (ImGui_ImplWin32_UpdateMouseCursor sets a cursor unconditionally
         // whenever it isn't explicitly told not to), so that one is decided
         // below by WantsCaptureMouse() instead.
-        if (_DebugUI && Msg != WM_SETCURSOR && _DebugUI->ProcessMessage(Handle, Msg, WParam, LParam)) { return TRUE; }
+        if (_UIOverlay && Msg != WM_SETCURSOR && _UIOverlay->ProcessMessage(Handle, Msg, WParam, LParam)) {
+            return TRUE;
+        }
 
         switch (Msg) {
             case WM_CLOSE:
@@ -184,8 +186,8 @@ namespace Xen {
             // forcing it hidden, or every debug window becomes unusable blind.
             case WM_SETCURSOR:
                 if (LOWORD(LParam) == HTCLIENT) {
-                    if (_DebugUI && _DebugUI->WantsCaptureMouse()) {
-                        _DebugUI->ProcessMessage(Handle, Msg, WParam, LParam);
+                    if (_UIOverlay && _UIOverlay->WantsCaptureMouse()) {
+                        _UIOverlay->ProcessMessage(Handle, Msg, WParam, LParam);
                         return TRUE;
                     }
                     SetCursor(nullptr);
@@ -278,7 +280,7 @@ namespace Xen {
         // Raw input bypasses Dear ImGui's own WM_KEYDOWN/WM_CHAR-based
         // keyboard handling entirely, so without this a debug console text
         // field and the game would both react to every keystroke.
-        if (_DebugUI && _DebugUI->WantsCaptureKeyboard()) return;
+        if (_UIOverlay && _UIOverlay->WantsCaptureKeyboard()) return;
 
         const bool Pressed = (KB.Flags & RI_KEY_BREAK) == 0;
         const i16 Key      = DisambiguateModifierKey(CAST<i16>(KB.VKey), KB.MakeCode);
@@ -290,7 +292,7 @@ namespace Xen {
         // Same reasoning as HandleRawKeyboard: raw input bypasses Dear
         // ImGui's own mouse handling, so dragging a debug window would also
         // orbit the game camera without this.
-        if (_DebugUI && _DebugUI->WantsCaptureMouse()) return;
+        if (_UIOverlay && _UIOverlay->WantsCaptureMouse()) return;
 
         // Absolute-mode devices (pen tablets, some VM/RDP setups) aren't handled
         // here - they're rare enough for a desktop game not to special-case, and

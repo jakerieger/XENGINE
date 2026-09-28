@@ -1,31 +1,27 @@
 //
-// Created by Jake Rieger on 9/18/2026.
+// Created by Jake Rieger on 9/28/2026.
 //
 
-#include "DebugUI.hpp"
+#include "EditorUI.hpp"
 
-#if XEN_WITH_DEBUG_UI
+#include <Common/Log.hpp>
+#include <Xen/Window.hpp>
+#include <Xen/Backends/D3D12RenderDevice.hpp>
 
-    #include <Common/Log.hpp>
-
-    #include "Window.hpp"
-    #include "Backends/D3D12RenderDevice.hpp"
-
-    #include <imgui.h>
-    #include <imgui_impl_win32.h>
-    #include <imgui_impl_dx12.h>
-    #include <map>
-
-    #include <vector>
+#include <imgui.h>
+#include <imgui_impl_win32.h>
+#include <imgui_impl_dx12.h>
+#include <map>
+#include <vector>
 
 // imgui_impl_win32.h intentionally leaves this commented out (behind
 // #if 0) to keep <Windows.h> out of that header for callers who don't need
-// it - this file does (via DebugUI.hpp), so it forward-declares it itself,
+// it - this file does (via EditorUI.hpp), so it forward-declares it itself,
 // exactly as that header's own comment instructs.
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 namespace Xen {
-    struct DebugUI::Impl {
+    struct EditorUI::Impl {
         RHI::D3D12Backend::D3D12RenderDevice* Device {nullptr};
         ImGuiContext* Context {nullptr};
         std::map<std::string, ImFont*> Fonts;
@@ -36,11 +32,17 @@ namespace Xen {
         // descriptors than just the font atlas over the app's lifetime, via
         // the Alloc/Free callbacks below), and reusing the engine's heap
         // would mean reaching into D3D12RenderDevice's private SRV slot
-        // bookkeeping for a debug-only feature.
+        // bookkeeping for an editor-only feature.
         static constexpr u32 SrvHeapCapacity = 64;
         Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> SrvHeap;
         u32 SrvDescriptorSize {0};
         std::vector<bool> SrvSlotUsed;
+
+        // Lazily allocated by GetOrCreateSceneTextureID, from this same
+        // heap/free-list - one fixed slot, rewritten every call rather than
+        // one slot per distinct TextureHandle (see that method's own
+        // comment for why).
+        u32 SceneTextureSlot {UINT32_MAX};
 
         static void SrvAlloc(ImGui_ImplDX12_InitInfo* Info,
                              D3D12_CPU_DESCRIPTOR_HANDLE* OutCpu,
@@ -60,7 +62,7 @@ namespace Xen {
                 return;
             }
 
-            LOG_ERR("DebugUI: out of SRV descriptor slots (capacity=%u) - a texture won't display", SrvHeapCapacity);
+            LOG_ERR("EditorUI: out of SRV descriptor slots (capacity=%u) - a texture won't display", SrvHeapCapacity);
             *OutCpu = {};
             *OutGpu = {};
         }
@@ -74,16 +76,16 @@ namespace Xen {
         }
     };
 
-    DebugUI::DebugUI() = default;
-    DebugUI::~DebugUI() {
+    EditorUI::EditorUI() = default;
+    EditorUI::~EditorUI() {
         Shutdown();
     }
 
-    bool DebugUI::Initialize(RHI::IRenderDevice& Device, const Window& AppWindow) {
+    bool EditorUI::Initialize(RHI::IRenderDevice& Device, const Window& AppWindow) {
         if (_Initialized) return true;
 
         if (Device.GetBackend() != RHI::Backend::D3D12) {
-            LOG_ERR("DebugUI requires the D3D12 backend");
+            LOG_ERR("EditorUI requires the D3D12 backend");
             return false;
         }
 
@@ -97,15 +99,17 @@ namespace Xen {
         ImGuiIO& IO = ImGui::GetIO();
         IO.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
         IO.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-        // Debug window layout persists across launches like any other engine
+        // Editor layout persists across launches like any other engine
         // config, rather than littering the working directory with a stray
-        // imgui.ini next to the exe.
-        IO.IniFilename = "Config/DebugUI.ini";
+        // imgui.ini next to the exe. Deliberately a different filename from
+        // DebugUI's own Config/DebugUI.ini - these are two unrelated
+        // ImGuiContexts with two unrelated layouts.
+        IO.IniFilename = "Config/EditorUI.ini";
 
         ImGui::StyleColorsDark();
 
         if (!ImGui_ImplWin32_Init(AppWindow.GetHandle())) {
-            LOG_ERR("DebugUI: ImGui_ImplWin32_Init failed");
+            LOG_ERR("EditorUI: ImGui_ImplWin32_Init failed");
             Shutdown();
             return false;
         }
@@ -115,7 +119,7 @@ namespace Xen {
         HeapDesc.NumDescriptors = Impl::SrvHeapCapacity;
         HeapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         if (FAILED(_Impl->Device->GetD3DDevice()->CreateDescriptorHeap(&HeapDesc, IID_PPV_ARGS(&_Impl->SrvHeap)))) {
-            LOG_ERR("DebugUI: failed to create SRV descriptor heap");
+            LOG_ERR("EditorUI: failed to create SRV descriptor heap");
             Shutdown();
             return false;
         }
@@ -135,17 +139,17 @@ namespace Xen {
         InitInfo.SrvDescriptorFreeFn  = &Impl::SrvFree;
 
         if (!ImGui_ImplDX12_Init(&InitInfo)) {
-            LOG_ERR("DebugUI: ImGui_ImplDX12_Init failed");
+            LOG_ERR("EditorUI: ImGui_ImplDX12_Init failed");
             Shutdown();
             return false;
         }
 
         _Initialized = true;
-        LOG_DBG("DebugUI initialized (Dear ImGui %s (%d))", IMGUI_VERSION, IMGUI_VERSION_NUM);
+        LOG_DBG("EditorUI initialized (Dear ImGui %s (%d))", IMGUI_VERSION, IMGUI_VERSION_NUM);
         return true;
     }
 
-    void DebugUI::Shutdown() {
+    void EditorUI::Shutdown() {
         if (!_Impl) return;
 
         if (_Impl->Context) {
@@ -169,7 +173,7 @@ namespace Xen {
         _Initialized = false;
     }
 
-    void DebugUI::BeginFrame() {
+    void EditorUI::BeginFrame() {
         if (!_Initialized) return;
 
         ImGui::SetCurrentContext(_Impl->Context);
@@ -178,7 +182,7 @@ namespace Xen {
         ImGui::NewFrame();
     }
 
-    void DebugUI::EndFrame() {
+    void EditorUI::EndFrame() {
         if (!_Initialized) return;
 
         ImGui::SetCurrentContext(_Impl->Context);
@@ -194,35 +198,62 @@ namespace Xen {
         _Impl->Device->UnbindSwapChainOverlayTarget();
     }
 
-    bool DebugUI::ProcessMessage(const HWND Handle, const UINT Msg, const WPARAM WParam, const LPARAM LParam) {
+    bool EditorUI::ProcessMessage(const HWND Handle, const UINT Msg, const WPARAM WParam, const LPARAM LParam) {
         if (!_Initialized) return false;
         ImGui::SetCurrentContext(_Impl->Context);
         return ImGui_ImplWin32_WndProcHandler(Handle, Msg, WParam, LParam) != 0;
     }
 
-    bool DebugUI::WantsCaptureMouse() const {
+    bool EditorUI::WantsCaptureMouse() const {
         if (!_Initialized) return false;
         ImGui::SetCurrentContext(_Impl->Context);
         return ImGui::GetIO().WantCaptureMouse;
     }
 
-    bool DebugUI::WantsCaptureKeyboard() const {
+    bool EditorUI::WantsCaptureKeyboard() const {
         if (!_Initialized) return false;
         ImGui::SetCurrentContext(_Impl->Context);
         return ImGui::GetIO().WantCaptureKeyboard;
     }
 
-    bool DebugUI::LoadFont(const std::string& Name,
-                           const unsigned char* Data,
-                           const size_t DataSize,
-                           const f32 Pixels) const {
+    ImTextureID EditorUI::GetOrCreateSceneTextureID(const RHI::TextureHandle Handle) {
+        if (!_Initialized) return 0;
+
+        if (_Impl->SceneTextureSlot == UINT32_MAX) {
+            for (u32 i = 0; i < Impl::SrvHeapCapacity; ++i) {
+                if (_Impl->SrvSlotUsed[i]) continue;
+                _Impl->SrvSlotUsed[i]   = true;
+                _Impl->SceneTextureSlot = i;
+                break;
+            }
+            if (_Impl->SceneTextureSlot == UINT32_MAX) {
+                LOG_ERR("EditorUI: out of SRV descriptor slots (capacity=%u) - the scene view won't display",
+                        Impl::SrvHeapCapacity);
+                return 0;
+            }
+        }
+
+        D3D12_CPU_DESCRIPTOR_HANDLE Cpu = _Impl->SrvHeap->GetCPUDescriptorHandleForHeapStart();
+        Cpu.ptr += CAST<SIZE_T>(_Impl->SceneTextureSlot) * _Impl->SrvDescriptorSize;
+
+        if (!_Impl->Device->CreateTextureSRV(Handle, Cpu)) return 0;
+
+        D3D12_GPU_DESCRIPTOR_HANDLE Gpu = _Impl->SrvHeap->GetGPUDescriptorHandleForHeapStart();
+        Gpu.ptr += CAST<UINT64>(_Impl->SceneTextureSlot) * _Impl->SrvDescriptorSize;
+        return CAST<ImTextureID>(Gpu.ptr);
+    }
+
+    bool EditorUI::LoadFont(const std::string& Name,
+                            const unsigned char* Data,
+                            const size_t DataSize,
+                            const f32 Pixels) const {
         // AddFontFromMemoryTTF takes ownership of Data by default and IM_FREEs
         // it when the atlas is torn down - fine for a buffer it allocated
         // itself, but Data here is caller-owned (typically a static embedded
         // resource, never heap-allocated by ImGui's own allocator), so
         // freeing it on shutdown is undefined behavior. FontDataOwnedByAtlas
         // = false keeps ownership with the caller instead; the data only
-        // needs to outlive this DebugUI, which a static resource trivially
+        // needs to outlive this EditorUI, which a static resource trivially
         // does.
         ImFontConfig Config;
         Config.FontDataOwnedByAtlas = false;
@@ -232,33 +263,3 @@ namespace Xen {
         return true;
     }
 }  // namespace Xen
-
-#else
-
-namespace Xen {
-    struct DebugUI::Impl {};
-
-    DebugUI::DebugUI()  = default;
-    DebugUI::~DebugUI() = default;
-
-    bool DebugUI::Initialize(RHI::IRenderDevice&, const Window&) {
-        return false;
-    }
-    void DebugUI::Shutdown() {}
-    void DebugUI::BeginFrame() {}
-    void DebugUI::EndFrame() {}
-    bool DebugUI::ProcessMessage(HWND, UINT, WPARAM, LPARAM) {
-        return false;
-    }
-    bool DebugUI::WantsCaptureMouse() const {
-        return false;
-    }
-    bool DebugUI::WantsCaptureKeyboard() const {
-        return false;
-    }
-    bool DebugUI::LoadFont(const std::string&, const unsigned char*, size_t, f32) const {
-        return false;
-    }
-}  // namespace Xen
-
-#endif

@@ -54,13 +54,17 @@ namespace Xen {
         /// @brief Embedded mode, for an editor: renders into its own
         /// _MainViewport (sized InitialWidth x InitialHeight) using Device,
         /// which the caller owns and must keep alive for at least as long as
-        /// this Game - no Window, no swap chain, no DebugUI of its own (an
-        /// embedding editor owns exactly one DebugUI/ImGuiContext across its
-        /// whole UI, including whatever panel displays this Game's own
-        /// Viewport - see DebugUI::GetOrCreateSceneTextureID). Drive it with
-        /// StartEmbedded() once, then TickEmbedded(DeltaTime) per editor
-        /// frame, instead of Run()/RunLoop() - those still assume a Window
-        /// and are for the standalone constructor above only.
+        /// this Game - no Window, no swap chain, no DebugUI of its own. This
+        /// Game has no idea an editor even exists - it just knows it's
+        /// embedded (_Embedded) and skips everything that assumes a Window/
+        /// swap chain/DebugUI of its own. Whoever embeds it is responsible
+        /// for its own, completely separate UI layer (the editor's own
+        /// always-on class, not DebugUI - see EditorUI in the XED module),
+        /// including sampling _MainViewport.GetColorTarget() into whatever
+        /// panel displays it. Drive it with StartEmbedded() once, then
+        /// TickEmbedded(DeltaTime) per editor frame, instead of Run()/
+        /// RunLoop() - those still assume a Window and are for the
+        /// standalone constructor above only.
         Game(RHI::IRenderDevice& Device,
              const PAK::AssetMountConfig& MountConfig,
              u32 InitialWidth,
@@ -84,10 +88,9 @@ namespace Xen {
         /// @brief Embedded-mode equivalent of one RunLoop() iteration's
         /// TickFrame call - drives fixed/variable update and renders into
         /// _MainViewport, but never touches a swap chain or DebugUI (the
-        /// embedding editor's own frame is what does that, with this Game's
-        /// _MainViewport.GetColorTarget() sampled into one of its panels).
-        /// The caller is responsible for its own frame pacing/delta time and
-        /// for calling SetViewport when the hosting panel resizes.
+        /// embedding editor's own frame/UI layer is what does that). The
+        /// caller is responsible for its own frame pacing/delta time and for
+        /// calling SetViewport when the hosting panel resizes.
         void TickEmbedded(f32 DeltaTime);
 
         void Quit();
@@ -135,11 +138,14 @@ namespace Xen {
             return _Window ? _Window->GetInputManager() : _EmbeddedInputManager;
         }
 
-        /// @brief Dear ImGui layer - draw debug windows (frame stats, dev
-        /// tools, a console, ...) from OnRender with ordinary ImGui:: calls;
-        /// BeginFrame/EndFrame already bracket it for you. Compiled out
-        /// (IsInitialized() always false) in a release build - see
-        /// DebugUI.hpp's XEN_WITH_DEBUG_UI.
+        /// @brief Dear ImGui layer for a STANDALONE game's own debug overlay
+        /// - draw debug windows (frame stats, dev tools, a console, ...)
+        /// from OnRender with ordinary ImGui:: calls; BeginFrame/EndFrame
+        /// already bracket it for you. Compiled out (IsInitialized() always
+        /// false) in a release build - see DebugUI.hpp's XEN_WITH_DEBUG_UI.
+        /// Never initialized in embedded mode - an embedding editor has its
+        /// own, completely separate UI layer that has nothing to do with
+        /// this one (see EditorUI in the XED module).
         NODISCARD DebugUI& GetDebugUI() { return _DebugUI; }
 
         NODISCARD u64 GetFrameCount() const { return _FrameCount; }

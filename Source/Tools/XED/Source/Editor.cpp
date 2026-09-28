@@ -18,13 +18,19 @@
 #pragma endregion
 
 namespace Xen {
-    static std::vector<std::string> SceneActors;
-    static int SelectedActor = 0;
-    static std::vector<IComponent*> ActorComponents;
+    namespace {
+        struct EditorState {
+            std::vector<std::string> SceneActors;
+            int SelectedActor = 0;
+            bool ActorEnabled {false};
+            Float3 TransformPosition {};
+            Float3 TransformRotation {};
+            Float3 TransformScale {};
+        };
+    }  // namespace
 
-    static Float3 TransformPosition {};
-    static Float3 TransformRotation {};
-    static Float3 TransformScale {};
+    // Global frame-by-frame UI state
+    static EditorState State {};
 
     Editor::Editor() {
         _EditorWindow = std::make_unique<Window>("XED", EngineConfig::WindowMode::Windowed, 1600, 900);
@@ -44,12 +50,12 @@ namespace Xen {
         }
         _Device->SetSwapChainSize(_EditorWindow->GetWidth(), _EditorWindow->GetHeight());
 
-        if (!_DebugUI.Initialize(*_Device, *_EditorWindow)) {
-            THROW_ENGINE_EXCEPTION(EditorException, "failed to initialize DebugUI");
+        if (!_UI.Initialize(*_Device, *_EditorWindow)) {
+            THROW_ENGINE_EXCEPTION(EditorException, "failed to initialize editor UI");
         }
-        _EditorWindow->SetDebugUI(&_DebugUI);
+        _EditorWindow->SetUIOverlay(&_UI);
 
-        if (!_DebugUI.LoadFont("inter", INTERREGULAR_TTF_BYTES, INTERREGULAR_TTF_SIZE, 16.0f)) {
+        if (!_UI.LoadFont("inter", INTERREGULAR_TTF_BYTES, INTERREGULAR_TTF_SIZE, 16.0f)) {
             THROW_ENGINE_EXCEPTION(EditorException, "failed to load font");
         }
 
@@ -65,6 +71,10 @@ namespace Xen {
                  static_cast<u32>(_Config.StartupMode),
                  _Config.UITheme.c_str());
 
+        if (_Config.StartupMode == EditorStartupMode::Maximized) {
+            ::PostMessageA(_EditorWindow->GetHandle(), WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+        }
+
         // We'll check that it exists here even though LoadProject already checks to avoid throwing an exception if it
         // doesn't. The editor should still start if the startup project is invalid and just prompt the user to select
         // or create a new project to load. Later, a flag of some kind will be added that tells the editor this failed.
@@ -79,7 +89,7 @@ namespace Xen {
     }
 
     Editor::~Editor() {
-        if (_EditorWindow) _EditorWindow->SetDebugUI(nullptr);
+        if (_EditorWindow) _EditorWindow->SetUIOverlay(nullptr);
     }
 
     void Editor::Run() {
@@ -153,8 +163,8 @@ namespace Xen {
 
         // The editor's own "base layer": a plain clear of the swap chain,
         // exactly the same RenderPassDesc::SwapChain helper LoadingScreen
-        // already uses. DebugUI::EndFrame below draws the whole editor UI as
-        // an overlay on top of this - there's no other "game content" to
+        // already uses. EditorUI::EndFrame below draws the whole editor UI
+        // as an overlay on top of this - there's no other "game content" to
         // put in the back buffer directly, since the actual scene lives
         // inside the "Scene" panel's ImGui::Image instead.
         _Commands.Reset();
@@ -162,9 +172,9 @@ namespace Xen {
         _Commands.EndRenderPass();
         _Device->Submit(_Commands);
 
-        _DebugUI.BeginFrame();
+        _UI.BeginFrame();
         DrawDockspaceAndPanels(DeltaTime);
-        _DebugUI.EndFrame();
+        _UI.EndFrame();
 
         _Device->EndFrame();
     }
@@ -190,11 +200,49 @@ namespace Xen {
         ImGui::DockBuilderFinish(DockspaceID);
     }
 
-    void Editor::DrawDockspaceAndPanels(const f32 DeltaTime) {
-        const ImGuiID DockspaceID = ImGui::GetID("EditorDockspace");
-        EnsureDefaultLayout(DockspaceID);
-        ImGui::DockSpaceOverViewport(DockspaceID, ImGui::GetMainViewport());
+    void Editor::View_Inspector() const {
+        if (ImGui::Begin("Inspector")) {
+            if (_EmbeddedGame && _EmbeddedGame->GetActiveScene()) {
+                const auto* S = _EmbeddedGame->GetActiveScene();
+                if (S) {
+                    const ActorHandle SelectedActorHandle = S->FindByActorID(State.SelectedActor + 1);
+                    Actor* pSelectedActor                 = S->Get(SelectedActorHandle);
+                    if (pSelectedActor) {
+                        ImGui::Text("%s", pSelectedActor->GetName().c_str());
 
+                        State.ActorEnabled = pSelectedActor->IsEnabled();
+                        ImGui::Checkbox("Enabled", &State.ActorEnabled);
+                        pSelectedActor->SetEnabled(State.ActorEnabled);
+
+                        State.TransformPosition = pSelectedActor->GetWorldTransform().Position;
+                        const auto RotationQuat = pSelectedActor->GetWorldTransform().Rotation;
+                        const auto EulerAngles  = QuaternionToEuler(RotationQuat);
+                        State.TransformRotation = {DirectX::XMConvertToDegrees(EulerAngles.x),
+                                                   DirectX::XMConvertToDegrees(EulerAngles.y),
+                                                   DirectX::XMConvertToDegrees(EulerAngles.z)};
+                        State.TransformScale    = pSelectedActor->GetWorldTransform().Scale;
+
+                        ImGui::DragFloat3("Position", &State.TransformPosition.x, 0.01f);
+                        ImGui::DragFloat3("Rotation", &State.TransformRotation.x, 0.1f);
+                        ImGui::DragFloat3("Scale", &State.TransformScale.x, 0.01f);
+
+                        pSelectedActor->SetPosition(State.TransformPosition);
+                        // Rotating on X axis mostly works, the other two axes just snap back to zero.
+                        const Float3 NewRotation = {
+                          DirectX::XMConvertToRadians(State.TransformRotation.x),
+                          DirectX::XMConvertToRadians(State.TransformRotation.y),
+                          DirectX::XMConvertToRadians(State.TransformRotation.z),
+                        };
+                        pSelectedActor->SetRotation(EulerToQuaternion(NewRotation));
+                        pSelectedActor->SetScale(State.TransformScale);
+                    }
+                }
+            }
+        }
+        ImGui::End();
+    }
+
+    void Editor::View_Scene(const f32 DeltaTime) {
         if (ImGui::Begin("Scene")) {
             const ImVec2 Avail   = ImGui::GetContentRegionAvail();
             const auto NewWidth  = CAST<u32>(std::max(Avail.x, 1.0f));
@@ -216,23 +264,26 @@ namespace Xen {
             if (_EmbeddedGame) _EmbeddedGame->TickEmbedded(DeltaTime);
 
             const ImTextureID SceneTexture =
-              _DebugUI.GetOrCreateSceneTextureID(_EmbeddedGame->GetMainViewport().GetColorTarget());
+              _EmbeddedGame ? _UI.GetOrCreateSceneTextureID(_EmbeddedGame->GetMainViewport().GetColorTarget()) : 0;
             if (SceneTexture != 0) { ImGui::Image(SceneTexture, Avail); }
         }
         ImGui::End();
-
+    }
+    void Editor::View_Hierarchy() const {
         if (ImGui::Begin("Hierarchy")) {
             if (_EmbeddedGame && _EmbeddedGame->GetActiveScene()) {
                 const auto* S = _EmbeddedGame->GetActiveScene();
                 if (S) {
-                    SceneActors.clear();
+                    State.SceneActors.clear();
 
-                    S->ForEachActor([&](const Actor& A) { SceneActors.emplace_back(A.GetName()); });
+                    S->ForEachActor([&](const Actor& A) { State.SceneActors.emplace_back(A.GetName()); });
 
                     if (ImGui::BeginListBox("##Actors", ImVec2(-FLT_MIN, -FLT_MIN))) {
-                        for (auto i = 0; i < SceneActors.size(); i++) {
-                            const bool IsSelected = (SelectedActor == i);
-                            if (ImGui::Selectable(SceneActors[i].c_str(), IsSelected)) { SelectedActor = i; }
+                        for (auto i = 0; i < State.SceneActors.size(); i++) {
+                            const bool IsSelected = (State.SelectedActor == i);
+                            if (ImGui::Selectable(State.SceneActors[i].c_str(), IsSelected)) {
+                                State.SelectedActor = i;
+                            }
 
                             if (IsSelected) ImGui::SetItemDefaultFocus();
                         }
@@ -242,47 +293,27 @@ namespace Xen {
             }
         }
         ImGui::End();
+    }
 
-        if (ImGui::Begin("Inspector")) {
-            if (_EmbeddedGame && _EmbeddedGame->GetActiveScene()) {
-                const auto* S = _EmbeddedGame->GetActiveScene();
-                if (S) {
-                    const ActorHandle SelectedActorHandle = S->FindByActorID(SelectedActor + 1);
-                    Actor* pSelectedActor                 = S->Get(SelectedActorHandle);
-                    if (pSelectedActor) {
-                        ImGui::Text("%s", pSelectedActor->GetName().c_str());
-
-                        TransformPosition       = pSelectedActor->GetWorldTransform().Position;
-                        const auto RotationQuat = pSelectedActor->GetWorldTransform().Rotation;
-                        const auto EulerAngles  = QuaternionToEuler(RotationQuat);
-                        TransformRotation       = {DirectX::XMConvertToDegrees(EulerAngles.x),
-                                                   DirectX::XMConvertToDegrees(EulerAngles.y),
-                                                   DirectX::XMConvertToDegrees(EulerAngles.z)};
-                        TransformScale          = pSelectedActor->GetWorldTransform().Scale;
-
-                        ImGui::DragFloat3("Position", &TransformPosition.x, 0.1f);
-                        ImGui::DragFloat3("Rotation", &TransformRotation.x, 0.1f);
-                        ImGui::DragFloat3("Scale", &TransformScale.x, 0.1f);
-
-                        pSelectedActor->SetPosition(TransformPosition);
-                        // Doesn't really work, buggy and object snaps back to previous rotation
-                        const Float3 NewRotation = {
-                          DirectX::XMConvertToRadians(TransformRotation.x),
-                          DirectX::XMConvertToRadians(TransformRotation.y),
-                          DirectX::XMConvertToRadians(TransformRotation.z),
-                        };
-                        pSelectedActor->SetRotation(EulerToQuaternion(NewRotation));
-                        pSelectedActor->SetScale(TransformScale);
-                    }
-                }
-            }
-        }
-        ImGui::End();
-
+    void Editor::View_ContentBrowser() const {
         if (ImGui::Begin("Content Browser")) { ImGui::TextDisabled("(project content - later work)"); }
         ImGui::End();
+    }
 
+    void Editor::View_Log() const {
         if (ImGui::Begin("Log")) { ImGui::TextDisabled("(engine log - later work)"); }
         ImGui::End();
+    }
+
+    void Editor::DrawDockspaceAndPanels(const f32 DeltaTime) {
+        const ImGuiID DockspaceID = ImGui::GetID("EditorDockspace");
+        EnsureDefaultLayout(DockspaceID);
+        ImGui::DockSpaceOverViewport(DockspaceID, ImGui::GetMainViewport());
+
+        View_Scene(DeltaTime);
+        View_Hierarchy();
+        View_Inspector();
+        View_ContentBrowser();
+        View_Log();
     }
 }  // namespace Xen

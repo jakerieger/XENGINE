@@ -1,28 +1,34 @@
 //
 // Created by Jake Rieger on 9/18/2026.
 //
-// Dear ImGui plumbing: window/device setup, per-frame New/Render bracketing,
-// and Win32 message forwarding - the same "Initialize/BeginFrame/EndFrame
-// bracket a frame" shape as SpriteRenderer/MeshRenderer. No specific debug
-// windows (frame stats, dev tools, a console, ...) are built into this class
-// on purpose: once BeginFrame/EndFrame bracket a frame, any Dear ImGui call
+// Dear ImGui plumbing for a STANDALONE game's own debug overlay: window/
+// device setup, per-frame New/Render bracketing, and Win32 message
+// forwarding - the same "Initialize/BeginFrame/EndFrame bracket a frame"
+// shape as SpriteRenderer/MeshRenderer. No specific debug windows (frame
+// stats, dev tools, a console, ...) are built into this class on purpose:
+// once BeginFrame/EndFrame bracket a frame, any Dear ImGui call
 // (ImGui::Begin, etc.) works from anywhere in between, most naturally from
 // Game::OnRender - that's the actual extension mechanism, not something this
 // class needs to wrap.
+//
+// This is the engine's own Debug/Release-gated overlay, compiled out of a
+// shippable game entirely (see XEN_WITH_DEBUG_UI below) - it is NOT what the
+// editor uses. The editor's UI has to exist in every build configuration
+// (an editor with no UI in Release isn't an editor), so it owns a completely
+// separate always-on class with no compile-time gating at all; the two never
+// share a translation unit, a heap, or a lifetime. A Game knows only whether
+// it's embedded (see Game::_Embedded) and skips this class entirely when it
+// is - it has no idea the editor's own UI exists.
 
 #pragma once
 
 #include <Common/XenCommon.hpp>
 
 #include "RenderDevice.hpp"
+#include "UIOverlay.hpp"
 
 #include <Windows.h>
 #include <memory>
-
-// ImTextureID's actual definition (imgui.h) - kept out of the rest of this
-// header so a caller that never touches GetOrCreateSceneTextureID doesn't
-// need Dear ImGui's own headers just to include DebugUI.hpp.
-using ImTextureID = unsigned long long;
 
 // On by default in a debug build, off in release - matches the engine's
 // existing NDEBUG-gated debug tooling (Game.hpp's console allocation,
@@ -46,10 +52,10 @@ namespace Xen {
     /// sites (Game::TickFrame, Window::HandleMessage) never need their own
     /// #if - in a release build this class doesn't even include Dear ImGui's
     /// headers, let alone create a context or do per-frame work.
-    class DebugUI {
+    class DebugUI final : public IUIOverlay {
     public:
         DebugUI();
-        ~DebugUI();
+        ~DebugUI() override;
 
         DebugUI(const DebugUI&)            = delete;
         DebugUI& operator=(const DebugUI&) = delete;
@@ -77,31 +83,17 @@ namespace Xen {
         /// @brief Forwards a Win32 message to Dear ImGui; returns true if
         /// Dear ImGui consumed it. See Window::HandleMessage for the one
         /// message (WM_SETCURSOR) this alone isn't sufficient for.
-        bool ProcessMessage(HWND Handle, UINT Msg, WPARAM WParam, LPARAM LParam);
+        bool ProcessMessage(HWND Handle, UINT Msg, WPARAM WParam, LPARAM LParam) override;
 
         /// @brief True while the mouse is over/interacting with a Dear ImGui
         /// window - Window uses this to withhold raw-input mouse events (and
         /// decide who owns the cursor) from the game so e.g. dragging a
         /// debug window doesn't also spin the game camera.
-        NODISCARD bool WantsCaptureMouse() const;
+        NODISCARD bool WantsCaptureMouse() const override;
 
         /// @brief Same as WantsCaptureMouse but for keyboard input (e.g.
         /// typing into a debug console shouldn't also move the player).
-        NODISCARD bool WantsCaptureKeyboard() const;
-
-        /// @brief An ImTextureID for Handle's current contents (e.g. an
-        /// embedded Game's Viewport::GetColorTarget()), for
-        /// ImGui::Image(...) - implicitly convertible to the newer
-        /// ImTextureRef parameter type ImGui::Image itself now takes. Safe
-        /// to call every frame: rewrites one dedicated descriptor slot each
-        /// time rather than caching by handle, so a Viewport::Resize (which
-        /// destroys and recreates its color target under a NEW handle) never
-        /// leaves a stale cache entry to invalidate. One slot only - fine
-        /// for one "Scene" panel; a second simultaneous viewport would need
-        /// a small handle-keyed map at that point, not before. Returns 0
-        /// (ImTextureID_Invalid) if not initialized or Handle isn't a plain
-        /// color TextureHandle (see D3D12RenderDevice::CreateTextureSRV).
-        NODISCARD ImTextureID GetOrCreateSceneTextureID(RHI::TextureHandle Handle);
+        NODISCARD bool WantsCaptureKeyboard() const override;
 
         bool LoadFont(const std::string& Name, const unsigned char* Data, size_t DataSize, f32 Pixels = 16.f) const;
 

@@ -36,6 +36,9 @@ xen_add_game_executable(XED
         Source/Editor.cpp
         Source/Editor.hpp
         Source/EditorConfig.hpp
+        Source/EditorTheme.hpp
+        Source/EditorUI.cpp
+        Source/EditorUI.hpp
         Source/Project.cpp
         Source/Project.hpp
 )

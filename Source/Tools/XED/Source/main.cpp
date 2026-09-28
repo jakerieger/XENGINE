@@ -17,7 +17,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         Xen::Editor Editor;
         Editor.Run();
     } catch (const Xen::EngineException& Ex) {
-        std::fprintf(stderr, "%s\n", Ex.what());
+        ::MessageBoxA(nullptr, Ex.what(), "XED", MB_OK | MB_ICONERROR);
         return 1;
     }
 

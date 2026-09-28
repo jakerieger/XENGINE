@@ -10,12 +10,6 @@
 namespace Xen {
     constexpr u32 XED_PROJECT_FORMAT_VERSION = 1;
 
-    // Matches Xen::SceneSerializer's own Xen::Json alias exactly (both types,
-    // not just the name) - nlohmann::json also aliases Xen::Json but to a
-    // *different* underlying basic_json specialization, and two conflicting
-    // aliases for the same name in the same namespace is a hard redefinition
-    // error (C2371) the moment a single translation unit includes both
-    // headers, as Editor.cpp now does.
     using Json = nlohmann::ordered_json;
 
     struct Project {
@@ -29,14 +23,13 @@ namespace Xen {
     };
 
     class ProjectSerializer {
+        ProjectSerializer() = delete;
+
     public:
         static std::optional<Project> LoadFromFile(const std::filesystem::path& PrxjPath);
         static std::optional<Project> LoadFromString(const std::string& JsonStr,
                                                      const std::filesystem::path& ProjectRoot);
 
         // TODO: Save variants
-
-    private:
-        ProjectSerializer() = default;
     };
 }  // namespace Xen

@@ -32,6 +32,6 @@ namespace Xen {
     };
 
 #define THROW_ENGINE_EXCEPTION(Type, Message)                                                                          \
-    const auto __MsgFmt_##Type = Xen::FormatExceptionMessage(PSIG_HERE, #Type, Message);                               \
+    const auto __MsgFmt_##Type = Xen::FormatExceptionMessage(PSIG_NAME, #Type, Message);                               \
     LOG_ERR(__MsgFmt_##Type.c_str());                                                                                  \
     throw Type(__MsgFmt_##Type)

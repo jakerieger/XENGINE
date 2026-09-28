@@ -142,7 +142,7 @@ namespace Xen {
         const float YY = Q.y * Q.y;
         const float ZZ = Q.z * Q.z;
 
-        const float M31 = 2.f * (Q.x * Q.z * Q.y * Q.w);
+        const float M31 = 2.f * (Q.x * Q.z + Q.y * Q.w);
         const float M32 = 2.f * (Q.y * Q.z - Q.x * Q.w);
         const float M33 = 1.f - 2.f * (XX + YY);
 
@@ -151,7 +151,7 @@ namespace Xen {
 
         if (CosPitch > 16.f * FLT_EPSILON) {
             const float M12 = 2.f * (Q.x * Q.y + Q.z * Q.w);
-            const float M22 = 1.f - 2.f * (XX * ZZ);
+            const float M22 = 1.f - 2.f * (XX + ZZ);
             return {
               Pitch,
               std::atan2f(M31, M33),

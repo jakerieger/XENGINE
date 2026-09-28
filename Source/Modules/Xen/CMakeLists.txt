@@ -23,6 +23,8 @@ add_library(Xen STATIC
         AssetPreloader.cpp
         AssetPreloader.hpp
         AssetSettings.hpp
+        Color.cpp
+        Color.hpp
         CommandBuffer.hpp
         Component.hpp
         ComponentRegistry.cpp
@@ -60,6 +62,7 @@ add_library(Xen STATIC
         RHI.hpp
         Scene.cpp
         Scene.hpp
+        UIOverlay.hpp
         SceneSerializer.cpp
         SceneSerializer.hpp
         ShaderHotReload.cpp
