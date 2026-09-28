@@ -13,10 +13,6 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     // the .exe's own Bin64 directory a normal launch defaults to.
     Xen::FixContentWorkingDirectory();
 
-#ifndef NDEBUG
-    Xen::AttachConsole("XED");
-#endif
-
     try {
         Xen::Editor Editor;
         Editor.Run();

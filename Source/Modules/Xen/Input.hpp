@@ -6,7 +6,7 @@
 
 #include <Common/XenCommon.hpp>
 #include <Common/Platform.hpp>
-#include "EngineConfig.hpp"
+#include <Common/Ini.hpp>
 
 #include <array>
 #include <unordered_map>
@@ -317,13 +317,18 @@ namespace Xen {
         void Load(const std::filesystem::path& InputConfig) {
             if (!exists(InputConfig)) {
                 THROW_ENGINE_EXCEPTION(EngineException,
-                                       "failed to load input config (missing: '" + InputConfig.string() + "')");
+                                       "input config doesn't exist (missing: '" + InputConfig.string() + "')");
             }
 
-            Config::Ini Cfg = Config::Read(InputConfig.string());
+            const auto ReadResult = INI::ReadFromFile(InputConfig);
+            if (!ReadResult.has_value()) {
+                THROW_ENGINE_EXCEPTION(EngineException, "failed to read input config: '" + InputConfig.string() + "'");
+            }
+
+            INI::Config Cfg = *ReadResult;
 
             for (const auto& [Name, Bindings] : Cfg["Actions"]) {
-                const auto ActionList = Config::GetList(Bindings);
+                const auto ActionList = INI::GetList(Bindings);
                 Action Map;
                 for (const auto& Binding : ActionList) {
                     if (Binding.find("Key.") != std::string::npos) {

@@ -5,13 +5,7 @@
 #include "Editor.hpp"
 
 #include <Xen/XenGameSettings.h>
-#include <Xen/Scene.hpp>
 #include <Xen/SceneSerializer.hpp>
-#include <Xen/Components/MeshComponent.hpp>
-#include <Xen/Components/PBRMaterialComponent.hpp>
-#include <Xen/Components/CameraComponent.hpp>
-#include <Xen/Components/DirectionalLightComponent.hpp>
-#include <Xen/Components/EnvironmentComponent.hpp>
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -24,6 +18,14 @@
 #pragma endregion
 
 namespace Xen {
+    static std::vector<std::string> SceneActors;
+    static int SelectedActor = 0;
+    static std::vector<IComponent*> ActorComponents;
+
+    static Float3 TransformPosition {};
+    static Float3 TransformRotation {};
+    static Float3 TransformScale {};
+
     Editor::Editor() {
         _EditorWindow = std::make_unique<Window>("XED", EngineConfig::WindowMode::Windowed, 1600, 900);
         if (!_EditorWindow) { THROW_ENGINE_EXCEPTION(EditorException, "failed to create editor window"); }
@@ -57,72 +59,23 @@ namespace Xen {
         _SceneViewportWidth  = 1280;
         _SceneViewportHeight = 720;
 
-        // Reuses Sandbox's own content (see CMakeLists.txt) - the real
-        // project/content system is later, separate work.
-        const auto MountConfig = BuildMountConfig(Xen::Generated::GameSettings(), 0, nullptr);
-        _EmbeddedGame = std::make_unique<Game>(*_Device, MountConfig, _SceneViewportWidth, _SceneViewportHeight);
+        _Config = EditorConfig::Read("Config/EditorConfig.ini");
+        LOG_INFO("EditorConfig:\n - CurrentProject: %s\n - StartupMode: %d\n - UITheme: %s",
+                 _Config.CurrentProject.string().c_str(),
+                 static_cast<u32>(_Config.StartupMode),
+                 _Config.UITheme.c_str());
 
-        const std::filesystem::path ScenePath = BuildTestScene(_EmbeddedGame->GetContext());
-        _EmbeddedGame->LoadSceneFromFile(ScenePath);
-        _EmbeddedGame->StartEmbedded();
-    }
-
-    std::filesystem::path Editor::BuildTestScene(const EngineContext& Ctx) const {
-        Scene TestScene("XED Test Scene");
-        TestScene.SetContext(Ctx);
-
-        const ActorHandle MeshHandle = TestScene.Spawn("TestMesh");
-        Actor* MeshActor             = TestScene.Get(MeshHandle);
-        MeshActor->AddComponent<MeshComponent>(ASSET("meshes/teapot.glb"));
-        auto* Material = MeshActor->AddComponent<PBRMaterialComponent>();
-        Material->SetAlbedoMapAsset(ASSET("textures/marble/albedo.png"));
-        Material->SetNormalMapAsset(ASSET("textures/marble/normal.png"));
-        Material->SetRoughnessMapAsset(ASSET("textures/marble/roughness.png"));
-        Material->SetMetallic(0.1f);
-        MeshActor->SetPosition(Float3 {0.0f, 0.25f, 0.0f});
-        MeshActor->SetScale(Float3 {0.5f, 0.5f, 0.5f});
-
-        const ActorHandle GroundHandle = TestScene.Spawn("Ground");
-        Actor* GroundActor             = TestScene.Get(GroundHandle);
-        GroundActor->AddComponent<MeshComponent>(ASSET("meshes/plane.glb"));
-        auto* GroundMaterial = GroundActor->AddComponent<PBRMaterialComponent>();
-        GroundMaterial->SetAlbedoMapAsset(ASSET("textures/checkered_tile/albedo.png"));
-        GroundMaterial->SetNormalMapAsset(ASSET("textures/checkered_tile/normal.png"));
-        GroundMaterial->SetRoughnessMapAsset(ASSET("textures/checkered_tile/roughness.png"));
-        GroundMaterial->SetMetallic(0.01f);
-        GroundActor->SetScale(Float3 {200.0f, 1.0f, 200.0f});
-
-        const ActorHandle CameraHandle = TestScene.Spawn("MainCamera");
-        Actor* CameraActor             = TestScene.Get(CameraHandle);
-        auto* Camera                   = CameraActor->AddComponent<CameraComponent>();
-        Camera->SetProjectionMode(ProjectionMode::Perspective);
-        Camera->SetFieldOfView(60.0f);
-        CameraActor->SetPosition(Float3 {0.0f, 1.0f, 4.0f});
-
-        const ActorHandle LightHandle = TestScene.Spawn("Light");
-        Actor* LightActor             = TestScene.Get(LightHandle);
-        auto* Light                   = LightActor->AddComponent<DirectionalLightComponent>();
-        Light->SetIntensity(1.0f);
-        using namespace DirectX;
-        const XMVECTOR LightRotation =
-          XMQuaternionRotationRollPitchYaw(XMConvertToRadians(-45.0f), XMConvertToRadians(150.0f), 0.0f);
-        Quat LightRotationOut;
-        XMStoreFloat4(&LightRotationOut, LightRotation);
-        LightActor->SetRotation(LightRotationOut);
-
-        const ActorHandle EnvironmentHandle = TestScene.Spawn("Environment");
-        Actor* EnvironmentActor             = TestScene.Get(EnvironmentHandle);
-        auto* Environment                   = EnvironmentActor->AddComponent<EnvironmentComponent>();
-        Environment->SetMapAsset(ASSET("ibl/maps/sky_spring.hdr"));
-
-        // LoadSceneFromFile reads a plain filesystem path directly (not
-        // through the AssetRegistry/mount system - see Game::
-        // ApplyPendingSceneChange), so this doesn't need to live inside any
-        // mounted content dir - keeping it out of Sandbox's own Content/
-        // avoids polluting that tree with an XED-only scratch file.
-        const std::filesystem::path ScratchPath = "xed_test_scene.xscene";
-        SceneSerializer::SaveToFile(TestScene, ScratchPath);
-        return ScratchPath;
+        // We'll check that it exists here even though LoadProject already checks to avoid throwing an exception if it
+        // doesn't. The editor should still start if the startup project is invalid and just prompt the user to select
+        // or create a new project to load. Later, a flag of some kind will be added that tells the editor this failed.
+        if (!_Config.CurrentProject.empty() && std::filesystem::exists(_Config.CurrentProject)) {
+            LoadProject(_Config.CurrentProject);
+        } else {
+            ::MessageBoxA(_EditorWindow->GetHandle(),
+                          "No startup scene defined in EditorConfig.ini",
+                          "XED",
+                          MB_OK | MB_ICONWARNING);
+        }
     }
 
     Editor::~Editor() {
@@ -145,6 +98,28 @@ namespace Xen {
 
             _EditorWindow->PollEvents();
         }
+    }
+
+    void Editor::LoadProject(const std::filesystem::path& PrxjPath) {
+        if (!exists(PrxjPath)) { THROW_ENGINE_EXCEPTION(EditorException, "Project does not exist"); }
+
+        const auto LoadResult = ProjectSerializer::LoadFromFile(PrxjPath);
+        if (!LoadResult.has_value()) {
+            THROW_ENGINE_EXCEPTION(EditorException, "Failed to load project (error during parsing)");
+        }
+        _CurrentProject = *LoadResult;
+
+        PAK::AssetMountConfig MountConfig = BuildMountConfig(Xen::Generated::GameSettings(), 0, nullptr);
+        MountConfig.ContentDirs           = {_CurrentProject.ContentDirectory};
+
+        _EmbeddedGame.reset(
+          new Game(*_Device, MountConfig, _SceneViewportWidth, _SceneViewportHeight, _CurrentProject.ConfigDirectory));
+        const auto& EngineConfig = _EmbeddedGame->_EngineConfig;
+        if (!EngineConfig.StartupScene.empty()) {
+            _EmbeddedGame->LoadSceneFromFile(_CurrentProject.ContentDirectory / EngineConfig.StartupScene);
+        }
+
+        _EmbeddedGame->StartEmbedded();
     }
 
     void Editor::TickFrame(const f32 DeltaTime) {
@@ -227,7 +202,7 @@ namespace Xen {
             if (NewWidth != _SceneViewportWidth || NewHeight != _SceneViewportHeight) {
                 _SceneViewportWidth  = NewWidth;
                 _SceneViewportHeight = NewHeight;
-                _EmbeddedGame->SetViewport(NewWidth, NewHeight);
+                if (_EmbeddedGame) _EmbeddedGame->SetViewport(NewWidth, NewHeight);
             }
 
             // Rendered here, now that any resize above has already landed -
@@ -238,7 +213,7 @@ namespace Xen {
             // Viewport::Resize destroys and recreates the color target
             // immediately - visible as the "Scene" panel doing nothing
             // while a splitter drag was in progress.
-            _EmbeddedGame->TickEmbedded(DeltaTime);
+            if (_EmbeddedGame) _EmbeddedGame->TickEmbedded(DeltaTime);
 
             const ImTextureID SceneTexture =
               _DebugUI.GetOrCreateSceneTextureID(_EmbeddedGame->GetMainViewport().GetColorTarget());
@@ -246,10 +221,62 @@ namespace Xen {
         }
         ImGui::End();
 
-        if (ImGui::Begin("Hierarchy")) { ImGui::TextDisabled("(scene hierarchy - later work)"); }
+        if (ImGui::Begin("Hierarchy")) {
+            if (_EmbeddedGame && _EmbeddedGame->GetActiveScene()) {
+                const auto* S = _EmbeddedGame->GetActiveScene();
+                if (S) {
+                    SceneActors.clear();
+
+                    S->ForEachActor([&](const Actor& A) { SceneActors.emplace_back(A.GetName()); });
+
+                    if (ImGui::BeginListBox("##Actors", ImVec2(-FLT_MIN, -FLT_MIN))) {
+                        for (auto i = 0; i < SceneActors.size(); i++) {
+                            const bool IsSelected = (SelectedActor == i);
+                            if (ImGui::Selectable(SceneActors[i].c_str(), IsSelected)) { SelectedActor = i; }
+
+                            if (IsSelected) ImGui::SetItemDefaultFocus();
+                        }
+                    }
+                    ImGui::EndListBox();
+                }
+            }
+        }
         ImGui::End();
 
-        if (ImGui::Begin("Inspector")) { ImGui::TextDisabled("(selected-actor properties - later work)"); }
+        if (ImGui::Begin("Inspector")) {
+            if (_EmbeddedGame && _EmbeddedGame->GetActiveScene()) {
+                const auto* S = _EmbeddedGame->GetActiveScene();
+                if (S) {
+                    const ActorHandle SelectedActorHandle = S->FindByActorID(SelectedActor + 1);
+                    Actor* pSelectedActor                 = S->Get(SelectedActorHandle);
+                    if (pSelectedActor) {
+                        ImGui::Text("%s", pSelectedActor->GetName().c_str());
+
+                        TransformPosition       = pSelectedActor->GetWorldTransform().Position;
+                        const auto RotationQuat = pSelectedActor->GetWorldTransform().Rotation;
+                        const auto EulerAngles  = QuaternionToEuler(RotationQuat);
+                        TransformRotation       = {DirectX::XMConvertToDegrees(EulerAngles.x),
+                                                   DirectX::XMConvertToDegrees(EulerAngles.y),
+                                                   DirectX::XMConvertToDegrees(EulerAngles.z)};
+                        TransformScale          = pSelectedActor->GetWorldTransform().Scale;
+
+                        ImGui::DragFloat3("Position", &TransformPosition.x, 0.1f);
+                        ImGui::DragFloat3("Rotation", &TransformRotation.x, 0.1f);
+                        ImGui::DragFloat3("Scale", &TransformScale.x, 0.1f);
+
+                        pSelectedActor->SetPosition(TransformPosition);
+                        // Doesn't really work, buggy and object snaps back to previous rotation
+                        const Float3 NewRotation = {
+                          DirectX::XMConvertToRadians(TransformRotation.x),
+                          DirectX::XMConvertToRadians(TransformRotation.y),
+                          DirectX::XMConvertToRadians(TransformRotation.z),
+                        };
+                        pSelectedActor->SetRotation(EulerToQuaternion(NewRotation));
+                        pSelectedActor->SetScale(TransformScale);
+                    }
+                }
+            }
+        }
         ImGui::End();
 
         if (ImGui::Begin("Content Browser")) { ImGui::TextDisabled("(project content - later work)"); }

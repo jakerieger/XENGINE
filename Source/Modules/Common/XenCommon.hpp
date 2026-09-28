@@ -40,6 +40,8 @@ namespace Xen {
     using f32 = float;
     using f64 = double;
 
+    constexpr std::nullopt_t None = std::nullopt;
+
     template<typename T, typename U>
     constexpr T CAST(U Value) {
         return static_cast<T>(Value);

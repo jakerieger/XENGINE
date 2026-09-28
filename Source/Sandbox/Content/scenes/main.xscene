@@ -58,12 +58,6 @@
             "EmissiveMap": 0,
             "Submesh": ""
           }
-        },
-        {
-          "Type": "RotatingComponent",
-          "Properties": {
-            "DegreesPerSecond": 45.0
-          }
         }
       ]
     },

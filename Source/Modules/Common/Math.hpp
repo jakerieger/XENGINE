@@ -135,4 +135,42 @@ namespace Xen {
     constexpr bool operator!=(const Float4& A, const Float4& B) {
         return !(A == B);
     }
+
+    // --- Helper functions and conversions --------------
+    inline Float3 QuaternionToEuler(const Quat& Q) {
+        const float XX = Q.x * Q.x;
+        const float YY = Q.y * Q.y;
+        const float ZZ = Q.z * Q.z;
+
+        const float M31 = 2.f * (Q.x * Q.z * Q.y * Q.w);
+        const float M32 = 2.f * (Q.y * Q.z - Q.x * Q.w);
+        const float M33 = 1.f - 2.f * (XX + YY);
+
+        const float CosPitch = std::sqrtf(M31 * M31 + M33 * M33);
+        const float Pitch    = std::atan2f(-M32, CosPitch);
+
+        if (CosPitch > 16.f * FLT_EPSILON) {
+            const float M12 = 2.f * (Q.x * Q.y + Q.z * Q.w);
+            const float M22 = 1.f - 2.f * (XX * ZZ);
+            return {
+              Pitch,
+              std::atan2f(M31, M33),
+              std::atan2f(M12, M22),
+            };
+        } else {
+            const float M11 = 1.f - 2.f * (YY + ZZ);
+            const float M21 = 2.f * (Q.x * Q.y - Q.z * Q.w);
+            return {
+              Pitch,
+              0.f,
+              std::atan2f(-M21, M11),
+            };
+        }
+    }
+
+    inline Quat EulerToQuaternion(const Float3& E) {
+        Float4 Q;
+        DirectX::XMStoreFloat4(&Q, DirectX::XMQuaternionRotationRollPitchYaw(E.x, E.y, E.z));
+        return Q;
+    }
 }  // namespace Xen

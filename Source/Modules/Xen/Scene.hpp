@@ -23,6 +23,8 @@ namespace Xen {
     /// fail to resolve instead of silently pointing at whichever actor
     /// inherited the slot.
     class Scene {
+        friend class Editor;
+        
     public:
         explicit Scene(std::string Name = "Scene");
         Scene(std::string Name, const EngineContext& Context);

@@ -11,6 +11,7 @@
 #include <Xen/Game.hpp>
 
 #include "EditorConfig.hpp"
+#include "Project.hpp"
 
 #include <filesystem>
 #include <memory>
@@ -33,25 +34,15 @@ namespace Xen {
         Editor& operator=(const Editor&) = delete;
 
         void Run();
+        void LoadProject(const std::filesystem::path& PrxjPath);
 
     private:
         void TickFrame(f32 DeltaTime);
         void DrawDockspaceAndPanels(f32 DeltaTime);
         void EnsureDefaultLayout(unsigned int DockspaceID) const;
 
-        /// @brief Hand-builds a small scene (mesh+material, ground, camera,
-        /// directional light, environment) using only core Xen components -
-        /// deliberately NOT Sandbox's own main.xscene, which references
-        /// Sandbox-specific component types (RotatingComponent) that only
-        /// Sandbox's own executable links in and registers. A data-only
-        /// project (see the editor plan) can't assume an arbitrary scene's
-        /// custom component types exist in the editor process at all - this
-        /// is a placeholder until the real project/content system (and,
-        /// eventually, a loadable game module) exists. Saves to ScratchPath
-        /// and returns it, for LoadSceneFromFile.
-        std::filesystem::path BuildTestScene(const EngineContext& Ctx) const;
-
         EditorConfig _Config {};
+        Project _CurrentProject {};
         std::unique_ptr<Window> _EditorWindow;
 
         // Destroyed in reverse declaration order: _DebugUI first (its own

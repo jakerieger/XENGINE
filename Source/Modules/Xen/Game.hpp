@@ -46,6 +46,8 @@ namespace Xen {
     ///     G.Run();
     ///     ```
     class Game {
+        friend class Editor;
+
     public:
         Game(const std::string& Title, const PAK::AssetMountConfig& MountConfig);
 
@@ -59,7 +61,11 @@ namespace Xen {
         /// StartEmbedded() once, then TickEmbedded(DeltaTime) per editor
         /// frame, instead of Run()/RunLoop() - those still assume a Window
         /// and are for the standalone constructor above only.
-        Game(RHI::IRenderDevice& Device, const PAK::AssetMountConfig& MountConfig, u32 InitialWidth, u32 InitialHeight);
+        Game(RHI::IRenderDevice& Device,
+             const PAK::AssetMountConfig& MountConfig,
+             u32 InitialWidth,
+             u32 InitialHeight,
+             const std::filesystem::path& ConfigRoot);
 
         virtual ~Game();
 
@@ -239,6 +245,10 @@ namespace Xen {
         /// Game came by them.
         void InitializeContent(const PAK::AssetMountConfig& MountConfig);
 
+        void LoadConfigs();
+        void SetConfigRoot(const std::filesystem::path& ConfigRoot);
+
+        std::filesystem::path _ConfigRoot {std::filesystem::current_path() / "Config"};
         EngineConfig _EngineConfig {};
         AudioConfig _AudioConfig {};
 

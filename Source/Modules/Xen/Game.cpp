@@ -47,10 +47,7 @@ namespace Xen {
         // after it is not, so those exceptions propagate out of the
         // constructor rather than leaving a half-built Game that null-derefs
         // on the first frame.
-        try {
-            _EngineConfig = EngineConfig::Read("Config/EngineConfig.ini");
-            _AudioConfig  = AudioConfig::Read("Config/AudioConfig.ini");
-        } catch (const std::exception& Ex) { LOG_WARN("falling back to default config: %s", Ex.what()); }
+        LoadConfigs();
 
         _Window =
           std::make_unique<Window>(Title, _EngineConfig.Mode, _EngineConfig.ResolutionX, _EngineConfig.ResolutionY);
@@ -80,8 +77,8 @@ namespace Xen {
         // flag through the constructor - a virtual hook wouldn't work here
         // anyway, since a subclass override isn't reachable from the base
         // constructor that runs before the derived vtable is live.
-        if (!_MainViewport.Initialize(
-              *_RenderDevice, _Window->GetWidth(), _Window->GetHeight(), RHI::Format::BGRA8_UNORM, true)) {
+        if (!_MainViewport
+               .Initialize(*_RenderDevice, _Window->GetWidth(), _Window->GetHeight(), RHI::Format::BGRA8_UNORM, true)) {
             THROW_ENGINE_EXCEPTION(EngineException, "failed to initialize main viewport");
         }
 
@@ -112,8 +109,11 @@ namespace Xen {
     Game::Game(RHI::IRenderDevice& Device,
                const PAK::AssetMountConfig& MountConfig,
                const u32 InitialWidth,
-               const u32 InitialHeight)
+               const u32 InitialHeight,
+               const std::filesystem::path& ConfigRoot)
         : _RenderDevice(&Device), _Embedded(true) {
+        SetConfigRoot(ConfigRoot);
+
         // No _Window, no _OwnedDevice, no _DebugUI, no loading-screen
         // background paint - none of those exist without a swap chain of
         // this Game's own (see TickFrame/~Game for the other half of this).
@@ -146,10 +146,11 @@ namespace Xen {
         // stale copy if this mounts any later - exactly what a normal
         // "edit shader, rebuild, relaunch" dev loop does, not just the
         // while-the-game-is-running hot-reload path Poll() covers.
-        if (_ShaderHotReload.Initialize(
-              MountConfig.EngineShaderSourceDir, MountConfig.EngineShaderOutputDir, MountConfig.EngineDxcPath)) {
+        if (_ShaderHotReload.Initialize(MountConfig.EngineShaderSourceDir,
+                                        MountConfig.EngineShaderOutputDir,
+                                        MountConfig.EngineDxcPath)) {
             _Assets->AddSource(std::make_unique<PAK::LooseFileSource>(MountConfig.EngineShaderOutputDir,
-                                                                       PAK::MOUNT_PRIORITY_LOOSE_BASE * 10));
+                                                                      PAK::MOUNT_PRIORITY_LOOSE_BASE * 10));
         }
 
         _Textures = std::make_unique<TextureCache>(*_Assets, *_RenderDevice);
@@ -171,6 +172,18 @@ namespace Xen {
         if (!_FXAA.Initialize(*_RenderDevice, *_Assets, _MainViewport.GetColorFormat())) {
             LOG_DBG("FXAA not initialized (no shader asset found) - anti-aliasing unavailable");
         }
+    }
+
+    void Game::LoadConfigs() {
+        try {
+            _EngineConfig = EngineConfig::Read(_ConfigRoot / "EngineConfig.ini");
+            _AudioConfig  = AudioConfig::Read(_ConfigRoot / "AudioConfig.ini");
+        } catch (const std::exception& Ex) { LOG_WARN("falling back to default config: %s", Ex.what()); }
+    }
+
+    void Game::SetConfigRoot(const std::filesystem::path& ConfigRoot) {
+        _ConfigRoot = ConfigRoot;
+        LoadConfigs();
     }
 
     void Game::ReloadShaders() {
@@ -316,8 +329,7 @@ namespace Xen {
         // device's own SetSwapChainSize already applies to itself before
         // ResizeBuffers; a plain no-op in standalone mode, where nothing
         // holds a persistent descriptor into this Viewport.
-        if (_Embedded && _RenderDevice &&
-            (Width != _MainViewport.GetWidth() || Height != _MainViewport.GetHeight())) {
+        if (_Embedded && _RenderDevice && (Width != _MainViewport.GetWidth() || Height != _MainViewport.GetHeight())) {
             _RenderDevice->WaitIdle();
         }
 
@@ -456,8 +468,10 @@ namespace Xen {
                     }
                 }
                 AaSettings.Enabled &= AaTechnique == AntiAliasingTechnique::FXAA;
-                const RHI::TextureHandle PresentTarget = _FXAA.Render(
-                  _MainViewport.GetColorTarget(), _MainViewport.GetWidth(), _MainViewport.GetHeight(), AaSettings);
+                const RHI::TextureHandle PresentTarget = _FXAA.Render(_MainViewport.GetColorTarget(),
+                                                                      _MainViewport.GetWidth(),
+                                                                      _MainViewport.GetHeight(),
+                                                                      AaSettings);
 
                 // Standalone-game presentation: copy the (possibly FXAA'd)
                 // viewport color target into the back buffer.
@@ -580,11 +594,10 @@ namespace Xen {
         const auto Now = Clock::now();
 
         LoadingProgress Progress;
-        Progress.Total          = L.Loader.Total();
-        Progress.Done           = L.Loader.Done();
-        Progress.Fraction       = (L.AssetsDone || Progress.Total == 0)
-                                    ? 1.0f
-                                    : CAST<f32>(Progress.Done) / CAST<f32>(Progress.Total);
+        Progress.Total = L.Loader.Total();
+        Progress.Done  = L.Loader.Done();
+        Progress.Fraction =
+          (L.AssetsDone || Progress.Total == 0) ? 1.0f : CAST<f32>(Progress.Done) / CAST<f32>(Progress.Total);
         Progress.ElapsedSeconds = std::chrono::duration<f32>(Now - L.Start).count();
 
         const LoadingScreen::Config& Cfg = _LoadingScreen.GetConfig();
@@ -616,7 +629,7 @@ namespace Xen {
         // Once it has appeared, keep it up for its minimum time.
         if (L.Visible && std::chrono::duration<f32>(Now - L.VisibleSince).count() < Cfg.MinVisibleSeconds) return;
 
-        const bool WasVisible = L.Visible;
+        const bool WasVisible           = L.Visible;
         std::unique_ptr<Scene> Incoming = std::move(L.Incoming);
         _Load.reset();  // L is gone from here on
 
@@ -624,9 +637,7 @@ namespace Xen {
 
         // If the loading screen is up, bake the environment under it instead
         // of hitching the first real frame.
-        if (WasVisible && CanPresent && _MeshRenderer.IsInitialized()) {
-            DrawLoadingFrame(Progress, 0.0f, true);
-        }
+        if (WasVisible && CanPresent && _MeshRenderer.IsInitialized()) { DrawLoadingFrame(Progress, 0.0f, true); }
     }
 
     void Game::DrawLoadingFrame(const LoadingProgress& Progress, const f32 DeltaTime, const bool WarmUpEnvironment) {

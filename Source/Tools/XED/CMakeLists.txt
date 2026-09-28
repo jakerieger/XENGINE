@@ -32,10 +32,12 @@ xen_add_game_executable(XED
         ${IMGUI_SOURCES}
         ${RESOURCE_HEADERS}
         # Editor
-        ${CMAKE_CURRENT_SOURCE_DIR}/Source/main.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/Source/Editor.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/Source/Editor.hpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/Source/EditorConfig.hpp
+        Source/main.cpp
+        Source/Editor.cpp
+        Source/Editor.hpp
+        Source/EditorConfig.hpp
+        Source/Project.cpp
+        Source/Project.hpp
 )
 
 target_compile_definitions(XED PUBLIC
@@ -67,8 +69,8 @@ target_include_directories(XED PRIVATE ${MODULES_ROOT} ${VENDOR_ROOT} ${VENDOR_R
 # content system (loading an arbitrary project's own content root at
 # runtime) is later, separate work - see the editor plan.
 xen_configure_game(XED
-        PAK_FILENAME "Data.pxk"
+        ALLOW_NO_PAK
         CONTENT_DIRS "${CMAKE_SOURCE_DIR}/Source/Sandbox/Content"
 )
 xen_compile_shaders(XED)
-xen_package_game_content(XED CONTENT_DIR "${CMAKE_SOURCE_DIR}/Source/Sandbox/Content")
+xen_package_engine_content(XED)

@@ -16,6 +16,7 @@ xen_configure_game(Sandbox
         CONTENT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Content"
 )
 xen_compile_shaders(Sandbox)
+xen_package_engine_content(Sandbox)
 xen_package_game_content(Sandbox)
 
 target_include_directories(Sandbox PRIVATE Runtime Runtime/Source ${MODULES_ROOT} ${VENDOR_ROOT})

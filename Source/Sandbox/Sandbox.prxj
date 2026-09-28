@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "engineVersion": "dev",
+  "name": "Sandbox",
+  "directories": {
+    "config": "Config",
+    "content": "Content",
+    "runtime": "Runtime"
+  }
+}

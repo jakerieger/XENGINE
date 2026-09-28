@@ -64,8 +64,17 @@ function(xen_configure_game TARGET)
     endif ()
 
     set(XEN_ENGINE_SHADERS_PAK "R\"(EngineContent/XEN.Shaders.pxk)\"")
-
     set(XEN_ENGINE_ENVIRONMENT_PAK "R\"(EngineContent/XEN.Environment.pxk)\"")
+
+    set(_xen_pak_files)
+    if (NOT "${XEN_GEN_PAK_FILES}" STREQUAL "")
+        list(APPEND _xen_pak_files "${XEN_GEN_PAK_FILES}")
+    endif ()
+    list(APPEND _xen_pak_files
+            "${XEN_ENGINE_SHADERS_PAK}"
+            "${XEN_ENGINE_ENVIRONMENT_PAK}")
+
+    list(JOIN _xen_pak_files ",\n                                         " XEN_PAK_FILES_LIST)
 
     # Debug-only (see XenGameSettings.h.in's #ifdef NDEBUG split) - absolute
     # paths into the engine's OWN source tree, for ShaderHotReload. Baked in
@@ -116,6 +125,8 @@ function(xen_configure_game TARGET)
 
     target_include_directories(${TARGET} PRIVATE "${gen_dir}")
     target_link_libraries(${TARGET} PRIVATE Xen::Xen)
+
+
 endfunction()
 
 # Compiles the engine's shared HLSL (Source/Shaders/*.hlsl) to DXIL once per
@@ -136,6 +147,26 @@ function(xen_compile_shaders TARGET)
     endif ()
 
     add_dependencies(${TARGET} compile_engine_shaders)
+endfunction()
+
+function(xen_package_engine_content TARGET)
+    set(out_dir "$<TARGET_FILE_DIR:${TARGET}>/..")
+
+
+    set(encrypt_flag "--encrypt=$<CONFIG:Release>")
+    set(metadata_flag "--metadata=$<CONFIG:Debug>")
+
+    add_custom_command(
+            TARGET ${TARGET} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/Config" "${out_dir}/Config"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${out_dir}/EngineContent"
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Shaders" -o "${out_dir}/EngineContent/XEN.Shaders.pxk" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
+            COMMAND "${TOOLS_BIN_DIR}/PAKTool/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Environment" -o "${out_dir}/EngineContent/XEN.Environment.pxk" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
+            COMMENT "Packaging ${TARGET} engine content..."
+            VERBATIM
+    )
+
+    add_dependencies(${TARGET} PAKTool)
 endfunction()
 
 # Packages a configured game's runtime content into the distribution layout
@@ -160,7 +191,7 @@ endfunction()
 function(xen_package_game_content TARGET)
     cmake_parse_arguments(ARG
             ""
-            "PAK_FILENAME;CONTENT_DIR;CONFIG_DIR"
+            "PAK_FILENAME;CONTENT_DIR"
             ""
             ${ARGN})
 
@@ -175,9 +206,6 @@ function(xen_package_game_content TARGET)
     if (NOT ARG_CONTENT_DIR)
         set(ARG_CONTENT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Content")
     endif ()
-    if (NOT ARG_CONFIG_DIR)
-        set(ARG_CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Config")
-    endif ()
 
     set(out_dir "$<TARGET_FILE_DIR:${TARGET}>/..")
 
@@ -187,12 +215,8 @@ function(xen_package_game_content TARGET)
 
     add_custom_command(
             TARGET ${TARGET} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory "${ARG_CONFIG_DIR}" "${out_dir}/Config"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${out_dir}/EngineContent"
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Shaders" -o "${out_dir}/EngineContent/XEN.Shaders.pxk" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Environment" -o "${out_dir}/EngineContent/XEN.Environment.pxk" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
             COMMAND "${TOOLS_BIN_DIR}/PAKTool/PAKTool.exe" pack "${ARG_CONTENT_DIR}" -o "${out_dir}/${ARG_PAK_FILENAME}" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
-            COMMENT "Packaging ${TARGET} content (Config, Engine shaders/environment, ${ARG_PAK_FILENAME})..."
+            COMMENT "Packaging ${TARGET} content (Config, ${ARG_PAK_FILENAME})..."
             VERBATIM
     )
 

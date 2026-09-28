@@ -5,47 +5,9 @@
 #pragma once
 
 #include <Common/XenCommon.hpp>
-#include <ini.h>
+#include <Common/Ini.hpp>
 
 namespace Xen {
-    namespace Config {
-        using IniFile = mINI::INIFile;
-        using Ini     = mINI::INIStructure;
-
-        inline Ini Read(const std::string& Path) {
-            const IniFile File(Path);
-            Ini Out;
-
-            if (!File.read(Out)) {
-                THROW_ENGINE_EXCEPTION(EngineException, "failed to load config file '" + Path + "'");
-            }
-
-            return Out;
-        }
-
-        inline u32 GetU32(const std::string& Val) {
-            return CAST<u32>(std::stoi(Val));
-        }
-
-        inline f32 GetFloat(const std::string& Val) {
-            return std::stof(Val);
-        }
-
-        inline std::vector<std::string> GetList(const std::string& Val) {
-            auto Split = [](const std::string& value) -> std::vector<std::string> {
-                std::vector<std::string> result;
-                std::stringstream ss(value);
-                std::string token;
-                while (std::getline(ss, token, ',')) {
-                    result.push_back(token);
-                }
-                return result;
-            };
-
-            return Split(Val);
-        }
-    }  // namespace Config
-
     struct EngineConfig {
         enum class WindowMode : u8 {
             Windowed   = 0,
@@ -58,8 +20,11 @@ namespace Xen {
         u32 ResolutionX {1280};
         u32 ResolutionY {720};
 
-        static EngineConfig Read(const std::string& Path) {
-            Config::Ini Cfg = Config::Read(Path);
+        static EngineConfig Read(const std::filesystem::path& Path) {
+            const auto ReadResult = INI::ReadFromFile(Path);
+            if (!ReadResult.has_value()) { return {}; }
+
+            INI::Config Cfg = *ReadResult;
 
             auto StrToMode = [](const std::string& Str) -> WindowMode {
                 if (Str == "windowed") { return WindowMode::Windowed; }
@@ -71,8 +36,8 @@ namespace Xen {
             return {
               .StartupScene = Cfg["Engine"]["StartupScene"],
               .Mode         = StrToMode(Cfg["Engine"]["WindowMode"]),
-              .ResolutionX  = Config::GetU32(Cfg["Engine"]["ResolutionX"]),
-              .ResolutionY  = Config::GetU32(Cfg["Engine"]["ResolutionY"]),
+              .ResolutionX  = INI::GetU32(Cfg["Engine"]["ResolutionX"]),
+              .ResolutionY  = INI::GetU32(Cfg["Engine"]["ResolutionY"]),
             };
         }
     };
@@ -84,15 +49,18 @@ namespace Xen {
         f32 VoiceVolume {1.0f};
         f32 UIVolume {1.0f};
 
-        static AudioConfig Read(const std::string& Path) {
-            Config::Ini Cfg = Config::Read(Path);
+        static AudioConfig Read(const std::filesystem::path& Path) {
+            const auto ReadResult = INI::ReadFromFile(Path);
+            if (!ReadResult.has_value()) { return {}; }
+
+            INI::Config Cfg = *ReadResult;
 
             AudioConfig Out;
-            Out.MasterVolume  = Config::GetFloat(Cfg["Audio"]["MasterVolume"]);
-            Out.MusicVolume   = Config::GetFloat(Cfg["Audio"]["MusicVolume"]);
-            Out.EffectsVolume = Config::GetFloat(Cfg["Audio"]["EffectsVolume"]);
-            Out.VoiceVolume   = Config::GetFloat(Cfg["Audio"]["VoiceVolume"]);
-            Out.UIVolume      = Config::GetFloat(Cfg["Audio"]["UIVolume"]);
+            Out.MasterVolume  = INI::GetF32(Cfg["Audio"]["MasterVolume"]);
+            Out.MusicVolume   = INI::GetF32(Cfg["Audio"]["MusicVolume"]);
+            Out.EffectsVolume = INI::GetF32(Cfg["Audio"]["EffectsVolume"]);
+            Out.VoiceVolume   = INI::GetF32(Cfg["Audio"]["VoiceVolume"]);
+            Out.UIVolume      = INI::GetF32(Cfg["Audio"]["UIVolume"]);
 
             return Out;
         }
