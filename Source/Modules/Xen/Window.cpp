@@ -8,6 +8,7 @@
 #include "Window.hpp"
 #include "UIOverlay.hpp"
 
+#include <combaseapi.h>
 #include <vector>
 
 namespace Xen {
@@ -25,6 +26,9 @@ namespace Xen {
     }  // namespace
 
     Window::Window(const std::string& Title, const EngineConfig::WindowMode Mode, const u32 Width, const u32 Height) {
+        const auto HR = ::CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        if (FAILED(HR)) { THROW_ENGINE_EXCEPTION(EngineException, "Failed to initialize COM"); }
+
         const HINSTANCE Instance = GetModuleHandleW(nullptr);
 
         if (g_WindowCount == 0) {
@@ -339,6 +343,8 @@ namespace Xen {
         }
 
         if (g_WindowCount == 0) UnregisterClassW(WINDOW_CLASS_NAME, GetModuleHandleW(nullptr));
+
+        ::CoUninitialize();
     }
 
     void Window::CenterWindowOnScreen() const {

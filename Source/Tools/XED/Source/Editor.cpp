@@ -20,14 +20,40 @@
 
 namespace Xen {
     namespace {
+        // Name shown in the Hierarchy list alongside the actual handle it
+        // refers to - see EditorState::SelectedActor's own comment for why
+        // the handle, not a list position, is what actually identifies an
+        // actor here.
+        struct ActorListEntry {
+            std::string Name;
+            ActorHandle Handle;
+        };
+
         struct EditorState {
-            std::vector<std::string> SceneActors;
-            int SelectedActor = 0;
+            std::vector<ActorListEntry> SceneActors;
+
+            // The actually-selected actor, by handle - NOT a list index.
+            // Scene::ForEachActor iterates actors in slot order, and a
+            // deleted actor's slot gets reused (LIFO) by the next spawn, so
+            // "index i" can refer to a completely different actor from one
+            // frame to the next once anything has ever been deleted -
+            // exactly the scenario Duplicate -> Delete the copy -> Duplicate
+            // the original again hits, since the second Duplicate's clone
+            // lands in the first clone's just-freed slot. ActorHandle
+            // doesn't have this problem: Scene bumps a slot's generation on
+            // destroy specifically so a handle into a reused slot fails to
+            // resolve instead of silently resolving to whichever new actor
+            // inherited it (see Scene.hpp's own class comment).
+            ActorHandle SelectedActor {};
+
             bool ActorEnabled {false};
             Float3 TransformPosition {};
             Float3 TransformRotation {};
             Float3 TransformScale {};
+            std::array<char, MAX_PATH> NewActorName {'\0'};
         };
+
+        constexpr f32 ToolbarHeight = 40.0f;
     }  // namespace
 
     // Global frame-by-frame UI state
@@ -66,6 +92,7 @@ namespace Xen {
         _Window->SetUIOverlay(&_UI);
 
         LoadEditorFonts();
+        SetupShortcuts();
 
         // Sized once here to something reasonable; the "Scene" panel's own
         // content-region size takes over from the first real layout pass
@@ -157,12 +184,12 @@ namespace Xen {
         _Device->EndFrame();
     }
 
-    void Editor::EnsureDefaultLayout(const unsigned int DockspaceID) const {
+    void Editor::EnsureDefaultLayout(const unsigned int DockspaceID, const f32 Width, const f32 Height) const {
         if (ImGui::DockBuilderGetNode(DockspaceID)) return;  // a saved layout already exists
 
         ImGui::DockBuilderRemoveNode(DockspaceID);
         ImGui::DockBuilderAddNode(DockspaceID, ImGuiDockNodeFlags_DockSpace);
-        ImGui::DockBuilderSetNodeSize(DockspaceID, ImGui::GetMainViewport()->Size);
+        ImGui::DockBuilderSetNodeSize(DockspaceID, ImVec2(Width, Height));
 
         ImGuiID Center       = DockspaceID;
         const ImGuiID Right  = ImGui::DockBuilderSplitNode(Center, ImGuiDir_Right, 0.25f, nullptr, &Center);
@@ -265,8 +292,7 @@ namespace Xen {
             if (_EmbeddedGame && _EmbeddedGame->GetActiveScene()) {
                 const auto* S = _EmbeddedGame->GetActiveScene();
                 if (S) {
-                    const ActorHandle SelectedActorHandle = S->FindByActorID(State.SelectedActor + 1);
-                    Actor* pSelectedActor                 = S->Get(SelectedActorHandle);
+                    Actor* pSelectedActor = S->Get(State.SelectedActor);
                     if (pSelectedActor) {
                         {
                             ScopedFont _(&_UI, "InterBold");
@@ -339,23 +365,48 @@ namespace Xen {
         }
         ImGui::End();
     }
+
+    void Editor::Action_NewActor(Scene* S, const std::string& Name) const {
+        S->Spawn(Name);
+    }
+
     void Editor::View_Hierarchy() const {
         if (ImGui::Begin("Hierarchy")) {
             if (_EmbeddedGame && _EmbeddedGame->GetActiveScene()) {
-                const auto* S = _EmbeddedGame->GetActiveScene();
+                auto* S = _EmbeddedGame->GetActiveScene();
                 if (S) {
-                    State.SceneActors.clear();
+                    ImGui::InputText("Name", State.NewActorName.data(), State.NewActorName.size());
+                    const std::string Name(State.NewActorName.data());
+                    ImGui::BeginDisabled(Name.empty());
+                    if (ImGui::Button("Add Actor", ImVec2(-FLT_MIN, 32.f))) {
+                        Action_NewActor(S, Name);
+                        State.NewActorName.fill('\0');
+                    }
+                    ImGui::EndDisabled();
 
-                    S->ForEachActor([&](const Actor& A) { State.SceneActors.emplace_back(A.GetName()); });
+                    ImGui::Spacing();
+
+                    State.SceneActors.clear();
+                    S->ForEachActor([&](const Actor& A) { State.SceneActors.push_back({A.GetName(), A.GetHandle()}); });
 
                     if (ImGui::BeginListBox("##Actors", ImVec2(-FLT_MIN, -FLT_MIN))) {
                         for (auto i = 0; i < State.SceneActors.size(); i++) {
-                            const bool IsSelected = (State.SelectedActor == i);
-                            if (ImGui::Selectable(State.SceneActors[i].c_str(), IsSelected)) {
-                                State.SelectedActor = i;
+                            const ActorListEntry& Entry = State.SceneActors[i];
+                            const bool IsSelected       = (State.SelectedActor == Entry.Handle);
+                            if (ImGui::Selectable(Entry.Name.c_str(), IsSelected)) {
+                                State.SelectedActor = Entry.Handle;
                             }
 
                             if (IsSelected) ImGui::SetItemDefaultFocus();
+
+                            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) { State.SelectedActor = Entry.Handle; }
+
+                            if (ImGui::BeginPopupContextItem(("##ActorContext" + std::to_string(i)).c_str())) {
+                                if (ImGui::MenuItem("Duplicate")) { Action_DuplicateActor(S); }
+                                ImGui::Separator();
+                                if (ImGui::MenuItem("Delete")) { Action_DeleteActor(S); }
+                                ImGui::EndPopup();
+                            }
                         }
                     }
                     ImGui::EndListBox();
@@ -375,10 +426,160 @@ namespace Xen {
         ImGui::End();
     }
 
+    void Editor::Action_OpenProject() {
+        FileDialogs::FileTypeFilter Filter {
+          .Name       = L"XED Project",
+          .Extensions = L"*.prxj",
+        };
+        const auto SelectedResult = FileDialogs::OpenFileDialog(_Window->GetHandle(), L"Open XED project", {Filter});
+        if (SelectedResult.has_value() && exists(*SelectedResult)) { LoadProject(*SelectedResult); }
+    }
+
+    void Editor::Action_Quit() {
+        _Running = false;
+    }
+
+    void Editor::Action_DeleteActor(Scene* S) const {
+        if (!S) return;
+        S->Destroy(State.SelectedActor);
+        State.SelectedActor = ActorHandle::Invalid();
+    }
+
+    void Editor::Action_DuplicateActor(Scene* S) const {
+        if (!S) return;
+        const ActorHandle NewHandle = S->Clone(State.SelectedActor);
+        // Select the new clone, same as most editors' own Duplicate - also
+        // makes it immediately obvious the clone worked, rather than leaving
+        // the original selected and the clone sitting unselected at the end
+        // of the list.
+        if (NewHandle.IsSet()) { State.SelectedActor = NewHandle; }
+    }
+
+    void Editor::RegisterShortcut(const int Keys, std::function<void()> Action) {
+        _Shortcuts.push_back({
+          .Keys   = Keys,
+          .Action = std::move(Action),
+        });
+    }
+
+    void Editor::ProcessShortcuts() const {
+        for (const auto& [Keys, Action] : _Shortcuts) {
+            // RouteGlobal, not the Shortcut()-default RouteFocused: these are
+            // editor-wide bindings (Ctrl+O should open a project no matter
+            // which panel - Scene, Hierarchy, whatever - currently has
+            // focus), not scoped to one particular window. Called from
+            // DrawDockspaceAndPanels, outside any window's own Begin/End, so
+            // there's no "currently focused window" for RouteFocused to even
+            // attach to in the first place.
+            if (ImGui::Shortcut(CAST<ImGuiKeyChord>(Keys), ImGuiInputFlags_RouteGlobal)) { Action(); }
+        }
+    }
+
+    void Editor::SetupShortcuts() {
+        RegisterShortcut(ImGuiMod_Ctrl | ImGuiKey_O, [this] { Action_OpenProject(); });
+        RegisterShortcut(ImGuiMod_Ctrl | ImGuiKey_Q, [this] { Action_Quit(); });
+    }
+
+    void Editor::DrawMainMenuBar() {
+        if (!ImGui::BeginMainMenuBar()) return;
+
+        // BeginMainMenuBar already shrinks ImGui::GetMainViewport()->WorkPos/
+        // WorkSize by its own height, so DrawToolbar (and, below it, the
+        // dockspace host window) automatically start under this bar without
+        // either of them needing to know how tall it is.
+        if (ImGui::BeginMenu("File")) {
+            ImGui::MenuItem("New Project", nullptr, false, false);
+            if (ImGui::MenuItem("Open Project", "Ctrl+O", false, true)) { Action_OpenProject(); }
+            ImGui::MenuItem("Save", "Ctrl+S", false, false);
+            ImGui::MenuItem("Save As...", "Ctrl+Shift+S", false, false);
+            ImGui::Separator();
+            if (ImGui::MenuItem("Exit", "Ctrl+Q")) { Action_Quit(); }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Edit")) {
+            ImGui::MenuItem("Undo", "Ctrl+Z", false, false);
+            ImGui::MenuItem("Redo", "Ctrl+Y", false, false);
+            ImGui::Separator();
+            ImGui::MenuItem("Cut", "Ctrl+X", false, false);
+            ImGui::MenuItem("Copy", "Ctrl+C", false, false);
+            ImGui::MenuItem("Paste", "Ctrl+V", false, false);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("View")) {
+            ImGui::MenuItem("Reset Layout", nullptr, false, false);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Build")) {
+            ImGui::MenuItem("Build Project", nullptr, false, false);
+            ImGui::MenuItem("Rebuild", nullptr, false, false);
+            ImGui::MenuItem("Clean", nullptr, false, false);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Help")) {
+            ImGui::MenuItem("Documentation", nullptr, false, false);
+            ImGui::MenuItem("About XED", nullptr, false, false);
+            ImGui::EndMenu();
+        }
+
+        ImGui::EndMainMenuBar();
+    }
+
+    void Editor::DrawToolbar() const {
+        const ImGuiViewport* Viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(Viewport->WorkPos);
+        ImGui::SetNextWindowSize(ImVec2(Viewport->WorkSize.x, ToolbarHeight));
+        ImGui::SetNextWindowViewport(Viewport->ID);
+
+        constexpr ImGuiWindowFlags ToolbarFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                                  ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                                                  ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse |
+                                                  ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoSavedSettings;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        if (ImGui::Begin("##Toolbar", nullptr, ToolbarFlags)) { ImGui::TextDisabled("(toolbar - later work)"); }
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+    }
+
     void Editor::DrawDockspaceAndPanels(const f32 DeltaTime) {
+        // Outside any window's Begin/End on purpose - see ProcessShortcuts'
+        // own comment on why these need RouteGlobal, not the default
+        // RouteFocused, to fire regardless of which panel has focus.
+        ProcessShortcuts();
+
+        DrawMainMenuBar();
+        DrawToolbar();
+
+        // The dockspace host window fills whatever's left of the viewport's
+        // work area below the toolbar - same shape as ImGui::
+        // DockSpaceOverViewport's own source (imgui.cpp), just with this
+        // shrunk rect instead of the viewport's own WorkPos/WorkSize, since
+        // that convenience wrapper has no way to reserve toolbar space
+        // itself.
+        const ImGuiViewport* Viewport = ImGui::GetMainViewport();
+        const ImVec2 DockspacePos(Viewport->WorkPos.x, Viewport->WorkPos.y + ToolbarHeight);
+        const ImVec2 DockspaceSize(Viewport->WorkSize.x, Viewport->WorkSize.y - ToolbarHeight);
+
+        ImGui::SetNextWindowPos(DockspacePos);
+        ImGui::SetNextWindowSize(DockspaceSize);
+        ImGui::SetNextWindowViewport(Viewport->ID);
+
+        constexpr ImGuiWindowFlags HostFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
+                                               ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                                               ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoBringToFrontOnFocus |
+                                               ImGuiWindowFlags_NoNavFocus;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        ImGui::Begin("EditorDockspaceHost", nullptr, HostFlags);
+        ImGui::PopStyleVar(3);
+
         const ImGuiID DockspaceID = ImGui::GetID("EditorDockspace");
-        EnsureDefaultLayout(DockspaceID);
-        ImGui::DockSpaceOverViewport(DockspaceID, ImGui::GetMainViewport());
+        EnsureDefaultLayout(DockspaceID, DockspaceSize.x, DockspaceSize.y);
+        ImGui::DockSpace(DockspaceID, ImVec2(0.0f, 0.0f));
+        ImGui::End();
 
         View_Scene(DeltaTime);
         View_Hierarchy();

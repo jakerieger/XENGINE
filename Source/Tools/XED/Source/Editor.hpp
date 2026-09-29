@@ -15,7 +15,9 @@
 #include "EditorProject.hpp"
 
 #include <filesystem>
+#include <functional>
 #include <memory>
+#include <vector>
 
 namespace Xen {
     DEFINE_ENGINE_EXCEPTION(EditorException);
@@ -35,7 +37,13 @@ namespace Xen {
     private:
         void TickFrame(f32 DeltaTime);
         void DrawDockspaceAndPanels(f32 DeltaTime);
-        void EnsureDefaultLayout(unsigned int DockspaceID) const;
+        void DrawMainMenuBar();
+        void DrawToolbar() const;
+
+        // Width/Height rather than an ImVec2, so this header (like EditorUI.hpp/
+        // DebugUI.hpp) doesn't need to pull in Dear ImGui's own headers just to
+        // declare it.
+        void EnsureDefaultLayout(unsigned int DockspaceID, f32 Width, f32 Height) const;
 
         void LoadTheme(const std::string& ThemeFile);
         void ApplyCurrentTheme() const;
@@ -43,9 +51,38 @@ namespace Xen {
         // Each view or panel in the editor UI
         void View_Inspector() const;
         void View_Scene(f32 DeltaTime);
+        void Action_NewActor(Scene* S, const std::string& Name) const;
         void View_Hierarchy() const;
         void View_ContentBrowser() const;
         void View_Log() const;
+
+        // Dedicated methods for main menu actions so they can be called independently (i.e. for keyboard shortcuts)
+        void Action_OpenProject();
+        void Action_Quit();
+        void Action_DeleteActor(Scene* S) const;
+        void Action_DuplicateActor(Scene* S) const;
+
+        // Keyboard shortcuts: register once (typically in the constructor)
+        // with RegisterShortcut(Keys, Action), then ProcessShortcuts() fires
+        // whichever ones were pressed this frame - called once per frame
+        // from DrawDockspaceAndPanels, outside any specific panel's Begin/
+        // End so the shortcuts are global (see ProcessShortcuts' own comment
+        // on ImGuiInputFlags_RouteGlobal) rather than only firing while one
+        // particular window happens to have focus.
+        //
+        // Keys is an ImGuiKeyChord (see imgui.h) - e.g. ImGuiMod_Ctrl |
+        // ImGuiKey_O - kept as a plain int here so this header, like
+        // EditorUI.hpp/DebugUI.hpp, doesn't need Dear ImGui's own headers
+        // just to declare this.
+        void RegisterShortcut(int Keys, std::function<void()> Action);
+        void ProcessShortcuts() const;
+        void SetupShortcuts();
+
+        struct EditorShortcut {
+            int Keys;
+            std::function<void()> Action;
+        };
+        std::vector<EditorShortcut> _Shortcuts;
 
         EditorConfig _Config {};
         EditorProject _CurrentProject {};

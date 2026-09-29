@@ -86,6 +86,28 @@ namespace Xen {
         /// tick. Its children are destroyed with it.
         void Destroy(ActorHandle Handle);
 
+        /// @brief Deep-copies an actor - its own properties (Transform,
+        /// Enabled, ...) and every component, whatever type they are -
+        /// into a new, fully independent actor in this same scene, and
+        /// returns a handle to it. Recurses over Handle's children too, so
+        /// duplicating a parent duplicates its whole subtree rather than
+        /// silently leaving the clone childless; each cloned child is
+        /// attached under the cloned parent. The clone is attached to the
+        /// same parent Handle itself had (a new sibling), and its name gets
+        /// a " (Copy)" suffix so it isn't a silent duplicate in a UI that
+        /// lists actors by name.
+        ///
+        /// Returns an invalid handle if Handle doesn't resolve. Component-
+        /// type-agnostic: reuses the exact same reflection-based round trip
+        /// (JsonSaveReflector/JsonLoadReflector, ComponentRegistry::Create)
+        /// SceneSerializer's whole-scene save/load already does, so cloning
+        /// stays correct automatically as new component types are added -
+        /// no component needs its own Clone() override. Like a scene
+        /// save/load, a component's own IComponent::Enabled flag (distinct
+        /// from Actor::Enabled) isn't part of this, since it was never part
+        /// of what Reflect() visits in the first place.
+        ActorHandle Clone(ActorHandle Handle);
+
         // --- Iteration --------------------------------------------------
 
         /// @brief Visits every live actor. Safe to spawn or destroy during
