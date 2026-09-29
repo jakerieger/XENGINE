@@ -12,7 +12,7 @@ namespace Xen {
 
     using Json = nlohmann::ordered_json;
 
-    struct Project {
+    struct EditorProject {
         u32 Version {1};
         std::string EngineVersion;
         std::string Name;
@@ -26,9 +26,9 @@ namespace Xen {
         ProjectSerializer() = delete;
 
     public:
-        static std::optional<Project> LoadFromFile(const std::filesystem::path& PrxjPath);
-        static std::optional<Project> LoadFromString(const std::string& JsonStr,
-                                                     const std::filesystem::path& ProjectRoot);
+        static std::optional<EditorProject> LoadFromFile(const std::filesystem::path& PrxjPath);
+        static std::optional<EditorProject> LoadFromString(const std::string& JsonStr,
+                                                           const std::filesystem::path& ProjectRoot);
 
         // TODO: Save variants
     };

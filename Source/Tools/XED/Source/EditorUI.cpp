@@ -243,23 +243,28 @@ namespace Xen {
         return CAST<ImTextureID>(Gpu.ptr);
     }
 
-    bool EditorUI::LoadFont(const std::string& Name,
-                            const unsigned char* Data,
-                            const size_t DataSize,
-                            const f32 Pixels) const {
-        // AddFontFromMemoryTTF takes ownership of Data by default and IM_FREEs
-        // it when the atlas is torn down - fine for a buffer it allocated
-        // itself, but Data here is caller-owned (typically a static embedded
-        // resource, never heap-allocated by ImGui's own allocator), so
-        // freeing it on shutdown is undefined behavior. FontDataOwnedByAtlas
-        // = false keeps ownership with the caller instead; the data only
-        // needs to outlive this EditorUI, which a static resource trivially
-        // does.
+    bool
+    EditorUI::LoadFont(const std::string& Name, const unsigned char* Data, const u32 DataSize, const f32 Pixels) const {
         ImFontConfig Config;
         Config.FontDataOwnedByAtlas = false;
-        _Impl->Fonts[Name] =
-          ImGui::GetIO().Fonts->AddFontFromMemoryTTF((void*)Data, CAST<int>(DataSize), Pixels, &Config);
+        _Impl->Fonts[Name] = ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(Data, DataSize, Pixels, &Config);
         if (_Impl->Fonts[Name] == nullptr) return false;
         return true;
+    }
+
+    ImFont* EditorUI::GetFont(const std::string& Name) const {
+        if (!_Initialized) return nullptr;
+        return _Impl->Fonts[Name];
+    }
+
+    ScopedFont::ScopedFont(const EditorUI* UI, const std::string& Name) {
+        if (!UI) return;
+        auto* Font = UI->GetFont(Name);
+        if (!Font) return;
+        ImGui::PushFont(Font);
+    }
+
+    ScopedFont::~ScopedFont() {
+        ImGui::PopFont();
     }
 }  // namespace Xen

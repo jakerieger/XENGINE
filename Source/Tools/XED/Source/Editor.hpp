@@ -12,7 +12,7 @@
 #include "EditorConfig.hpp"
 #include "EditorTheme.hpp"
 #include "EditorUI.hpp"
-#include "Project.hpp"
+#include "EditorProject.hpp"
 
 #include <filesystem>
 #include <memory>
@@ -20,17 +20,9 @@
 namespace Xen {
     DEFINE_ENGINE_EXCEPTION(EditorException);
 
-    /// @brief Editor slice 1: a docked ImGui UI around a "Scene" panel that
-    /// displays an embedded Game's own Viewport - not a project/content
-    /// system yet (a hardcoded test content dir, see CMakeLists.txt), not
-    /// play-in-editor input routing. One IRenderDevice and one EditorUI for
-    /// the whole editor, shared with (but not owned by) the embedded Game -
-    /// see Game.hpp's editor constructor for why. EditorUI is NOT DebugUI -
-    /// the engine's own debug overlay is compiled out of a shippable Release
-    /// build, which an editor's own UI cannot tolerate, so the editor owns a
-    /// completely separate, always-on UI class instead (see EditorUI.hpp).
     class Editor {
     public:
+        void LoadEditorFonts() const;
         Editor();
         ~Editor();
 
@@ -45,6 +37,9 @@ namespace Xen {
         void DrawDockspaceAndPanels(f32 DeltaTime);
         void EnsureDefaultLayout(unsigned int DockspaceID) const;
 
+        void LoadTheme(const std::string& ThemeFile);
+        void ApplyCurrentTheme() const;
+
         // Each view or panel in the editor UI
         void View_Inspector() const;
         void View_Scene(f32 DeltaTime);
@@ -53,8 +48,9 @@ namespace Xen {
         void View_Log() const;
 
         EditorConfig _Config {};
-        Project _CurrentProject {};
-        std::unique_ptr<Window> _EditorWindow;
+        EditorProject _CurrentProject {};
+        EditorTheme _CurrentTheme {};
+        std::unique_ptr<Window> _Window;
 
         // Destroyed in reverse declaration order: _UI first (its own
         // WaitIdle backstop still has a live _Device either way - see

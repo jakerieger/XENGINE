@@ -31,6 +31,8 @@
 // need Dear ImGui's own headers just to include EditorUI.hpp.
 using ImTextureID = unsigned long long;
 
+struct ImFont;
+
 namespace Xen {
     class Window;
 
@@ -88,11 +90,17 @@ namespace Xen {
         /// color TextureHandle (see D3D12RenderDevice::CreateTextureSRV).
         NODISCARD ImTextureID GetOrCreateSceneTextureID(RHI::TextureHandle Handle);
 
-        bool LoadFont(const std::string& Name, const unsigned char* Data, size_t DataSize, f32 Pixels = 16.f) const;
+        bool LoadFont(const std::string& Name, const unsigned char* Data, u32 DataSize, f32 Pixels = 16.f) const;
+        ImFont* GetFont(const std::string& Name) const;
 
     private:
         struct Impl;
         std::unique_ptr<Impl> _Impl;
         bool _Initialized {false};
+    };
+
+    struct ScopedFont {
+        ScopedFont(const EditorUI* UI, const std::string& Name);
+        ~ScopedFont();
     };
 }  // namespace Xen

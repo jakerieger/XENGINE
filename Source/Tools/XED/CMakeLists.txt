@@ -2,11 +2,6 @@ project(XENGINE)
 
 include(XenGame)
 
-file(GLOB_RECURSE IMGUI_SOURCES
-        ${VENDOR_ROOT}/imgui/*.h
-        ${VENDOR_ROOT}/imgui/*.cpp
-)
-
 file(GLOB RESOURCE_HEADERS
         Source/Resource/*.h
 )
@@ -36,11 +31,12 @@ xen_add_game_executable(XED
         Source/Editor.cpp
         Source/Editor.hpp
         Source/EditorConfig.hpp
+        Source/EditorTheme.cpp
         Source/EditorTheme.hpp
         Source/EditorUI.cpp
         Source/EditorUI.hpp
-        Source/Project.cpp
-        Source/Project.hpp
+        Source/EditorProject.cpp
+        Source/EditorProject.hpp
 )
 
 target_compile_definitions(XED PUBLIC
@@ -66,14 +62,9 @@ target_link_libraries(XED PRIVATE
 
 target_include_directories(XED PRIVATE ${MODULES_ROOT} ${VENDOR_ROOT} ${VENDOR_ROOT}/imgui)
 
-# Reuses Sandbox's own Content/ as XED's test content for this editor slice
-# (an embedded Game needs *something* to mount and render) - packed into
-# XED's own Data.pxk, entirely separate from Sandbox's. The real project/
-# content system (loading an arbitrary project's own content root at
-# runtime) is later, separate work - see the editor plan.
 xen_configure_game(XED
         ALLOW_NO_PAK
-        CONTENT_DIRS "${CMAKE_SOURCE_DIR}/Source/Sandbox/Content"
+        CONTENT_DIRS "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
 )
 xen_compile_shaders(XED)
 xen_package_engine_content(XED)

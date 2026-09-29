@@ -462,12 +462,18 @@ namespace Xen {
             if (!_Embedded) {
                 AntiAliasingTechnique AaTechnique = AntiAliasingTechnique::TAA;
                 FXAA::Settings AaSettings;
-                const std::vector<Actor*> AaActors = _ActiveScene->FindActorsWith<AntiAliasingComponent>();
-                if (!AaActors.empty()) {
-                    if (const auto* AA = AaActors.front()->GetComponent<AntiAliasingComponent>()) {
-                        AaTechnique = AA->GetTechnique();
-                        AaSettings  = AA->GetFxaaSettings();
-                    }
+                // Scene::FindActorsWith doesn't filter by Actor::IsEnabled
+                // itself (see Scene.hpp) - the first ENABLED actor-and-
+                // component pair wins, same convention as Scene::
+                // GetMainCamera and MeshRenderer's own "first one found"
+                // lookups.
+                for (Actor* A : _ActiveScene->FindActorsWith<AntiAliasingComponent>()) {
+                    if (!A->IsEnabled()) continue;
+                    const auto* AA = A->GetComponent<AntiAliasingComponent>();
+                    if (!AA || !AA->IsEnabled()) continue;
+                    AaTechnique = AA->GetTechnique();
+                    AaSettings  = AA->GetFxaaSettings();
+                    break;
                 }
                 AaSettings.Enabled &= AaTechnique == AntiAliasingTechnique::FXAA;
                 const RHI::TextureHandle PresentTarget = _FXAA.Render(_MainViewport.GetColorTarget(),

@@ -1,5 +1,22 @@
 {
   "version": 1,
   "name": "Dark",
-  "colors": {}
+  "colors": {
+    "windowBackground": "#111111",
+    "panelBackground": "#151515",
+    "border": "#3b3b3a",
+    "tabActive": "#363636",
+    "tabInactive": "#1f1f1f",
+    "buttonPrimary": "#414140",
+    "buttonSecondary": "#2b2b2a",
+    "input": "#20201f",
+    "textPrimary": "#d3d2cf",
+    "textSecondary": "#797872",
+    "textDisabled": "#706e69"
+  },
+  "windowRounding": 0.0,
+  "frameRounding": 4.0,
+  "tabRounding": 4.0,
+  "windowBorderSize": 1.0,
+  "frameBorderSize": 1.0
 }

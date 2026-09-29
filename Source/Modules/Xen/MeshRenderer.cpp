@@ -170,6 +170,25 @@ namespace Xen {
             }
             return true;
         }
+
+        // Scene::FindActorsWith/ForEachActor deliberately don't filter by
+        // Actor::IsEnabled themselves (see Scene.hpp) - every caller decides
+        // what "enabled" means for its own purposes. This is that decision
+        // for every "the scene's first ComponentType wins" lookup below
+        // (environment, directional light, AA/AO/PostProcess settings): the
+        // first actor-and-component pair that's both enabled, matching the
+        // exact convention Scene::GetMainCamera already uses for cameras.
+        // The frustum-culled mesh list and the point/spot light collection
+        // below aren't a "first one found" lookup, so they check inline
+        // instead of going through this.
+        template<typename T>
+        T* FindFirstEnabledComponent(const Scene& S) {
+            for (Actor* A : S.FindActorsWith<T>()) {
+                if (!A->IsEnabled()) continue;
+                if (T* C = A->GetComponent<T>(); C && C->IsEnabled()) return C;
+            }
+            return nullptr;
+        }
     }  // namespace
 
     MeshRenderer::~MeshRenderer() {
@@ -780,17 +799,13 @@ namespace Xen {
         // one found" rule as the light); it's baked into the prefiltered/
         // irradiance pair the shader actually samples.
         RHI::TextureHandle EnvironmentSource {};
-        u32 EnvironmentWidth                   = 0;
-        bool ShowBackground                    = false;
-        const std::vector<Actor*> Environments = S.FindActorsWith<EnvironmentComponent>();
-        if (!Environments.empty()) {
-            if (const auto* Env = Environments.front()->GetComponent<EnvironmentComponent>();
-                Env && Env->GetMap().IsValid()) {
-                EnvironmentSource = Env->GetMap();
-                ShowBackground    = Env->GetShowBackground();
-                if (const TextureCache* Textures = S.GetContext().Textures) {
-                    EnvironmentWidth = Textures->GetInfo(EnvironmentSource).Width;
-                }
+        u32 EnvironmentWidth = 0;
+        bool ShowBackground  = false;
+        if (const auto* Env = FindFirstEnabledComponent<EnvironmentComponent>(S); Env && Env->GetMap().IsValid()) {
+            EnvironmentSource = Env->GetMap();
+            ShowBackground    = Env->GetShowBackground();
+            if (const TextureCache* Textures = S.GetContext().Textures) {
+                EnvironmentWidth = Textures->GetInfo(EnvironmentSource).Width;
             }
         }
 
@@ -857,6 +872,8 @@ namespace Xen {
         f32 NearestCasterDistance = std::numeric_limits<f32>::max();
 
         S.ForEachActor([&](Actor& A) {
+            if (!A.IsEnabled()) return;
+
             auto* MeshComp     = A.GetComponent<MeshComponent>();
             auto* MaterialComp = A.GetComponent<PBRMaterialComponent>();
             if (!MeshComp || !MaterialComp) return;
@@ -1069,12 +1086,9 @@ namespace Xen {
         // before ViewProjection is.
         AntiAliasingTechnique AaTechnique = AntiAliasingTechnique::TAA;
         TAA::Settings TaaSettings;
-        const std::vector<Actor*> AaActors = S.FindActorsWith<AntiAliasingComponent>();
-        if (!AaActors.empty()) {
-            if (const auto* AA = AaActors.front()->GetComponent<AntiAliasingComponent>()) {
-                AaTechnique = AA->GetTechnique();
-                TaaSettings = AA->GetTaaSettings();
-            }
+        if (const auto* AA = FindFirstEnabledComponent<AntiAliasingComponent>(S)) {
+            AaTechnique = AA->GetTechnique();
+            TaaSettings = AA->GetTaaSettings();
         }
         const bool UseTaa = AaTechnique == AntiAliasingTechnique::TAA && TaaSettings.Enabled && _TAA.IsInitialized();
 
@@ -1136,15 +1150,11 @@ namespace Xen {
             Float3 LightColor {1.0f, 1.0f, 1.0f};
             f32 LightIntensity = 1.0f;
 
-            const DirectionalLightComponent* LightComponent = nullptr;
-            const std::vector<Actor*> Lights                = S.FindActorsWith<DirectionalLightComponent>();
-            if (!Lights.empty()) {
-                if (const auto* Light = Lights.front()->GetComponent<DirectionalLightComponent>()) {
-                    LightComponent = Light;
-                    LightDir       = Light->GetDirection();
-                    LightColor     = Light->GetColor();
-                    LightIntensity = Light->GetIntensity();
-                }
+            const DirectionalLightComponent* LightComponent = FindFirstEnabledComponent<DirectionalLightComponent>(S);
+            if (LightComponent) {
+                LightDir       = LightComponent->GetDirection();
+                LightColor     = LightComponent->GetColor();
+                LightIntensity = LightComponent->GetIntensity();
             }
             Frame.LightDirectionAndPad   = {LightDir.x, LightDir.y, LightDir.z, 0.0f};
             Frame.LightColorAndIntensity = {LightColor.x, LightColor.y, LightColor.z, LightIntensity};
@@ -1187,8 +1197,9 @@ namespace Xen {
 
             S.ForEachActor([&](Actor& A) {
                 if (LightData.LightCount >= MaxLights) return;
+                if (!A.IsEnabled()) return;
 
-                if (const auto* PL = A.GetComponent<PointLightComponent>()) {
+                if (const auto* PL = A.GetComponent<PointLightComponent>(); PL && PL->IsEnabled()) {
                     const Float3 Pos     = A.GetWorldTransform().Position;
                     const Float3& Color  = PL->GetColor();
                     GpuLight& Lt         = LightData.Lights[LightData.LightCount++];
@@ -1196,7 +1207,7 @@ namespace Xen {
                     Lt.ColorAndIntensity = {Color.x, Color.y, Color.z, PL->GetIntensity()};
                     Lt.DirectionAndType  = {0.0f, 0.0f, 0.0f, LightTypePoint};
                     Lt.ConeAnglesAndPad  = {0.0f, 0.0f, 0.0f, 0.0f};
-                } else if (const auto* SL = A.GetComponent<SpotLightComponent>()) {
+                } else if (const auto* SL = A.GetComponent<SpotLightComponent>(); SL && SL->IsEnabled()) {
                     const Float3 Pos     = A.GetWorldTransform().Position;
                     const Float3 Dir     = SL->GetDirection();
                     const Float3& Color  = SL->GetColor();
@@ -1229,9 +1240,11 @@ namespace Xen {
             ExtractFrustumPlanes(Frame.ViewProjection, Planes);
 
             S.ForEachActor([&](Actor& A) {
+                if (!A.IsEnabled()) return;
+
                 auto* MeshComp                                         = A.GetComponent<MeshComponent>();
                 const std::vector<PBRMaterialComponent*> MaterialComps = A.GetComponents<PBRMaterialComponent>();
-                if (!MeshComp || MaterialComps.empty()) return;
+                if (!MeshComp || !MeshComp->IsEnabled() || MaterialComps.empty()) return;
 
                 const MeshHandle Mesh = MeshComp->GetMesh();
                 if (!Mesh.IsValid()) return;
@@ -1302,11 +1315,8 @@ namespace Xen {
             // the same "first one found" rule as PostProcessComponent; a
             // scene with none uses SSAO::Settings's defaults (on).
             SSAO::Settings AoSettings;
-            const std::vector<Actor*> AoActors = S.FindActorsWith<AmbientOcclusionComponent>();
-            if (!AoActors.empty()) {
-                if (const auto* Ao = AoActors.front()->GetComponent<AmbientOcclusionComponent>()) {
-                    AoSettings = Ao->GetSettings();
-                }
+            if (const auto* Ao = FindFirstEnabledComponent<AmbientOcclusionComponent>(S)) {
+                AoSettings = Ao->GetSettings();
             }
             const Float3 CameraPosition = {Frame.CameraPositionAndPad.x,
                                            Frame.CameraPositionAndPad.y,
@@ -1451,12 +1461,7 @@ namespace Xen {
         // same "first one found" rule as the light and environment; a scene
         // with none renders with PostProcess::Settings's defaults.
         PostProcess::Settings Settings;
-        const std::vector<Actor*> PostProcessActors = S.FindActorsWith<PostProcessComponent>();
-        if (!PostProcessActors.empty()) {
-            if (const auto* PP = PostProcessActors.front()->GetComponent<PostProcessComponent>()) {
-                Settings = PP->GetSettings();
-            }
-        }
+        if (const auto* PP = FindFirstEnabledComponent<PostProcessComponent>(S)) { Settings = PP->GetSettings(); }
         _PostProcess.Render(_Commands,
                             ResolvedColor,
                             _SceneColorWidth,

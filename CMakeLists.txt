@@ -18,13 +18,14 @@ endforeach ()
 option(BUILD_TOOLS "Build XENGINE tools (editor, paktool, etc.)" ON)
 option(BUILD_SANDBOX "Build XENGINE Sandbox game" ON)
 
-# 3rd party dependencies
-include(CMake/FetchDeps.cmake)
-
 set(SOURCE_ROOT ${CMAKE_SOURCE_DIR}/Source)
 set(MODULES_ROOT ${SOURCE_ROOT}/Modules)
 set(VENDOR_ROOT ${SOURCE_ROOT}/Vendor)
 set(TOOLS_ROOT ${SOURCE_ROOT}/Tools)
+
+# 3rd party dependencies
+include(CMake/FetchDeps.cmake)
+include(Source/Vendor/Vendor.cmake)
 
 set(TOOLS_BIN_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Tools")
 message(STATUS "Tools bin directory: ${TOOLS_BIN_DIR}")

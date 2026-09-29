@@ -1,10 +1,5 @@
 project(XENGINE)
 
-file(GLOB_RECURSE IMGUI_SOURCES
-        ${VENDOR_ROOT}/imgui/*.h
-        ${VENDOR_ROOT}/imgui/*.cpp
-)
-
 add_library(Xen STATIC
         # Vendor
         ${VENDOR_ROOT}/nlohmann/json.hpp

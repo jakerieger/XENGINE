@@ -134,6 +134,10 @@ namespace Xen {
         _InputManager.EndFrame();
     }
 
+    void Window::Maximize() const {
+        ::PostMessageA(_Handle, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+    }
+
     LRESULT CALLBACK Window::WndProc(const HWND Handle, const UINT Msg, const WPARAM WParam, const LPARAM LParam) {
         Window* Self;
         if (Msg == WM_NCCREATE) {

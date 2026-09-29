@@ -2,10 +2,10 @@
 // Created by Jake Rieger on 9/28/2026.
 //
 
-#include "Project.hpp"
+#include "EditorProject.hpp"
 
 namespace Xen {
-    std::optional<Project> ProjectSerializer::LoadFromFile(const std::filesystem::path& PrxjPath) {
+    std::optional<EditorProject> ProjectSerializer::LoadFromFile(const std::filesystem::path& PrxjPath) {
         if (!exists(PrxjPath)) return None;
 
         const std::ifstream In(PrxjPath);
@@ -17,7 +17,7 @@ namespace Xen {
         return LoadFromString(Buf.str(), PrxjPath.parent_path());
     }
 
-    std::optional<Project> ProjectSerializer::LoadFromString(const std::string& JsonStr,
+    std::optional<EditorProject> ProjectSerializer::LoadFromString(const std::string& JsonStr,
                                                              const std::filesystem::path& ProjectRoot) {
         Json Root = Json::parse(JsonStr);
         if (!Root.is_object()) return None;
@@ -55,7 +55,7 @@ namespace Xen {
         const std::string RuntimeDir = RuntimeDirIt->get<std::string>();
         if (RuntimeDir.empty()) return None;
 
-        return Project {
+        return EditorProject {
           .Version       = Version,
           .EngineVersion = std::move(EngineVersion),
           .Name          = std::move(Name),

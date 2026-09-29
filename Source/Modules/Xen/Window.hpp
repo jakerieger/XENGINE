@@ -46,6 +46,7 @@ namespace Xen {
         NODISCARD bool ConsumeResized();
 
         void ResetInput();
+        void Maximize() const;
 
     private:
         static LRESULT CALLBACK WndProc(HWND Handle, UINT Msg, WPARAM WParam, LPARAM LParam);
