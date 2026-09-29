@@ -1,21 +1,23 @@
 include(FetchContent)
 
+# ==== [ DirectX-Headers ] ============================================================================================
 FetchContent_Declare(
         DirectX-Headers
         GIT_REPOSITORY https://github.com/microsoft/DirectX-Headers.git
         GIT_TAG v1.615.0
 )
 
+# ==== [ D3D12MemoryAllocator ] =======================================================================================
 FetchContent_Declare(
         D3D12MemoryAllocator
         GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator.git
         GIT_TAG v3.1.0
 )
 
+# ==== [ LZ4 ] ========================================================================================================
 set(LZ4_BUILD_CLI OFF CACHE BOOL "" FORCE)
 set(LZ4_BUILD_LEGACY_LZ4C OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-
 FetchContent_Declare(
         lz4
         URL https://github.com/lz4/lz4/archive/refs/tags/v1.10.0.tar.gz
@@ -24,10 +26,21 @@ FetchContent_Declare(
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
+# ==== [ CLI11 ] ======================================================================================================
 FetchContent_Declare(
         CLI11
         GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
         GIT_TAG v2.7.2
+)
+
+# ==== [ brotli ] =====================================================================================================
+set(BROTLI_DISABLE_TESTS ON CACHE BOOL "Disable Brotli tests" FORCE)
+set(BROTLI_BUNDLED_MODE ON CACHE BOOL "Configure Brotli for bundled usage" FORCE)
+set(BROTLI_LIBS brotlienc brotlidec brotlicommon)
+FetchContent_Declare(
+        brotli
+        GIT_REPOSITORY https://github.com/google/brotli.git
+        GIT_TAG v1.2.0
 )
 
 FetchContent_MakeAvailable(
@@ -35,6 +48,7 @@ FetchContent_MakeAvailable(
         D3D12MemoryAllocator
         lz4
         CLI11
+        brotli
 )
 
 # D3D12MemoryAllocator's own CMakeLists doesn't know about DirectX-Headers - it only

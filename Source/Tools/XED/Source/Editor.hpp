@@ -13,6 +13,7 @@
 #include "EditorTheme.hpp"
 #include "EditorUI.hpp"
 #include "EditorProject.hpp"
+#include "IconLibrary.hpp"
 
 #include <filesystem>
 #include <functional>
@@ -38,7 +39,7 @@ namespace Xen {
         void TickFrame(f32 DeltaTime);
         void DrawDockspaceAndPanels(f32 DeltaTime);
         void DrawMainMenuBar();
-        void DrawToolbar() const;
+        void DrawToolbar();
 
         // Width/Height rather than an ImVec2, so this header (like EditorUI.hpp/
         // DebugUI.hpp) doesn't need to pull in Dear ImGui's own headers just to
@@ -89,14 +90,17 @@ namespace Xen {
         EditorTheme _CurrentTheme {};
         std::unique_ptr<Window> _Window;
 
-        // Destroyed in reverse declaration order: _UI first (its own
+        // Destroyed in reverse declaration order: _Icons first (its
+        // Shutdown calls _Device->DestroyTexture, so it must go while
+        // _Device is still alive - see IconLibrary.hpp), then _UI (its own
         // WaitIdle backstop still has a live _Device either way - see
-        // Game.hpp's identical ordering comment), then _EmbeddedGame - which
-        // only ever borrows _Device and must be torn down while it's still
-        // alive - and _Device last.
+        // Game.hpp's identical ordering comment), then _EmbeddedGame -
+        // which only ever borrows _Device and must be torn down while it's
+        // still alive - and _Device last.
         std::unique_ptr<RHI::IRenderDevice> _Device;
         std::unique_ptr<Game> _EmbeddedGame;
         EditorUI _UI;
+        IconLibrary _Icons;
 
         // The editor's own "base layer" clear, submitted before _UI's
         // overlay draws the real UI on top of it - see Run()'s own comment.

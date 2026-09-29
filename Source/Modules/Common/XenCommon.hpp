@@ -40,6 +40,8 @@ namespace Xen {
     using f32 = float;
     using f64 = double;
 
+    using ByteArray = std::vector<uint8_t>;
+
     constexpr std::nullopt_t None = std::nullopt;
 
     template<typename T, typename U>

@@ -44,27 +44,47 @@ namespace Xen {
         // comment for why).
         u32 SceneTextureSlot {UINT32_MAX};
 
+        // Finds and reserves the first free slot in SrvHeap, or UINT32_MAX
+        // if the heap is full. Shared by SrvAlloc (Dear ImGui's own font-
+        // atlas allocations), GetOrCreateSceneTextureID, and
+        // CreateStaticTextureID - all three just disagree on when the slot
+        // they got back is reused vs. held forever.
+        u32 AllocSlot() {
+            for (u32 i = 0; i < SrvHeapCapacity; ++i) {
+                if (SrvSlotUsed[i]) continue;
+                SrvSlotUsed[i] = true;
+                return i;
+            }
+            return UINT32_MAX;
+        }
+
+        D3D12_CPU_DESCRIPTOR_HANDLE CpuHandle(const u32 Slot) const {
+            D3D12_CPU_DESCRIPTOR_HANDLE Cpu = SrvHeap->GetCPUDescriptorHandleForHeapStart();
+            Cpu.ptr += CAST<SIZE_T>(Slot) * SrvDescriptorSize;
+            return Cpu;
+        }
+
+        D3D12_GPU_DESCRIPTOR_HANDLE GpuHandle(const u32 Slot) const {
+            D3D12_GPU_DESCRIPTOR_HANDLE Gpu = SrvHeap->GetGPUDescriptorHandleForHeapStart();
+            Gpu.ptr += CAST<UINT64>(Slot) * SrvDescriptorSize;
+            return Gpu;
+        }
+
         static void SrvAlloc(ImGui_ImplDX12_InitInfo* Info,
                              D3D12_CPU_DESCRIPTOR_HANDLE* OutCpu,
                              D3D12_GPU_DESCRIPTOR_HANDLE* OutGpu) {
-            auto* Self = CAST<Impl*>(Info->UserData);
-            for (u32 i = 0; i < SrvHeapCapacity; ++i) {
-                if (Self->SrvSlotUsed[i]) continue;
-                Self->SrvSlotUsed[i] = true;
-
-                D3D12_CPU_DESCRIPTOR_HANDLE Cpu = Self->SrvHeap->GetCPUDescriptorHandleForHeapStart();
-                Cpu.ptr += CAST<SIZE_T>(i) * Self->SrvDescriptorSize;
-                D3D12_GPU_DESCRIPTOR_HANDLE Gpu = Self->SrvHeap->GetGPUDescriptorHandleForHeapStart();
-                Gpu.ptr += CAST<UINT64>(i) * Self->SrvDescriptorSize;
-
-                *OutCpu = Cpu;
-                *OutGpu = Gpu;
+            auto* Self    = CAST<Impl*>(Info->UserData);
+            const u32 Slot = Self->AllocSlot();
+            if (Slot == UINT32_MAX) {
+                LOG_ERR("EditorUI: out of SRV descriptor slots (capacity=%u) - a texture won't display",
+                        SrvHeapCapacity);
+                *OutCpu = {};
+                *OutGpu = {};
                 return;
             }
 
-            LOG_ERR("EditorUI: out of SRV descriptor slots (capacity=%u) - a texture won't display", SrvHeapCapacity);
-            *OutCpu = {};
-            *OutGpu = {};
+            *OutCpu = Self->CpuHandle(Slot);
+            *OutGpu = Self->GpuHandle(Slot);
         }
 
         static void
@@ -220,12 +240,7 @@ namespace Xen {
         if (!_Initialized) return 0;
 
         if (_Impl->SceneTextureSlot == UINT32_MAX) {
-            for (u32 i = 0; i < Impl::SrvHeapCapacity; ++i) {
-                if (_Impl->SrvSlotUsed[i]) continue;
-                _Impl->SrvSlotUsed[i]   = true;
-                _Impl->SceneTextureSlot = i;
-                break;
-            }
+            _Impl->SceneTextureSlot = _Impl->AllocSlot();
             if (_Impl->SceneTextureSlot == UINT32_MAX) {
                 LOG_ERR("EditorUI: out of SRV descriptor slots (capacity=%u) - the scene view won't display",
                         Impl::SrvHeapCapacity);
@@ -233,14 +248,26 @@ namespace Xen {
             }
         }
 
-        D3D12_CPU_DESCRIPTOR_HANDLE Cpu = _Impl->SrvHeap->GetCPUDescriptorHandleForHeapStart();
-        Cpu.ptr += CAST<SIZE_T>(_Impl->SceneTextureSlot) * _Impl->SrvDescriptorSize;
+        if (!_Impl->Device->CreateTextureSRV(Handle, _Impl->CpuHandle(_Impl->SceneTextureSlot))) return 0;
+        return CAST<ImTextureID>(_Impl->GpuHandle(_Impl->SceneTextureSlot).ptr);
+    }
 
-        if (!_Impl->Device->CreateTextureSRV(Handle, Cpu)) return 0;
+    ImTextureID EditorUI::CreateStaticTextureID(const RHI::TextureHandle Handle) {
+        if (!_Initialized) return 0;
 
-        D3D12_GPU_DESCRIPTOR_HANDLE Gpu = _Impl->SrvHeap->GetGPUDescriptorHandleForHeapStart();
-        Gpu.ptr += CAST<UINT64>(_Impl->SceneTextureSlot) * _Impl->SrvDescriptorSize;
-        return CAST<ImTextureID>(Gpu.ptr);
+        const u32 Slot = _Impl->AllocSlot();
+        if (Slot == UINT32_MAX) {
+            LOG_ERR("EditorUI: out of SRV descriptor slots (capacity=%u) - a texture won't display",
+                    Impl::SrvHeapCapacity);
+            return 0;
+        }
+
+        if (!_Impl->Device->CreateTextureSRV(Handle, _Impl->CpuHandle(Slot))) {
+            _Impl->SrvSlotUsed[Slot] = false;
+            return 0;
+        }
+
+        return CAST<ImTextureID>(_Impl->GpuHandle(Slot).ptr);
     }
 
     bool

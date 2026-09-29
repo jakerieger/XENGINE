@@ -90,6 +90,17 @@ namespace Xen {
         /// color TextureHandle (see D3D12RenderDevice::CreateTextureSRV).
         NODISCARD ImTextureID GetOrCreateSceneTextureID(RHI::TextureHandle Handle);
 
+        /// @brief Allocates a NEW, permanent SRV slot for Handle and returns
+        /// its ImTextureID - unlike GetOrCreateSceneTextureID, which is
+        /// deliberately one slot rewritten every call, this hands out a
+        /// fresh slot each time and never reuses or rewrites it. For a
+        /// texture that lives for its own lifetime and needs a stable
+        /// ImTextureID (e.g. a toolbar icon, loaded once at startup) rather
+        /// than a single "whatever's showing this frame" slot. Returns 0
+        /// (ImTextureID_Invalid) if the SRV heap is full or Handle isn't a
+        /// plain color TextureHandle.
+        NODISCARD ImTextureID CreateStaticTextureID(RHI::TextureHandle Handle);
+
         bool LoadFont(const std::string& Name, const unsigned char* Data, u32 DataSize, f32 Pixels = 16.f) const;
         ImFont* GetFont(const std::string& Name) const;
 

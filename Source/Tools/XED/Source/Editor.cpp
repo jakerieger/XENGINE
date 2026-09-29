@@ -91,6 +91,11 @@ namespace Xen {
         }
         _Window->SetUIOverlay(&_UI);
 
+        // Not fatal if this fails partway through - see IconLibrary::
+        // Initialize's own comment. A toolbar button just draws without an
+        // icon (DrawToolbar treats ImTextureID 0 as "skip it").
+        if (!_Icons.Initialize(*_Device, _UI)) { LOG_ERR("Editor: failed to initialize icon library"); }
+
         LoadEditorFonts();
         SetupShortcuts();
 
@@ -114,12 +119,9 @@ namespace Xen {
         // or create a new project to load. Later, a flag of some kind will be added that tells the editor this failed.
         if (!_Config.CurrentProject.empty() && std::filesystem::exists(_Config.CurrentProject)) {
             LoadProject(_Config.CurrentProject);
-        } else {
-            ::MessageBoxA(_Window->GetHandle(),
-                          "No startup scene defined in EditorConfig.ini",
-                          "XED",
-                          MB_OK | MB_ICONWARNING);
-        }
+        } /* else {
+             Modal_NewProject();
+         }*/
     }
 
     Editor::~Editor() {
@@ -228,18 +230,19 @@ namespace Xen {
         Style.WindowBorderSize = _CurrentTheme.WindowBorderSize;
         Style.FrameBorderSize  = _CurrentTheme.FrameBorderSize;
 
-        Colors[ImGuiCol_BorderShadow]   = ImVec4(0.f, 0.f, 0.f, 0.f);
-        Colors[ImGuiCol_Border]         = _CurrentTheme.Colors.Border.To<ImVec4>();
-        Colors[ImGuiCol_ButtonActive]   = _CurrentTheme.Colors.ButtonPrimary.WithAlpha(0.67f).To<ImVec4>();
-        Colors[ImGuiCol_ButtonHovered]  = _CurrentTheme.Colors.ButtonPrimary.WithAlpha(0.8f).To<ImVec4>();
-        Colors[ImGuiCol_Button]         = _CurrentTheme.Colors.ButtonPrimary.To<ImVec4>();
-        Colors[ImGuiCol_CheckMark]      = _CurrentTheme.Colors.TextPrimary.To<ImVec4>();
-        Colors[ImGuiCol_ChildBg]        = _CurrentTheme.Colors.PanelBackground.To<ImVec4>();
-        Colors[ImGuiCol_DockingPreview] = _CurrentTheme.Colors.TextPrimary.To<ImVec4>();
-        Colors[ImGuiCol_DragDropTarget] = _CurrentTheme.Colors.TextPrimary.To<ImVec4>();
-        Colors[ImGuiCol_FrameBgActive]  = _CurrentTheme.Colors.Input.WithAlpha(0.4f).To<ImVec4>();
-        Colors[ImGuiCol_FrameBgHovered] = _CurrentTheme.Colors.Input.WithAlpha(0.7f).To<ImVec4>();
-        Colors[ImGuiCol_FrameBg]        = _CurrentTheme.Colors.Input.To<ImVec4>();
+        Colors[ImGuiCol_BorderShadow]       = ImVec4(0.f, 0.f, 0.f, 0.f);
+        Colors[ImGuiCol_Border]             = _CurrentTheme.Colors.Border.To<ImVec4>();
+        Colors[ImGuiCol_ButtonActive]       = _CurrentTheme.Colors.ButtonPrimary.WithAlpha(0.67f).To<ImVec4>();
+        Colors[ImGuiCol_ButtonHovered]      = _CurrentTheme.Colors.ButtonPrimary.WithAlpha(0.8f).To<ImVec4>();
+        Colors[ImGuiCol_Button]             = _CurrentTheme.Colors.ButtonPrimary.To<ImVec4>();
+        Colors[ImGuiCol_CheckMark]          = _CurrentTheme.Colors.TextPrimary.To<ImVec4>();
+        Colors[ImGuiCol_CheckboxSelectedBg] = _CurrentTheme.Colors.WindowBackground.To<ImVec4>();
+        Colors[ImGuiCol_ChildBg]            = _CurrentTheme.Colors.PanelBackground.To<ImVec4>();
+        Colors[ImGuiCol_DockingPreview]     = _CurrentTheme.Colors.TextPrimary.To<ImVec4>();
+        Colors[ImGuiCol_DragDropTarget]     = _CurrentTheme.Colors.TextPrimary.To<ImVec4>();
+        Colors[ImGuiCol_FrameBgActive]      = _CurrentTheme.Colors.Input.WithAlpha(0.4f).To<ImVec4>();
+        Colors[ImGuiCol_FrameBgHovered]     = _CurrentTheme.Colors.Input.WithAlpha(0.7f).To<ImVec4>();
+        Colors[ImGuiCol_FrameBg]            = _CurrentTheme.Colors.Input.To<ImVec4>();
         Colors[ImGuiCol_HeaderActive] =
           _CurrentTheme.Colors.WindowBackground.WithAlpha(0.67f).To<ImVec4>();  // Selected item in listbox
         Colors[ImGuiCol_HeaderHovered]         = _CurrentTheme.Colors.WindowBackground.WithAlpha(0.8f).To<ImVec4>();
@@ -339,6 +342,9 @@ namespace Xen {
     }
 
     void Editor::View_Scene(const f32 DeltaTime) {
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+
         if (ImGui::Begin("Scene")) {
             const ImVec2 Avail   = ImGui::GetContentRegionAvail();
             const auto NewWidth  = CAST<u32>(std::max(Avail.x, 1.0f));
@@ -364,6 +370,8 @@ namespace Xen {
             if (SceneTexture != 0) { ImGui::Image(SceneTexture, Avail); }
         }
         ImGui::End();
+
+        ImGui::PopStyleVar(2);
     }
 
     void Editor::Action_NewActor(Scene* S, const std::string& Name) const {
@@ -524,7 +532,7 @@ namespace Xen {
         ImGui::EndMainMenuBar();
     }
 
-    void Editor::DrawToolbar() const {
+    void Editor::DrawToolbar() {
         const ImGuiViewport* Viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(Viewport->WorkPos);
         ImGui::SetNextWindowSize(ImVec2(Viewport->WorkSize.x, ToolbarHeight));
@@ -537,7 +545,59 @@ namespace Xen {
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        if (ImGui::Begin("##Toolbar", nullptr, ToolbarFlags)) { ImGui::TextDisabled("(toolbar - later work)"); }
+        if (ImGui::Begin("##Toolbar", nullptr, ToolbarFlags)) {
+            constexpr ImVec2 IconSize(20.0f, 20.0f);
+            const f32 ButtonHeight = IconSize.y + ImGui::GetStyle().FramePadding.y * 2.0f;
+            ImGui::SetCursorPosY((ToolbarHeight - ButtonHeight) * 0.5f);
+
+            // A toolbar button whose action isn't implemented yet (see
+            // Action_DeleteActor/Action_DuplicateActor's own history) is
+            // still drawn, just disabled - same convention DrawMainMenuBar
+            // already uses for its own not-yet-wired MenuItems, so a
+            // placeholder button looks like one rather than a dead click.
+            const auto ToolbarButton = [this, IconSize](const char* StrID, const EditorIcon Icon, const bool Enabled) {
+                const ImTextureID TexID = _Icons.Get(Icon);
+
+                bool Clicked = false;
+                ImGui::BeginDisabled(!Enabled);
+                // A missing icon (see IconLibrary::Get's own comment) still
+                // reserves its button's footprint, so one failed load
+                // doesn't shove every button after it out of alignment.
+                if (TexID != 0) {
+                    Clicked = ImGui::ImageButton(StrID, TexID, IconSize);
+                } else {
+                    ImGui::Dummy(IconSize);
+                }
+                ImGui::EndDisabled();
+                ImGui::SameLine();
+                return Clicked;
+            };
+
+            if (ToolbarButton("##OpenFolder", EditorIcon::OpenFolder, true)) { Action_OpenProject(); }
+
+            ImGui::SameLine(0.0f, ImGui::GetStyle().ItemSpacing.x * 2.0f);
+            ToolbarButton("##Undo", EditorIcon::Undo, false);
+            ToolbarButton("##Redo", EditorIcon::Redo, false);
+
+            ImGui::SameLine(0.0f, ImGui::GetStyle().ItemSpacing.x * 2.0f);
+            ToolbarButton("##Select", EditorIcon::Select, false);
+            ToolbarButton("##Move", EditorIcon::Move, false);
+            ToolbarButton("##Rotate", EditorIcon::Rotate, false);
+            ToolbarButton("##Scale", EditorIcon::Scale, false);
+            ToolbarButton("##FocusSelected", EditorIcon::FocusSelected, false);
+            ToolbarButton("##SelectAsset", EditorIcon::SelectAsset, false);
+            ToolbarButton("##GridToggle", EditorIcon::GridToggle, false);
+
+            ImGui::SameLine(0.0f, ImGui::GetStyle().ItemSpacing.x * 2.0f);
+            ToolbarButton("##Play", EditorIcon::Play, false);
+            ToolbarButton("##PlayWindowed", EditorIcon::PlayWindowed, false);
+            ToolbarButton("##Pause", EditorIcon::Pause, false);
+            ToolbarButton("##Stop", EditorIcon::Stop, false);
+
+            ImGui::SameLine(0.0f, ImGui::GetStyle().ItemSpacing.x * 2.0f);
+            ToolbarButton("##CompileCode", EditorIcon::CompileCode, false);
+            ToolbarButton("##CleanCode", EditorIcon::CleanCode, false);
+        }
         ImGui::End();
         ImGui::PopStyleVar(2);
     }

@@ -37,6 +37,8 @@ xen_add_game_executable(XED
         Source/EditorUI.hpp
         Source/EditorProject.cpp
         Source/EditorProject.hpp
+        Source/IconLibrary.cpp
+        Source/IconLibrary.hpp
 )
 
 target_compile_definitions(XED PUBLIC
@@ -58,6 +60,9 @@ target_link_libraries(XED PRIVATE
         dxgi.lib
         dxguid.lib
         d3dcompiler.lib
+        brotlicommon
+        brotlienc
+        brotlidec
 )
 
 target_include_directories(XED PRIVATE ${MODULES_ROOT} ${VENDOR_ROOT} ${VENDOR_ROOT}/imgui)
