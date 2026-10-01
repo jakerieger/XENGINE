@@ -39,6 +39,9 @@ xen_add_game_executable(XED
         Source/EditorProject.hpp
         Source/IconLibrary.cpp
         Source/IconLibrary.hpp
+        Source/PropertyEditor.cpp
+        Source/PropertyEditor.hpp
+        Source/ProjectFileTemplate.hpp
 )
 
 target_compile_definitions(XED PUBLIC
@@ -73,3 +76,11 @@ xen_configure_game(XED
 )
 xen_compile_shaders(XED)
 xen_package_engine_content(XED)
+
+set(OUT_DIR "$<TARGET_FILE_DIR:XED>/..")
+add_custom_command(
+        TARGET XED POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/Templates" "${OUT_DIR}/Templates"
+        COMMENT "Copying project file templates..."
+        VERBATIM
+)

@@ -47,6 +47,7 @@ namespace Xen {
 
         void ResetInput();
         void Maximize() const;
+        void SetTitle(const std::string& Title) const;
 
     private:
         static LRESULT CALLBACK WndProc(HWND Handle, UINT Msg, WPARAM WParam, LPARAM LParam);

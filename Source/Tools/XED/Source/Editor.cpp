@@ -3,6 +3,8 @@
 //
 
 #include "Editor.hpp"
+#include "PropertyEditor.hpp"
+#include "ProjectFileTemplate.hpp"
 
 #include <Xen/XenGameSettings.h>
 #include <Xen/SceneSerializer.hpp>
@@ -12,13 +14,17 @@
 
 #include <algorithm>
 #include <chrono>
+#include <Lmcons.h>  // contains UNLEN (maximum length of Windows username)
 
 #pragma region Embedded Resources
+#include "Common/Io.hpp"
 #include "Resource/InterRegular.h"
 #include "Resource/InterBold.h"
 #pragma endregion
 
 namespace Xen {
+    namespace fs = std::filesystem;
+
     namespace {
         // Name shown in the Hierarchy list alongside the actual handle it
         // refers to - see EditorState::SelectedActor's own comment for why
@@ -51,6 +57,10 @@ namespace Xen {
             Float3 TransformRotation {};
             Float3 TransformScale {};
             std::array<char, MAX_PATH> NewActorName {'\0'};
+
+            // Modal flags
+            bool ShowSettingsModal {false};
+            bool ShowNewProjectModal {false};
         };
 
         constexpr f32 ToolbarHeight = 40.0f;
@@ -117,7 +127,7 @@ namespace Xen {
         // We'll check that it exists here even though LoadProject already checks to avoid throwing an exception if it
         // doesn't. The editor should still start if the startup project is invalid and just prompt the user to select
         // or create a new project to load. Later, a flag of some kind will be added that tells the editor this failed.
-        if (!_Config.CurrentProject.empty() && std::filesystem::exists(_Config.CurrentProject)) {
+        if (!_Config.CurrentProject.empty() && fs::exists(_Config.CurrentProject)) {
             LoadProject(_Config.CurrentProject);
         } /* else {
              Modal_NewProject();
@@ -146,7 +156,7 @@ namespace Xen {
         }
     }
 
-    void Editor::LoadProject(const std::filesystem::path& PrxjPath) {
+    void Editor::LoadProject(const fs::path& PrxjPath) {
         if (!exists(PrxjPath)) { THROW_ENGINE_EXCEPTION(EditorException, "Project does not exist"); }
 
         const auto LoadResult = ProjectSerializer::LoadFromFile(PrxjPath);
@@ -166,6 +176,87 @@ namespace Xen {
         }
 
         _EmbeddedGame->StartEmbedded();
+
+        const auto TitleFmt = std::format("XED - {} [{}]", _CurrentProject.Name, XEN_ENGINE_VERSION);
+        _Window->SetTitle(TitleFmt);
+    }
+
+    Editor::CreateProjectResult Editor::CreateProject(const std::string& Name, const fs::path& Dir) const {
+        EditorProject Project;
+        Project.Name             = Name;
+        Project.ProjectRoot      = Dir;
+        Project.Version          = XED_PROJECT_FORMAT_VERSION;
+        Project.ConfigDirectory  = "Config";
+        Project.ContentDirectory = "Content";
+        Project.RuntimeDirectory = "Runtime";
+
+        // TODO: Create project directories/files and serialize project to file
+        if (exists(Dir)) { return CreateProjectResult::AlreadyExists; }
+        if (!fs::create_directories(Dir)) { return CreateProjectResult::Failed; }
+
+        const auto ConfigDir = Dir / "Config";
+        if (!fs::create_directories(ConfigDir)) { return CreateProjectResult::Failed; }
+
+        // Copy config templates to new project config dir
+        if (!fs::copy_file("Templates/Config/AudioConfig.ini", ConfigDir / "AudioConfig.ini")) {
+            return CreateProjectResult::Failed;
+        }
+        if (!fs::copy_file("Templates/Config/EngineConfig.ini", ConfigDir / "EngineConfig.ini")) {
+            return CreateProjectResult::Failed;
+        }
+        if (!fs::copy_file("Templates/Config/InputConfig.ini", ConfigDir / "InputConfig.ini")) {
+            return CreateProjectResult::Failed;
+        }
+
+        const auto ContentDir = Dir / "Content";
+        if (!fs::create_directories(ContentDir)) { return CreateProjectResult::Failed; }
+
+        const auto RuntimeDir = Dir / "Runtime";
+        if (!fs::create_directories(RuntimeDir)) { return CreateProjectResult::Failed; }
+
+        // Create runtime source files
+        const auto CMakeListsTxtPath = Dir / "CMakeLists.txt";
+        const auto MainCppPath       = RuntimeDir / "main.cpp";
+        const auto GameClassCppPath  = (RuntimeDir / Name).replace_extension(".cpp");
+        const auto GameClassHppPath  = (RuntimeDir / Name).replace_extension(".hpp");
+
+        try {
+            char Username[UNLEN + 1];
+            DWORD UsernameLen = UNLEN + 1;
+            if (!::GetUserNameA(Username, &UsernameLen)) {
+                LOG_ERR("Failed to get user name");
+                strcpy_s(Username, UsernameLen, "Unknown");
+            }
+
+            std::unordered_map<std::string, std::string> TemplateVars = {
+              {"GAME_CLASS", Name},
+              {"USER", Username},
+              {"DATE", DateTime::Now().DateString()},
+            };
+
+            auto CMakeListsTemplate  = IO::ReadString("Templates/CMakeLists.txt");
+            const auto CMakeListsTxt = ParseTemplate(CMakeListsTemplate, TemplateVars);
+            IO::WriteString(CMakeListsTxt, CMakeListsTxtPath);
+
+            auto MainCppTemplate = IO::ReadString("Templates/Runtime/main.cpp");
+            const auto MainCpp   = ParseTemplate(MainCppTemplate, TemplateVars);
+            IO::WriteString(MainCpp, MainCppPath);
+
+            auto GameClassCppTemplate = IO::ReadString("Templates/Runtime/GameClass.cpp");
+            const auto GameClassCpp   = ParseTemplate(GameClassCppTemplate, TemplateVars);
+            IO::WriteString(GameClassCpp, GameClassCppPath);
+
+            auto GameClassHppTemplate = IO::ReadString("Templates/Runtime/GameClass.hpp");
+            const auto GameClassHpp   = ParseTemplate(GameClassHppTemplate, TemplateVars);
+            IO::WriteString(GameClassHpp, GameClassHppPath);
+        } catch (...) { return CreateProjectResult::Failed; }
+
+        const auto PrxjPath = (Dir / Name).replace_extension(".prxj");
+        try {
+            ProjectSerializer::SaveToFile(Project, PrxjPath);
+        } catch (...) { return CreateProjectResult::Failed; }
+
+        return CreateProjectResult::Success;
     }
 
     void Editor::TickFrame(const f32 DeltaTime) {
@@ -208,7 +299,7 @@ namespace Xen {
     }
 
     void Editor::LoadTheme(const std::string& ThemeFile) {
-        const auto ThemePath = std::filesystem::current_path() / "Config" / "Themes" / ThemeFile;
+        const auto ThemePath = fs::current_path() / "Config" / "Themes" / ThemeFile;
         if (!exists(ThemePath)) { THROW_ENGINE_EXCEPTION(EditorException, "Theme does not exist"); }
 
         const auto LoadResult = ThemeSerializer::LoadFromFile(ThemePath);
@@ -295,49 +386,82 @@ namespace Xen {
             if (_EmbeddedGame && _EmbeddedGame->GetActiveScene()) {
                 const auto* S = _EmbeddedGame->GetActiveScene();
                 if (S) {
-                    Actor* pSelectedActor = S->Get(State.SelectedActor);
-                    if (pSelectedActor) {
+                    Actor* A = S->Get(State.SelectedActor);
+                    if (A) {
                         {
                             ScopedFont _(&_UI, "InterBold");
-                            ImGui::Text("%s", pSelectedActor->GetName().c_str());
+                            ImGui::Text("%s", A->GetName().c_str());
                         }
 
-                        State.ActorEnabled = pSelectedActor->IsEnabled();
+                        State.ActorEnabled = A->IsEnabled();
                         ImGui::Checkbox("Enabled", &State.ActorEnabled);
-                        pSelectedActor->SetEnabled(State.ActorEnabled);
+                        A->SetEnabled(State.ActorEnabled);
 
-                        State.TransformPosition = pSelectedActor->GetWorldTransform().Position;
-                        const auto RotationQuat = pSelectedActor->GetWorldTransform().Rotation;
+                        State.TransformPosition = A->GetWorldTransform().Position;
+                        const auto RotationQuat = A->GetWorldTransform().Rotation;
                         const auto EulerAngles  = QuaternionToEuler(RotationQuat);
                         State.TransformRotation = {DirectX::XMConvertToDegrees(EulerAngles.x),
                                                    DirectX::XMConvertToDegrees(EulerAngles.y),
                                                    DirectX::XMConvertToDegrees(EulerAngles.z)};
-                        State.TransformScale    = pSelectedActor->GetWorldTransform().Scale;
+                        State.TransformScale    = A->GetWorldTransform().Scale;
 
                         ImGui::DragFloat3("Position", &State.TransformPosition.x, 0.01f);
                         ImGui::DragFloat3("Rotation", &State.TransformRotation.x, 0.1f);
                         ImGui::DragFloat3("Scale", &State.TransformScale.x, 0.01f);
 
-                        pSelectedActor->SetPosition(State.TransformPosition);
+                        A->SetPosition(State.TransformPosition);
                         // Rotating on X axis mostly works, the other two axes just snap back to zero.
                         const Float3 NewRotation = {
                           DirectX::XMConvertToRadians(State.TransformRotation.x),
                           DirectX::XMConvertToRadians(State.TransformRotation.y),
                           DirectX::XMConvertToRadians(State.TransformRotation.z),
                         };
-                        pSelectedActor->SetRotation(EulerToQuaternion(NewRotation));
-                        pSelectedActor->SetScale(State.TransformScale);
+                        A->SetRotation(EulerToQuaternion(NewRotation));
+                        A->SetScale(State.TransformScale);
 
                         // ===========================================================
 
+                        A->ForEachComponent([&](IComponent* C) {
+                            // Component identity (pointer, not index - a
+                            // component's slot doesn't move around the way
+                            // an actor's does, but PushID by pointer costs
+                            // nothing and avoids ever having to reason about
+                            // it) scopes every widget ID below to this one
+                            // component, so two components that both reflect
+                            // a property named e.g. "Enabled" - or a
+                            // component reflected twice on the same actor -
+                            // don't collide in ImGui's ID stack.
+                            ImGui::PushID(C);
+
+                            bool ComponentEnabled = C->IsEnabled();
+                            if (ImGui::Checkbox("##ComponentEnabled", &ComponentEnabled)) {
+                                C->SetEnabled(ComponentEnabled);
+                            }
+                            ImGui::SameLine();
+
+                            if (ImGui::CollapsingHeader(C->GetTypeName(), ImGuiTreeNodeFlags_DefaultOpen)) {
+                                ImGui::Indent();
+                                PropertyEditorReflector Reflector;
+                                C->Reflect(Reflector);
+                                ImGui::Unindent();
+                            }
+
+                            ImGui::PopID();
+                        });
+
                         {
                             ScopedFont _(&_UI, "InterBold");
-                            if (ImGui::Button("Add Component", ImVec2(-FLT_MIN, 32.f))) {}
+                            if (ImGui::Button("Add Component", ImVec2(-FLT_MIN, 32.f))) {
+                                ImGui::OpenPopup("Add Component");
+                            }
                         }
                     }
                 }
             }
         }
+
+        Modal_AddComponent();
+
         ImGui::End();
     }
 
@@ -376,6 +500,10 @@ namespace Xen {
 
     void Editor::Action_NewActor(Scene* S, const std::string& Name) const {
         S->Spawn(Name);
+    }
+
+    void Editor::Action_NewProject() const {
+        State.ShowNewProjectModal = true;
     }
 
     void Editor::View_Hierarchy() const {
@@ -443,6 +571,10 @@ namespace Xen {
         if (SelectedResult.has_value() && exists(*SelectedResult)) { LoadProject(*SelectedResult); }
     }
 
+    void Editor::Action_ShowSettings() const {
+        State.ShowSettingsModal = true;
+    }
+
     void Editor::Action_Quit() {
         _Running = false;
     }
@@ -461,6 +593,127 @@ namespace Xen {
         // the original selected and the clone sitting unselected at the end
         // of the list.
         if (NewHandle.IsSet()) { State.SelectedActor = NewHandle; }
+    }
+
+    void Editor::CenterNextWindow() const {
+        const ImVec2 Center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(Center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    }
+
+    void Editor::Modal_AddComponent() const {
+        CenterNextWindow();
+
+        if (ImGui::BeginPopupModal("Add Component", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Select which component to add");
+            ImGui::Separator();
+
+            if (ImGui::Button("Add", ImVec2(120, 0))) { ImGui::CloseCurrentPopup(); }
+            ImGui::SetItemDefaultFocus();
+            ImGui::SameLine();
+
+            if (ImGui::Button("Cancel", ImVec2(120, 0))) { ImGui::CloseCurrentPopup(); }
+
+            ImGui::EndPopup();
+        }
+    }
+
+    void Editor::Modal_NewProject() {
+        CenterNextWindow();
+
+        static std::array<char, MAX_PATH> ProjectName {};
+        static std::array<char, MAX_PATH> ProjectDir {};
+
+        if (ImGui::BeginPopupModal("New Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            const std::string ProjectNameStr = ProjectName.data();
+            const std::string ProjectDirStr  = ProjectDir.data();
+
+            ImGui::InputText("Name", ProjectName.data(), ProjectName.size());
+            ImGui::InputText("Location", ProjectDir.data(), ProjectDir.size());
+
+            if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                ProjectName.fill(0);
+                ProjectDir.fill(0);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            ImGui::BeginDisabled(ProjectNameStr.empty() || ProjectDirStr.empty());
+            if (ImGui::Button("Create", ImVec2(120, 0))) {
+                const auto Result   = CreateProject(ProjectNameStr, ProjectDirStr);
+                bool ProjectCreated = false;
+
+                if (Result == CreateProjectResult::Success) {
+                    ProjectCreated = true;
+                } else if (Result == CreateProjectResult::AlreadyExists) {
+                    const auto MsgResult = ::MessageBoxA(_Window->GetHandle(),
+                                                         "The selected project directory already exists. Do you want "
+                                                         "to overwrite it and create a new project anyways?",
+                                                         "XED - Create project",
+                                                         MB_YESNO | MB_ICONWARNING);
+                    if (MsgResult == IDYES) {
+                        if (!fs::remove_all(ProjectDirStr)) {
+                            ::MessageBoxA(_Window->GetHandle(),
+                                          "Failed to remove existing directory.",
+                                          "XED - Create project",
+                                          MB_OK | MB_ICONERROR);
+                        } else {
+                            const auto TryAgainResult = CreateProject(ProjectNameStr, ProjectDirStr);
+                            if (TryAgainResult != CreateProjectResult::Success) {
+                                ::MessageBoxA(_Window->GetHandle(),
+                                              "Failed to create new project.",
+                                              "XED - Create project",
+                                              MB_OK | MB_ICONERROR);
+                            } else {
+                                ProjectCreated = true;
+                            }
+                        }
+                    }
+                } else if (Result == CreateProjectResult::Failed) {
+                    ::MessageBoxA(_Window->GetHandle(),
+                                  "Failed to create new project.",
+                                  "XED - Create project",
+                                  MB_OK | MB_ICONERROR);
+                }
+
+                if (ProjectCreated) {
+                    const auto MsgFmt =
+                      std::format("Successfully created new project '{}'. Open it now?", ProjectNameStr);
+                    const auto MsgResult = ::MessageBoxA(_Window->GetHandle(),
+                                                         MsgFmt.c_str(),
+                                                         "XED - Create project",
+                                                         MB_YESNO | MB_ICONQUESTION);
+                    if (MsgResult == IDYES) {
+                        const auto PrxjPath =
+                          (fs::path(ProjectDirStr) / fs::path(ProjectNameStr)).replace_extension(".prxj");
+                        LoadProject(PrxjPath);
+                    }
+                }
+
+                ProjectName.fill(0);
+                ProjectDir.fill(0);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndDisabled();
+            ImGui::SetItemDefaultFocus();
+
+            ImGui::EndPopup();
+        }
+    }
+
+    void Editor::Modal_Settings() const {
+        CenterNextWindow();
+        static bool SetWindowSize {false};
+        if (!SetWindowSize) { ImGui::SetNextWindowSize(ImVec2(800, 600)); }
+
+        if (ImGui::BeginPopupModal("Settings", nullptr)) {
+            SetWindowSize = true;
+
+            if (ImGui::Button("Save", ImVec2(120, 0))) {
+                SetWindowSize = false;
+                ImGui::CloseCurrentPopup();
+            }
+
+            ImGui::EndPopup();
+        }
     }
 
     void Editor::RegisterShortcut(const int Keys, std::function<void()> Action) {
@@ -486,6 +739,8 @@ namespace Xen {
     void Editor::SetupShortcuts() {
         RegisterShortcut(ImGuiMod_Ctrl | ImGuiKey_O, [this] { Action_OpenProject(); });
         RegisterShortcut(ImGuiMod_Ctrl | ImGuiKey_Q, [this] { Action_Quit(); });
+        RegisterShortcut(ImGuiMod_Shift | ImGuiMod_Ctrl | ImGuiKey_S, [this] { Action_ShowSettings(); });
+        RegisterShortcut(ImGuiMod_Ctrl | ImGuiKey_N, [this] { Action_NewProject(); });
     }
 
     void Editor::DrawMainMenuBar() {
@@ -496,7 +751,7 @@ namespace Xen {
         // dockspace host window) automatically start under this bar without
         // either of them needing to know how tall it is.
         if (ImGui::BeginMenu("File")) {
-            ImGui::MenuItem("New Project", nullptr, false, false);
+            if (ImGui::MenuItem("New Project", "Ctrl+N", false, true)) { Action_NewProject(); }
             if (ImGui::MenuItem("Open Project", "Ctrl+O", false, true)) { Action_OpenProject(); }
             ImGui::MenuItem("Save", "Ctrl+S", false, false);
             ImGui::MenuItem("Save As...", "Ctrl+Shift+S", false, false);
@@ -511,6 +766,10 @@ namespace Xen {
             ImGui::MenuItem("Cut", "Ctrl+X", false, false);
             ImGui::MenuItem("Copy", "Ctrl+C", false, false);
             ImGui::MenuItem("Paste", "Ctrl+V", false, false);
+            ImGui::Separator();
+
+            if (ImGui::MenuItem("Settings...", "Ctrl+Shift+S", false, true)) { State.ShowSettingsModal = true; }
+
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("View")) {
@@ -530,6 +789,19 @@ namespace Xen {
         }
 
         ImGui::EndMainMenuBar();
+
+        if (State.ShowSettingsModal) {
+            ImGui::OpenPopup("Settings");
+            State.ShowSettingsModal = false;
+        }
+
+        if (State.ShowNewProjectModal) {
+            ImGui::OpenPopup("New Project");
+            State.ShowNewProjectModal = false;
+        }
+
+        Modal_Settings();
+        Modal_NewProject();
     }
 
     void Editor::DrawToolbar() {

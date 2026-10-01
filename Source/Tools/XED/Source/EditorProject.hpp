@@ -14,7 +14,7 @@ namespace Xen {
 
     struct EditorProject {
         u32 Version {1};
-        std::string EngineVersion;
+        std::string EngineVersion {XEN_ENGINE_VERSION};
         std::string Name;
         std::filesystem::path ProjectRoot;  // This probably doesn't need to be stored, but I'm leaving it for now.
         std::filesystem::path ConfigDirectory;
@@ -30,6 +30,6 @@ namespace Xen {
         static std::optional<EditorProject> LoadFromString(const std::string& JsonStr,
                                                            const std::filesystem::path& ProjectRoot);
 
-        // TODO: Save variants
+        static void SaveToFile(const EditorProject& Project, const std::filesystem::path& PrxjPath);
     };
 }  // namespace Xen

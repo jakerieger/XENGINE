@@ -33,9 +33,17 @@ namespace Xen {
         Editor& operator=(const Editor&) = delete;
 
         void Run();
-        void LoadProject(const std::filesystem::path& PrxjPath);
 
     private:
+        enum class CreateProjectResult : u8 {
+            Success = 0,
+            AlreadyExists,
+            Failed,
+        };
+
+        void LoadProject(const std::filesystem::path& PrxjPath);
+        CreateProjectResult CreateProject(const std::string& Name, const std::filesystem::path& Dir) const;
+
         void TickFrame(f32 DeltaTime);
         void DrawDockspaceAndPanels(f32 DeltaTime);
         void DrawMainMenuBar();
@@ -50,18 +58,26 @@ namespace Xen {
         void ApplyCurrentTheme() const;
 
         // Each view or panel in the editor UI
-        void View_Inspector() const;
-        void View_Scene(f32 DeltaTime);
-        void Action_NewActor(Scene* S, const std::string& Name) const;
-        void View_Hierarchy() const;
         void View_ContentBrowser() const;
+        void View_Hierarchy() const;
+        void View_Inspector() const;
         void View_Log() const;
+        void View_Scene(f32 DeltaTime);
 
         // Dedicated methods for main menu actions so they can be called independently (i.e. for keyboard shortcuts)
-        void Action_OpenProject();
-        void Action_Quit();
         void Action_DeleteActor(Scene* S) const;
         void Action_DuplicateActor(Scene* S) const;
+        void Action_NewActor(Scene* S, const std::string& Name) const;
+        void Action_NewProject() const;
+        void Action_OpenProject();
+        void Action_ShowSettings() const;
+        void Action_Quit();
+
+        void Modal_AddComponent() const;
+        void Modal_NewProject();
+        void Modal_Settings() const;
+
+        void CenterNextWindow() const;
 
         // Keyboard shortcuts: register once (typically in the constructor)
         // with RegisterShortcut(Keys, Action), then ProcessShortcuts() fires

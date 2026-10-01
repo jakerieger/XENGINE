@@ -4,6 +4,8 @@
 
 #include "EditorProject.hpp"
 
+#include "Editor.hpp"
+
 namespace Xen {
     std::optional<EditorProject> ProjectSerializer::LoadFromFile(const std::filesystem::path& PrxjPath) {
         if (!exists(PrxjPath)) return None;
@@ -18,7 +20,7 @@ namespace Xen {
     }
 
     std::optional<EditorProject> ProjectSerializer::LoadFromString(const std::string& JsonStr,
-                                                             const std::filesystem::path& ProjectRoot) {
+                                                                   const std::filesystem::path& ProjectRoot) {
         Json Root = Json::parse(JsonStr);
         if (!Root.is_object()) return None;
 
@@ -30,7 +32,7 @@ namespace Xen {
         const auto EngineVersionIt = Root.find("engineVersion");
         if (EngineVersionIt == Root.end() || !EngineVersionIt->is_string()) return None;
         const std::string EngineVersion = EngineVersionIt->get<std::string>();
-        if (EngineVersion.empty()) return None;
+        if (EngineVersion.empty() || EngineVersion != XEN_ENGINE_VERSION) return None;
 
         const auto NameIt = Root.find("name");
         if (NameIt == Root.end() || !NameIt->is_string()) return None;
@@ -65,5 +67,33 @@ namespace Xen {
           .ContentDirectory = ProjectRoot / ContentDir,
           .RuntimeDirectory = ProjectRoot / RuntimeDir,
         };
+    }
+
+    void ProjectSerializer::SaveToFile(const EditorProject& Project, const std::filesystem::path& PrxjPath) {
+        if (Project.Version != XED_PROJECT_FORMAT_VERSION) {
+            THROW_ENGINE_EXCEPTION(EditorException, "Invalid format version");
+        }
+        if (Project.EngineVersion != XEN_ENGINE_VERSION) {
+            THROW_ENGINE_EXCEPTION(EditorException, "Invalid engine version");
+        }
+
+        Json Root             = Json::object();
+        Root["version"]       = Project.Version;
+        Root["engineVersion"] = Project.EngineVersion;
+        Root["name"]          = Project.Name;
+
+        auto Directories       = Json::object();
+        Directories["config"]  = Project.ConfigDirectory;
+        Directories["content"] = Project.ContentDirectory;
+        Directories["runtime"] = Project.RuntimeDirectory;
+
+        Root["directories"] = std::move(Directories);
+
+        std::ofstream Out(PrxjPath);
+        if (!Out) { THROW_ENGINE_EXCEPTION(EditorException, "Failed to open .prxj file stream"); }
+        Out << Root.dump(2);
+        Out.close();
+
+        if (!exists(PrxjPath)) { THROW_ENGINE_EXCEPTION(EditorException, "Failed to write .prxj file"); }
     }
 }  // namespace Xen

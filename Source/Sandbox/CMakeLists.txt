@@ -5,11 +5,11 @@ xen_add_game_executable(Sandbox
         Runtime/Res/App.rc
         Runtime/Res/Resource.h
         Runtime/main.cpp
-        Runtime/Source/RotatingComponent.cpp
-        Runtime/Source/RotatingComponent.hpp
-        Runtime/Source/Sandbox.cpp
-        Runtime/Source/Sandbox.hpp
-        Runtime/Source/SceneBuilder.hpp
+        Runtime/RotatingComponent.cpp
+        Runtime/RotatingComponent.hpp
+        Runtime/Sandbox.cpp
+        Runtime/Sandbox.hpp
+        Runtime/SceneBuilder.hpp
 )
 xen_configure_game(Sandbox
         PAK_FILENAME "Data.pxk"
@@ -19,4 +19,4 @@ xen_compile_shaders(Sandbox)
 xen_package_engine_content(Sandbox)
 xen_package_game_content(Sandbox)
 
-target_include_directories(Sandbox PRIVATE Runtime Runtime/Source ${MODULES_ROOT} ${VENDOR_ROOT})
+target_include_directories(Sandbox PRIVATE Runtime ${MODULES_ROOT} ${VENDOR_ROOT})

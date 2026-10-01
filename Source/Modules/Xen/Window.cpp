@@ -142,6 +142,10 @@ namespace Xen {
         ::PostMessageA(_Handle, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
     }
 
+    void Window::SetTitle(const std::string& Title) const {
+        ::SetWindowTextA(_Handle, Title.c_str());
+    }
+
     LRESULT CALLBACK Window::WndProc(const HWND Handle, const UINT Msg, const WPARAM WParam, const LPARAM LParam) {
         Window* Self;
         if (Msg == WM_NCCREATE) {

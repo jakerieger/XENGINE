@@ -8,7 +8,6 @@
 
 #include <Xen/XenGameSettings.h>
 #include <Xen/EngineContext.hpp>
-#include <Xen/Window.hpp>
 #include <Xen/AssetPreloader.hpp>
 #include <Xen/Game.hpp>
 #include <Xen/Scene.hpp>
