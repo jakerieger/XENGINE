@@ -6,8 +6,12 @@
 #include "PropertyEditor.hpp"
 #include "ProjectFileTemplate.hpp"
 
+#include <Common/Io.hpp>
 #include <Xen/XenGameSettings.h>
 #include <Xen/SceneSerializer.hpp>
+#include <Xen/Components/DirectionalLightComponent.hpp>
+#include <Xen/Components/PostProcessComponent.hpp>
+#include <Xen/Components/EnvironmentComponent.hpp>
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -17,7 +21,6 @@
 #include <Lmcons.h>  // contains UNLEN (maximum length of Windows username)
 
 #pragma region Embedded Resources
-#include "Common/Io.hpp"
 #include "Resource/InterRegular.h"
 #include "Resource/InterBold.h"
 #pragma endregion
@@ -61,6 +64,9 @@ namespace Xen {
             // Modal flags
             bool ShowSettingsModal {false};
             bool ShowNewProjectModal {false};
+            bool ShowNewSceneModal {false};
+
+            std::filesystem::path CurrentSceneFile {};
         };
 
         constexpr f32 ToolbarHeight = 40.0f;
@@ -170,15 +176,15 @@ namespace Xen {
 
         _EmbeddedGame.reset(
           new Game(*_Device, MountConfig, _SceneViewportWidth, _SceneViewportHeight, _CurrentProject.ConfigDirectory));
-        const auto& EngineConfig = _EmbeddedGame->_EngineConfig;
-        if (!EngineConfig.StartupScene.empty()) {
-            _EmbeddedGame->LoadSceneFromFile(_CurrentProject.ContentDirectory / EngineConfig.StartupScene);
-        }
-
         _EmbeddedGame->StartEmbedded();
 
-        const auto TitleFmt = std::format("XED - {} [{}]", _CurrentProject.Name, XEN_ENGINE_VERSION);
-        _Window->SetTitle(TitleFmt);
+        SetWindowTitle(_CurrentProject.Name);
+
+        const auto& EngineConfig = _EmbeddedGame->_EngineConfig;
+        if (!EngineConfig.StartupScene.empty()) {
+            const auto SceneFilePath = _CurrentProject.ContentDirectory / EngineConfig.StartupScene;
+            LoadSceneFile(SceneFilePath);
+        }
     }
 
     Editor::CreateProjectResult Editor::CreateProject(const std::string& Name, const fs::path& Dir) const {
@@ -257,6 +263,81 @@ namespace Xen {
         } catch (...) { return CreateProjectResult::Failed; }
 
         return CreateProjectResult::Success;
+    }
+
+    void Editor::LoadSceneFile(const std::filesystem::path& SceneFile) const {
+        if (!_EmbeddedGame || !_EmbeddedGame->IsRunning()) { return; }
+        _EmbeddedGame->LoadSceneFromFile(SceneFile);
+        State.CurrentSceneFile = SceneFile;
+        SetWindowTitle(std::format("{} ({})", canonical(SceneFile).filename().string(), _CurrentProject.Name));
+    }
+
+    void Editor::CreateScene(const std::string& Name, const std::filesystem::path& SceneFile) const {
+        if (!_EmbeddedGame || !_EmbeddedGame->IsRunning()) { return; }
+
+        Scene NewScene(Name);
+        NewScene.SetContext(_EmbeddedGame->GetContext());
+
+        const auto CameraHandle = NewScene.Spawn("MainCamera");
+        auto* CameraActor       = NewScene.Get(CameraHandle);
+        if (CameraActor) {
+            auto* Camera = CameraActor->AddComponent<CameraComponent>();
+            if (Camera) {
+                Camera->SetProjectionMode(ProjectionMode::Perspective);
+                Camera->SetFieldOfView(60.0f);
+            }
+
+            CameraActor->SetPosition(Float3(0.0f, 1.0f, 10.0f));
+        }
+
+        const auto LightHandle = NewScene.Spawn("Sun");
+        auto* LightActor       = NewScene.Get(LightHandle);
+        if (LightActor) {
+            auto* Light = LightActor->AddComponent<DirectionalLightComponent>();
+            if (Light) {
+                Light->SetIntensity(1.0f);
+                Light->SetShadowDistance(15.0f);
+            }
+
+            const DirectX::XMVECTOR LightRotation =
+              DirectX::XMQuaternionRotationRollPitchYaw(DirectX::XMConvertToRadians(-45.0f),
+                                                        DirectX::XMConvertToRadians(150.0f),
+                                                        0.0f);
+            Quat LightRotationOut;
+            XMStoreFloat4(&LightRotationOut, LightRotation);
+            LightActor->SetRotation(LightRotationOut);
+        }
+
+        const auto EnvHandle = NewScene.Spawn("Environment");
+        auto* EnvActor       = NewScene.Get(EnvHandle);
+        if (EnvActor) {
+            auto* Env = EnvActor->AddComponent<EnvironmentComponent>();
+            if (Env) {
+                Env->SetMapAsset(ASSET("ibl/maps/sky_spring.hdr"));
+                Env->SetShowBackground(true);
+            }
+        }
+
+        const auto PostFxHandle = NewScene.Spawn("PostProcess");
+        auto* PostFxActor       = NewScene.Get(PostFxHandle);
+        if (PostFxActor) {
+            auto* PostFx = PostFxActor->AddComponent<PostProcessComponent>();
+            if (PostFx) {
+                auto& Settings               = PostFx->GetSettings();
+                Settings.BloomThreshold      = 0.8f;
+                Settings.BloomIntensity      = 0.075f;
+                Settings.BloomEnabled        = true;
+                Settings.AutoExposureEnabled = true;
+            }
+        }
+
+        SceneSerializer::SaveToFile(NewScene, SceneFile);
+        if (exists(SceneFile)) { LoadSceneFile(SceneFile); }
+    }
+
+    void Editor::SetWindowTitle(const std::string& Title) const {
+        const auto TitleFmt = std::format("XED - {} [{}]", Title, XEN_ENGINE_VERSION);
+        _Window->SetTitle(TitleFmt);
     }
 
     void Editor::TickFrame(const f32 DeltaTime) {
@@ -571,13 +652,41 @@ namespace Xen {
         if (SelectedResult.has_value() && exists(*SelectedResult)) { LoadProject(*SelectedResult); }
     }
 
+    void Editor::Action_OpenScene() const {
+        if (!_EmbeddedGame || !_EmbeddedGame->IsRunning()) { return; }
+
+        const auto OpenSceneResult = FileDialogs::OpenFileDialog(_Window->GetHandle(),
+                                                                 L"XED - Open scene",
+                                                                 {{L"XED Scene", L"*.xscene"}},
+                                                                 _CurrentProject.ContentDirectory);
+        if (OpenSceneResult.has_value()) { LoadSceneFile(*OpenSceneResult); }
+    }
+
     void Editor::Action_ShowSettings() const {
         State.ShowSettingsModal = true;
+    }
+
+    void Editor::Action_NewScene() const {
+        State.ShowNewSceneModal = true;
     }
 
     void Editor::Action_Quit() {
         _Running = false;
     }
+
+    void Editor::Action_Save() const {
+        if (!_EmbeddedGame || !_EmbeddedGame->IsRunning() || !exists(State.CurrentSceneFile)) { return; }
+        const auto* CurrentScene = _EmbeddedGame->GetActiveScene();
+        if (!CurrentScene) { return; }
+
+        SceneSerializer::SaveToFile(*CurrentScene, State.CurrentSceneFile);
+        ::MessageBoxA(_Window->GetHandle(),
+                      std::format("Saved {}", canonical(State.CurrentSceneFile).filename().string()).c_str(),
+                      "XED",
+                      MB_OK | MB_ICONINFORMATION);
+    }
+
+    void Editor::Action_SaveAs() {}
 
     void Editor::Action_DeleteActor(Scene* S) const {
         if (!S) return;
@@ -623,12 +732,26 @@ namespace Xen {
         static std::array<char, MAX_PATH> ProjectName {};
         static std::array<char, MAX_PATH> ProjectDir {};
 
-        if (ImGui::BeginPopupModal("New Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (ImGui::BeginPopupModal("New Project", nullptr)) {
             const std::string ProjectNameStr = ProjectName.data();
             const std::string ProjectDirStr  = ProjectDir.data();
 
             ImGui::InputText("Name", ProjectName.data(), ProjectName.size());
-            ImGui::InputText("Location", ProjectDir.data(), ProjectDir.size());
+
+            ImGui::BeginDisabled(true);
+            ImGui::InputText("##Location", ProjectDir.data(), ProjectDir.size());
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            ImGui::BeginDisabled(ProjectNameStr.empty());
+            if (ImGui::Button("...")) {
+                const auto ProjectLocationResult =
+                  FileDialogs::OpenFolderDialog(_Window->GetHandle(), L"Select project directory");
+                if (ProjectLocationResult.has_value()) {
+                    const auto Path = *ProjectLocationResult / ProjectNameStr;
+                    strcpy_s(ProjectDir.data(), ProjectDir.size(), Path.string().c_str());
+                }
+            }
+            ImGui::EndDisabled();
 
             if (ImGui::Button("Cancel", ImVec2(120, 0))) {
                 ProjectName.fill(0);
@@ -699,6 +822,39 @@ namespace Xen {
         }
     }
 
+    void Editor::Modal_NewScene() const {
+        CenterNextWindow();
+
+        static std::array<char, MAX_PATH> SceneNameBuffer {};
+
+        if (ImGui::BeginPopupModal("New Scene", nullptr)) {
+            const std::string SceneName = SceneNameBuffer.data();
+            ImGui::InputText("Scene Name", SceneNameBuffer.data(), SceneNameBuffer.size());
+
+            ImGui::BeginDisabled(SceneName.empty());
+            if (ImGui::Button("Create", ImVec2(120, 0))) {
+                const auto ScenesDir = _CurrentProject.ContentDirectory / "scenes";
+                if (!exists(ScenesDir)) { fs::create_directory(ScenesDir); }
+
+                std::string SceneFileName = SceneName;
+                std::ranges::transform(SceneFileName, SceneFileName.begin(), ::tolower);
+                const auto SceneFilePath = (ScenesDir / SceneFileName).replace_extension(".xscene");
+
+                CreateScene(SceneName, SceneFilePath);
+
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndDisabled();
+
+            ImGui::SetItemDefaultFocus();
+            ImGui::SameLine();
+
+            if (ImGui::Button("Cancel", ImVec2(120, 0))) { ImGui::CloseCurrentPopup(); }
+
+            ImGui::EndPopup();
+        }
+    }
+
     void Editor::Modal_Settings() const {
         CenterNextWindow();
         static bool SetWindowSize {false};
@@ -739,8 +895,12 @@ namespace Xen {
     void Editor::SetupShortcuts() {
         RegisterShortcut(ImGuiMod_Ctrl | ImGuiKey_O, [this] { Action_OpenProject(); });
         RegisterShortcut(ImGuiMod_Ctrl | ImGuiKey_Q, [this] { Action_Quit(); });
+        RegisterShortcut(ImGuiMod_Ctrl | ImGuiKey_S, [this] { Action_Save(); });
+        RegisterShortcut(ImGuiMod_Shift | ImGuiMod_Ctrl | ImGuiKey_S, [this] { Action_SaveAs(); });
         RegisterShortcut(ImGuiMod_Shift | ImGuiMod_Ctrl | ImGuiKey_S, [this] { Action_ShowSettings(); });
         RegisterShortcut(ImGuiMod_Ctrl | ImGuiKey_N, [this] { Action_NewProject(); });
+        RegisterShortcut(ImGuiMod_Shift | ImGuiMod_Ctrl | ImGuiKey_O, [this] { Action_OpenScene(); });
+        RegisterShortcut(ImGuiMod_Shift | ImGuiMod_Ctrl | ImGuiKey_N, [this] { Action_NewScene(); });
     }
 
     void Editor::DrawMainMenuBar() {
@@ -753,8 +913,18 @@ namespace Xen {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Project", "Ctrl+N", false, true)) { Action_NewProject(); }
             if (ImGui::MenuItem("Open Project", "Ctrl+O", false, true)) { Action_OpenProject(); }
-            ImGui::MenuItem("Save", "Ctrl+S", false, false);
-            ImGui::MenuItem("Save As...", "Ctrl+Shift+S", false, false);
+
+            ImGui::Separator();
+
+            const bool SceneOptionsEnabled = _EmbeddedGame != nullptr && _EmbeddedGame->IsRunning();
+            if (ImGui::MenuItem("New Scene", "Ctrl+Shift+N", false, SceneOptionsEnabled)) { Action_NewScene(); }
+            if (ImGui::MenuItem("Open Scene", "Ctrl+Shift+O", false, SceneOptionsEnabled)) { Action_OpenScene(); }
+
+            const bool SaveOptionsEnabled =
+              _EmbeddedGame != nullptr && _EmbeddedGame->GetActiveScene() != nullptr && exists(State.CurrentSceneFile);
+            if (ImGui::MenuItem("Save", "Ctrl+S", false, SaveOptionsEnabled)) { Action_Save(); }
+            if (ImGui::MenuItem("Save As...", "Ctrl+Shift+S", false, SaveOptionsEnabled)) { Action_SaveAs(); }
+
             ImGui::Separator();
             if (ImGui::MenuItem("Exit", "Ctrl+Q")) { Action_Quit(); }
             ImGui::EndMenu();
@@ -800,8 +970,14 @@ namespace Xen {
             State.ShowNewProjectModal = false;
         }
 
+        if (State.ShowNewSceneModal) {
+            ImGui::OpenPopup("New Scene");
+            State.ShowNewSceneModal = false;
+        }
+
         Modal_Settings();
         Modal_NewProject();
+        Modal_NewScene();
     }
 
     void Editor::DrawToolbar() {

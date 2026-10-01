@@ -44,6 +44,10 @@ namespace Xen {
         void LoadProject(const std::filesystem::path& PrxjPath);
         CreateProjectResult CreateProject(const std::string& Name, const std::filesystem::path& Dir) const;
 
+        void LoadSceneFile(const std::filesystem::path& SceneFile) const;
+        void CreateScene(const std::string& Name, const std::filesystem::path& SceneFile) const;
+
+        void SetWindowTitle(const std::string& Title) const;
         void TickFrame(f32 DeltaTime);
         void DrawDockspaceAndPanels(f32 DeltaTime);
         void DrawMainMenuBar();
@@ -70,11 +74,16 @@ namespace Xen {
         void Action_NewActor(Scene* S, const std::string& Name) const;
         void Action_NewProject() const;
         void Action_OpenProject();
+        void Action_OpenScene() const;
         void Action_ShowSettings() const;
+        void Action_NewScene() const;
         void Action_Quit();
+        void Action_Save() const;
+        void Action_SaveAs();
 
         void Modal_AddComponent() const;
         void Modal_NewProject();
+        void Modal_NewScene() const;
         void Modal_Settings() const;
 
         void CenterNextWindow() const;

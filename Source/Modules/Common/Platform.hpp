@@ -68,50 +68,137 @@ namespace Xen {
             const wchar_t* Extensions;
         };
 
-        inline std::optional<std::filesystem::path>
-        OpenFileDialog(const HWND Owner, const std::wstring& Title, const std::vector<FileTypeFilter>& FileFilters) {
-            std::filesystem::path OutPath;
+        inline void SetStartFolder(IFileOpenDialog* Dialog, const std::filesystem::path& Path) noexcept {
+            IShellItem* pFolder = nullptr;
+            if (SUCCEEDED(SHCreateItemFromParsingName(Path.wstring().c_str(), nullptr, IID_PPV_ARGS(&pFolder)))) {
+                std::ignore = Dialog->SetDefaultFolder(pFolder);
+                pFolder->Release();
+            }
+        }
 
+        inline std::optional<std::filesystem::path>
+        OpenFileDialog(const HWND Owner,
+                       const std::wstring& Title,
+                       const std::vector<FileTypeFilter>& FileFilters,
+                       const std::filesystem::path& StartFolder = std::filesystem::current_path()) noexcept {
             IFileOpenDialog* pFileOpen = nullptr;
             auto HR                    = ::CoCreateInstance(CLSID_FileOpenDialog,
                                          nullptr,
                                          CLSCTX_ALL,
                                          IID_IFileOpenDialog,
                                          reinterpret_cast<void**>(&pFileOpen));
+            if (FAILED(HR)) { return {}; }
 
-            if (SUCCEEDED(HR)) {
-                std::vector<COMDLG_FILTERSPEC> FileTypes;
-                for (const auto& [Name, Extensions] : FileFilters) {
-                    FileTypes.push_back({
-                      .pszName = Name,
-                      .pszSpec = Extensions,
-                    });
-                }
-                HR = pFileOpen->SetFileTypes(static_cast<UINT>(FileTypes.size()), FileTypes.data());
-                if (FAILED(HR)) return {};
-                HR = pFileOpen->SetTitle(Title.c_str());
-                if (FAILED(HR)) return {};
-
-                HR = pFileOpen->Show(Owner);
-
-                if (SUCCEEDED(HR)) {
-                    IShellItem* pItem;
-                    HR = pFileOpen->GetResult(&pItem);
-                    if (SUCCEEDED(HR)) {
-                        PWSTR FilePath;
-                        HR = pItem->GetDisplayName(SIGDN_FILESYSPATH, &FilePath);
-
-                        if (SUCCEEDED(HR)) {
-                            OutPath = std::wstring(FilePath);
-                            ::CoTaskMemFree(FilePath);
-                        }
-
-                        pItem->Release();
-                    }
-                }
-
+            HR = pFileOpen->SetTitle(Title.c_str());
+            if (FAILED(HR)) {
                 pFileOpen->Release();
+                return {};
             }
+
+            std::vector<COMDLG_FILTERSPEC> FileTypes;
+            for (const auto& [Name, Extensions] : FileFilters) {
+                FileTypes.push_back({
+                  .pszName = Name,
+                  .pszSpec = Extensions,
+                });
+            }
+
+            HR = pFileOpen->SetFileTypes(static_cast<UINT>(FileTypes.size()), FileTypes.data());
+            if (FAILED(HR)) {
+                pFileOpen->Release();
+                return {};
+            }
+
+            if (exists(StartFolder)) { SetStartFolder(pFileOpen, StartFolder); }
+
+            HR = pFileOpen->Show(Owner);
+            if (FAILED(HR)) {
+                pFileOpen->Release();
+                return {};
+            }
+
+            IShellItem* pItem;
+            HR = pFileOpen->GetResult(&pItem);
+            if (FAILED(HR)) {
+                pFileOpen->Release();
+                return {};
+            }
+
+            PWSTR FilePath;
+            HR = pItem->GetDisplayName(SIGDN_FILESYSPATH, &FilePath);
+            if (FAILED(HR)) {
+                pItem->Release();
+                pFileOpen->Release();
+                return {};
+            }
+
+            std::filesystem::path OutPath = FilePath;
+            ::CoTaskMemFree(FilePath);
+            pItem->Release();
+            pFileOpen->Release();
+
+            return OutPath;
+        }
+
+        inline std::optional<std::filesystem::path>
+        OpenFolderDialog(const HWND Owner,
+                         const std::wstring& Title,
+                         const std::filesystem::path& StartFolder = std::filesystem::current_path()) noexcept {
+            IFileOpenDialog* pFileOpen = nullptr;
+            auto HR                    = ::CoCreateInstance(CLSID_FileOpenDialog,
+                                         nullptr,
+                                         CLSCTX_ALL,
+                                         IID_IFileOpenDialog,
+                                         reinterpret_cast<void**>(&pFileOpen));
+            if (FAILED(HR)) return {};
+
+            HR = pFileOpen->SetTitle(Title.c_str());
+            if (FAILED(HR)) {
+                pFileOpen->Release();
+                return {};
+            }
+
+            FILEOPENDIALOGOPTIONS Options;
+            HR = pFileOpen->GetOptions(&Options);
+            if (FAILED(HR)) {
+                pFileOpen->Release();
+                return {};
+            }
+
+            HR = pFileOpen->SetOptions(Options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
+            if (FAILED(HR)) {
+                pFileOpen->Release();
+                return {};
+            }
+
+            if (exists(StartFolder)) { SetStartFolder(pFileOpen, StartFolder); }
+
+            HR = pFileOpen->Show(Owner);
+            if (FAILED(HR)) {
+                pFileOpen->Release();
+                return {};
+            }
+
+            IShellItem* pItem = nullptr;
+            HR                = pFileOpen->GetResult(&pItem);
+            if (FAILED(HR)) {
+                pItem->Release();
+                pFileOpen->Release();
+                return {};
+            }
+
+            PWSTR FolderPath = nullptr;
+            HR               = pItem->GetDisplayName(SIGDN_FILESYSPATH, &FolderPath);
+            if (FAILED(HR)) {
+                pItem->Release();
+                pFileOpen->Release();
+                return {};
+            }
+
+            std::filesystem::path OutPath = FolderPath;
+            ::CoTaskMemFree(FolderPath);
+            pItem->Release();
+            pFileOpen->Release();
 
             return OutPath;
         }

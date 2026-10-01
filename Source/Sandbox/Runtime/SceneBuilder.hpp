@@ -104,11 +104,10 @@ namespace SceneBuilder {
         Xen::Actor* PostFxActor             = MainScene.Get(PostFxHandle);
         auto* PostFx                        = PostFxActor->AddComponent<Xen::PostProcessComponent>();
 
-        auto& FxSettings          = PostFx->GetSettings();
-        FxSettings.BloomThreshold = 0.8f;
-        FxSettings.BloomIntensity = 0.075f;
-        FxSettings.BloomEnabled   = true;
-
+        auto& FxSettings               = PostFx->GetSettings();
+        FxSettings.BloomThreshold      = 0.8f;
+        FxSettings.BloomIntensity      = 0.075f;
+        FxSettings.BloomEnabled        = true;
         FxSettings.AutoExposureEnabled = true;
 
         const auto ScenePath = Xen::Generated::GameSettings().ContentDirs.front() / "scenes" / "main.xscene";
