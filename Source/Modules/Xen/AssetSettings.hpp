@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include <filesystem>
+#include <Common/Platform.hpp>
 #include <vector>
 
 namespace Xen {
@@ -13,8 +13,8 @@ namespace Xen {
     }
 
     struct AssetSettings {
-        std::vector<std::filesystem::path> PakFiles;
-        std::vector<std::filesystem::path> ContentDirs;
+        std::vector<fs::path> PakFiles;
+        std::vector<fs::path> ContentDirs;
         bool MountContentDirs {false};  // Determined per build config
         bool AllowCommandLineContentDirs {true};
 
@@ -24,8 +24,8 @@ namespace Xen {
         // edits); OutputDir is EngineContent/Shaders (where a recompiled
         // shader's DXIL gets written - the same directory the offline build
         // already writes into and PAKTool already packs from).
-        std::filesystem::path EngineShaderSourceDir;
-        std::filesystem::path EngineShaderOutputDir;
+        fs::path EngineShaderSourceDir;
+        fs::path EngineShaderOutputDir;
 
         // Absolute path to dxc.exe, resolved at CMake configure time (see
         // XenGame.cmake) - the running game's own process PATH almost
@@ -33,7 +33,7 @@ namespace Xen {
         // itself does. Empty if dxc.exe couldn't be found at configure time
         // either, in which case ShaderHotReload falls back to a bare
         // "dxc.exe" PATH lookup (and will likely fail).
-        std::filesystem::path EngineDxcPath;
+        fs::path EngineDxcPath;
     };
 
     PAK::AssetMountConfig BuildMountConfig(const AssetSettings&, int argc, char* argv[]);

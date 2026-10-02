@@ -16,7 +16,7 @@ namespace Xen {
         using FilePtr = std::unique_ptr<FILE, FILECloser>;
     }  // namespace
 
-    void IO::WriteString(const std::string& Str, const std::filesystem::path& Path) {
+    void IO::WriteString(const std::string& Str, const fs::path& Path) {
         const FilePtr F(std::fopen(Path.string().c_str(), "w"));
         if (!F) { THROW_ENGINE_EXCEPTION(IOException, std::format("Failed to open: '{}'", Path.string())); }
 
@@ -25,7 +25,7 @@ namespace Xen {
         }
     }
 
-    void IO::WriteWideString(const std::wstring& Str, const std::filesystem::path& Path) {
+    void IO::WriteWideString(const std::wstring& Str, const fs::path& Path) {
         const FilePtr F(std::fopen(Path.string().c_str(), "w"));
         if (!F) { THROW_ENGINE_EXCEPTION(IOException, std::format("Failed to open: '{}'", Path.string())); }
 
@@ -34,11 +34,11 @@ namespace Xen {
         }
     }
 
-    void IO::WriteBytes(const std::span<const u8> Bytes, const std::filesystem::path& Path) {
+    void IO::WriteBytes(const std::span<const u8> Bytes, const fs::path& Path) {
         WriteBytes(Bytes.data(), Bytes.size(), Path);
     }
 
-    void IO::WriteBytes(const u8* Bytes, const size_t Size, const std::filesystem::path& Path) {
+    void IO::WriteBytes(const u8* Bytes, const size_t Size, const fs::path& Path) {
         const FilePtr F(std::fopen(Path.string().c_str(), "wb"));
         if (!F) { THROW_ENGINE_EXCEPTION(IOException, std::format("Failed to open: '{}'", Path.string())); }
 
@@ -48,7 +48,7 @@ namespace Xen {
         }
     }
 
-    std::string IO::ReadString(const std::filesystem::path& Path) {
+    std::string IO::ReadString(const fs::path& Path) {
         if (!exists(Path)) {
             THROW_ENGINE_EXCEPTION(IOException, std::format("File does not exist: '{}'", Path.string()));
         }
@@ -72,7 +72,7 @@ namespace Xen {
         return Str;
     }
 
-    std::wstring IO::ReadWideString(const std::filesystem::path& Path) {
+    std::wstring IO::ReadWideString(const fs::path& Path) {
         if (!exists(Path)) {
             THROW_ENGINE_EXCEPTION(IOException, std::format("File does not exist: '{}'", Path.string()));
         }
@@ -93,7 +93,7 @@ namespace Xen {
         return Str;
     }
 
-    std::vector<u8> IO::ReadBytes(const std::filesystem::path& Path) {
+    std::vector<u8> IO::ReadBytes(const fs::path& Path) {
         if (!exists(Path)) {
             THROW_ENGINE_EXCEPTION(IOException, std::format("File does not exist: '{}'", Path.string()));
         }

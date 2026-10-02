@@ -4,13 +4,16 @@
 
 #pragma once
 
+#include "Platform.hpp"
+#include "Exception.hpp"
+
 #include <ini.h>
 #include <optional>
 
 namespace Xen::INI {
     using Config = mINI::INIStructure;
 
-    inline std::optional<Config> ReadFromFile(const std::filesystem::path& IniFile) {
+    inline std::optional<Config> ReadFromFile(const fs::path& IniFile) {
         const mINI::INIFile File(IniFile);
         Config OutConfig;
 
@@ -20,6 +23,13 @@ namespace Xen::INI {
         }
 
         return OutConfig;
+    }
+
+    inline void WriteToFile(const fs::path& IniFile, Config& IniConfig) {
+        const mINI::INIFile File(IniFile);
+        if (!File.write(IniConfig, true)) {
+            THROW_ENGINE_EXCEPTION(EngineException, std::format("failed to write ini file: '{}'", IniFile.string()));
+        }
     }
 
     inline u32 GetU32(const std::string& Val) {

@@ -16,7 +16,6 @@
 
 namespace Xen {
     namespace {
-        namespace fs = std::filesystem;
 
         // Same entry points Scripts/compile_engine_shaders.py looks for -
         // only a stage whose entry point actually appears in the source gets
@@ -70,16 +69,18 @@ namespace Xen {
         // stdout/stderr are captured to a scratch log file next to
         // OutputFile so a compile error can be surfaced through LOG_WARN
         // instead of vanishing into the game's own hidden console.
-        bool InvokeDxc(const fs::path& DxcPath, const fs::path& HlslFile, const StageSpec& Stage,
+        bool InvokeDxc(const fs::path& DxcPath,
+                       const fs::path& HlslFile,
+                       const StageSpec& Stage,
                        const fs::path& OutputFile) {
             const fs::path LogFile = OutputFile.string() + ".hotreload.log";
             const fs::path BatFile = OutputFile.string() + ".hotreload.bat";
 
             {
                 std::ofstream Bat(BatFile);
-                Bat << "@\"" << (DxcPath.empty() ? fs::path("dxc.exe") : DxcPath).string() << "\" -T "
-                    << Stage.Profile << " -E " << Stage.EntryPoint << " -Fo \"" << OutputFile.string() << "\" \""
-                    << HlslFile.string() << "\" > \"" << LogFile.string() << "\" 2>&1\n";
+                Bat << "@\"" << (DxcPath.empty() ? fs::path("dxc.exe") : DxcPath).string() << "\" -T " << Stage.Profile
+                    << " -E " << Stage.EntryPoint << " -Fo \"" << OutputFile.string() << "\" \"" << HlslFile.string()
+                    << "\" > \"" << LogFile.string() << "\" 2>&1\n";
             }
 
             const std::string Cmd = "\"" + BatFile.string() + "\"";
@@ -87,9 +88,9 @@ namespace Xen {
             if (Result != 0) {
                 const std::string Log = ReadFileText(LogFile);
                 LOG_WARN("Shader hot-reload: failed to compile %s (%s) - %s",
-                        HlslFile.filename().string().c_str(),
-                        Stage.EntryPoint,
-                        Log.empty() ? "dxc.exe not found on PATH?" : Log.c_str());
+                         HlslFile.filename().string().c_str(),
+                         Stage.EntryPoint,
+                         Log.empty() ? "dxc.exe not found on PATH?" : Log.c_str());
             }
 
             std::error_code Ec;
@@ -124,7 +125,7 @@ namespace Xen {
 
             if (!AnyStage) {
                 LOG_WARN("Shader hot-reload: %s has no VSMain/PSMain/CSMain - nothing to compile",
-                        HlslFile.filename().string().c_str());
+                         HlslFile.filename().string().c_str());
                 return false;
             }
             if (Ok) LOG_INFO("Shader hot-reload: recompiled %s", HlslFile.filename().string().c_str());
@@ -135,9 +136,7 @@ namespace Xen {
     ShaderHotReload::ShaderHotReload() : _Impl(std::make_unique<Impl>()) {}
     ShaderHotReload::~ShaderHotReload() = default;
 
-    bool ShaderHotReload::Initialize(const std::filesystem::path& SourceDir,
-                                     const std::filesystem::path& OutputDir,
-                                     const std::filesystem::path& DxcPath) {
+    bool ShaderHotReload::Initialize(const fs::path& SourceDir, const fs::path& OutputDir, const fs::path& DxcPath) {
         if (SourceDir.empty() || OutputDir.empty() || !fs::is_directory(SourceDir) || !fs::is_directory(OutputDir)) {
             return false;
         }
@@ -185,8 +184,8 @@ namespace Xen {
         // includes it, and this doesn't track per-shader include
         // dependencies - so treat any change here as "recompile everything",
         // the safe (if coarse) fallback.
-        bool IncludeChanged        = false;
-        const fs::path IncludeDir  = _Impl->SourceDir / "Include";
+        bool IncludeChanged       = false;
+        const fs::path IncludeDir = _Impl->SourceDir / "Include";
         if (fs::is_directory(IncludeDir)) {
             for (const auto& Entry : fs::directory_iterator(IncludeDir, Ec)) {
                 if (!Entry.is_regular_file() || Entry.path().extension() != ".hlsli") continue;
@@ -216,8 +215,8 @@ namespace Xen {
                 // A brand-new file appearing mid-session (not present at
                 // Initialize) is baselined, not compiled - nothing in the
                 // running game references its AssetID yet regardless.
-                const bool KnownUnchanged = It != _Impl->ShaderWriteTimes.end() && It->second == Time;
-                const bool NeverSeen      = It == _Impl->ShaderWriteTimes.end();
+                const bool KnownUnchanged     = It != _Impl->ShaderWriteTimes.end() && It->second == Time;
+                const bool NeverSeen          = It == _Impl->ShaderWriteTimes.end();
                 _Impl->ShaderWriteTimes[Name] = Time;
                 if (KnownUnchanged || NeverSeen) continue;
 
@@ -268,8 +267,7 @@ namespace Xen {
     ShaderHotReload::ShaderHotReload()  = default;
     ShaderHotReload::~ShaderHotReload() = default;
 
-    bool ShaderHotReload::Initialize(const std::filesystem::path&, const std::filesystem::path&,
-                                     const std::filesystem::path&) {
+    bool ShaderHotReload::Initialize(const fs::path&, const fs::path&, const fs::path&) {
         return false;
     }
 

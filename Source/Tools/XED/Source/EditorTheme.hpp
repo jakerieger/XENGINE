@@ -5,6 +5,7 @@
 #pragma once
 
 #include <Common/XenCommon.hpp>
+#include <Common/Platform.hpp>
 #include <Xen/Color.hpp>
 #include <nlohmann/json.hpp>
 #include <imgui.h>
@@ -46,7 +47,7 @@ namespace Xen {
 
     public:
         static std::optional<EditorTheme> LoadFromString(const std::string& JsonStr);
-        static std::optional<EditorTheme> LoadFromFile(const std::filesystem::path& ThemeFile);
+        static std::optional<EditorTheme> LoadFromFile(const fs::path& ThemeFile);
         // TODO: Save variants
     };
 }  // namespace Xen

@@ -26,7 +26,6 @@
 #pragma endregion
 
 namespace Xen {
-    namespace fs = std::filesystem;
 
     namespace {
         // Name shown in the Hierarchy list alongside the actual handle it
@@ -62,11 +61,10 @@ namespace Xen {
             std::array<char, MAX_PATH> NewActorName {'\0'};
 
             // Modal flags
-            bool ShowSettingsModal {false};
             bool ShowNewProjectModal {false};
             bool ShowNewSceneModal {false};
 
-            std::filesystem::path CurrentSceneFile {};
+            fs::path CurrentSceneFile {};
         };
 
         constexpr f32 ToolbarHeight = 40.0f;
@@ -84,7 +82,7 @@ namespace Xen {
         }
     }
 
-    Editor::Editor() {
+    Editor::Editor() : _SettingsModal(_EditorSettings) {
         _Window = std::make_unique<Window>("XED", EngineConfig::WindowMode::Windowed, 1600, 900);
         if (!_Window) { THROW_ENGINE_EXCEPTION(EditorException, "failed to create editor window"); }
 
@@ -121,23 +119,18 @@ namespace Xen {
         _SceneViewportWidth  = 1280;
         _SceneViewportHeight = 720;
 
-        _Config = EditorConfig::Read("Config/EditorConfig.ini");
-        LOG_INFO("EditorConfig:\n - CurrentProject: %s\n - StartupMode: %d\n - UITheme: %s",
-                 _Config.CurrentProject.string().c_str(),
-                 static_cast<u32>(_Config.StartupMode),
-                 _Config.UITheme.c_str());
-
-        if (_Config.StartupMode == EditorStartupMode::Maximized) _Window->Maximize();
-        if (!_Config.UITheme.empty()) LoadTheme(_Config.UITheme);
+        _EditorSettings = EditorSettings::Read("Config/EditorSettings.ini");
+        if (_EditorSettings.StartupMode == EditorStartupMode::Maximized) _Window->Maximize();
+        if (!_EditorSettings.UITheme.empty()) LoadTheme(_EditorSettings.UITheme);
 
         // We'll check that it exists here even though LoadProject already checks to avoid throwing an exception if it
         // doesn't. The editor should still start if the startup project is invalid and just prompt the user to select
         // or create a new project to load. Later, a flag of some kind will be added that tells the editor this failed.
-        if (!_Config.CurrentProject.empty() && fs::exists(_Config.CurrentProject)) {
-            LoadProject(_Config.CurrentProject);
-        } /* else {
-             Modal_NewProject();
-         }*/
+        if (!_EditorSettings.CurrentProject.empty() && fs::exists(_EditorSettings.CurrentProject)) {
+            LoadProject(_EditorSettings.CurrentProject);
+        } else {
+            Modal_NewProject();
+        }
     }
 
     Editor::~Editor() {
@@ -265,14 +258,14 @@ namespace Xen {
         return CreateProjectResult::Success;
     }
 
-    void Editor::LoadSceneFile(const std::filesystem::path& SceneFile) const {
+    void Editor::LoadSceneFile(const fs::path& SceneFile) const {
         if (!_EmbeddedGame || !_EmbeddedGame->IsRunning()) { return; }
         _EmbeddedGame->LoadSceneFromFile(SceneFile);
         State.CurrentSceneFile = SceneFile;
         SetWindowTitle(std::format("{} ({})", canonical(SceneFile).filename().string(), _CurrentProject.Name));
     }
 
-    void Editor::CreateScene(const std::string& Name, const std::filesystem::path& SceneFile) const {
+    void Editor::CreateScene(const std::string& Name, const fs::path& SceneFile) const {
         if (!_EmbeddedGame || !_EmbeddedGame->IsRunning()) { return; }
 
         Scene NewScene(Name);
@@ -662,8 +655,8 @@ namespace Xen {
         if (OpenSceneResult.has_value()) { LoadSceneFile(*OpenSceneResult); }
     }
 
-    void Editor::Action_ShowSettings() const {
-        State.ShowSettingsModal = true;
+    void Editor::Action_ShowSettings() {
+        _SettingsModal.Open();
     }
 
     void Editor::Action_NewScene() const {
@@ -855,23 +848,6 @@ namespace Xen {
         }
     }
 
-    void Editor::Modal_Settings() const {
-        CenterNextWindow();
-        static bool SetWindowSize {false};
-        if (!SetWindowSize) { ImGui::SetNextWindowSize(ImVec2(800, 600)); }
-
-        if (ImGui::BeginPopupModal("Settings", nullptr)) {
-            SetWindowSize = true;
-
-            if (ImGui::Button("Save", ImVec2(120, 0))) {
-                SetWindowSize = false;
-                ImGui::CloseCurrentPopup();
-            }
-
-            ImGui::EndPopup();
-        }
-    }
-
     void Editor::RegisterShortcut(const int Keys, std::function<void()> Action) {
         _Shortcuts.push_back({
           .Keys   = Keys,
@@ -938,7 +914,7 @@ namespace Xen {
             ImGui::MenuItem("Paste", "Ctrl+V", false, false);
             ImGui::Separator();
 
-            if (ImGui::MenuItem("Settings...", "Ctrl+Shift+S", false, true)) { State.ShowSettingsModal = true; }
+            if (ImGui::MenuItem("Settings...", "Ctrl+Shift+S", false, true)) { Action_ShowSettings(); }
 
             ImGui::EndMenu();
         }
@@ -960,11 +936,6 @@ namespace Xen {
 
         ImGui::EndMainMenuBar();
 
-        if (State.ShowSettingsModal) {
-            ImGui::OpenPopup("Settings");
-            State.ShowSettingsModal = false;
-        }
-
         if (State.ShowNewProjectModal) {
             ImGui::OpenPopup("New Project");
             State.ShowNewProjectModal = false;
@@ -975,7 +946,7 @@ namespace Xen {
             State.ShowNewSceneModal = false;
         }
 
-        Modal_Settings();
+        _SettingsModal.Draw();
         Modal_NewProject();
         Modal_NewScene();
     }

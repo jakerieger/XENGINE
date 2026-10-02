@@ -22,6 +22,8 @@
 #include <cstdlib>
 
 namespace Xen {
+    namespace fs = std::filesystem;
+
     constexpr unsigned long long operator""_KB(const unsigned long long N) {
         return N * 1024ULL;
     }
@@ -60,6 +62,10 @@ namespace Xen {
         Arguments.Argc = *__p___argc();
         Arguments.Argv = *__p___argv();
         return true;
+    }
+
+    inline const char* PathToCStr(const fs::path& Path) noexcept {
+        return Path.string().c_str();
     }
 
     namespace FileDialogs {

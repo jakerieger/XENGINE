@@ -27,7 +27,7 @@
 #include <XenPAK/AssetRegistry.hpp>
 
 #include <chrono>
-#include <filesystem>
+#include <Common/Platform.hpp>
 
 namespace Xen {
     /// @brief Root object. Owns engine services, the active scene, and the
@@ -69,7 +69,7 @@ namespace Xen {
              const PAK::AssetMountConfig& MountConfig,
              u32 InitialWidth,
              u32 InitialHeight,
-             const std::filesystem::path& ConfigRoot);
+             const fs::path& ConfigRoot);
 
         virtual ~Game();
 
@@ -98,7 +98,7 @@ namespace Xen {
         NODISCARD bool IsRunning() const { return _Running; };
 
         void LoadScene(AssetID SceneAsset);
-        void LoadSceneFromFile(std::filesystem::path Path);
+        void LoadSceneFromFile(fs::path Path);
         void UnloadScene();
 
         NODISCARD bool IsSceneChangePending() const { return _PendingSceneChange; };
@@ -252,9 +252,9 @@ namespace Xen {
         void InitializeContent(const PAK::AssetMountConfig& MountConfig);
 
         void LoadConfigs();
-        void SetConfigRoot(const std::filesystem::path& ConfigRoot);
+        void SetConfigRoot(const fs::path& ConfigRoot);
 
-        std::filesystem::path _ConfigRoot {std::filesystem::current_path() / "Config"};
+        fs::path _ConfigRoot {fs::current_path() / "Config"};
         EngineConfig _EngineConfig {};
         AudioConfig _AudioConfig {};
 
@@ -335,7 +335,7 @@ namespace Xen {
         bool _PendingSceneChange {false};
         PendingKind _PendingKind {PendingKind::None};
         AssetID _PendingAsset {};
-        std::filesystem::path _PendingPath {};
+        fs::path _PendingPath {};
 
         bool _Running {false};
         f32 _Accumulator {0.0f};
@@ -368,7 +368,7 @@ namespace Xen {
     inline void FixContentWorkingDirectory() {
         wchar_t ExePathBuf[MAX_PATH];
         if (::GetModuleFileNameW(nullptr, ExePathBuf, MAX_PATH) > 0) {
-            const std::filesystem::path ContentRoot = std::filesystem::path(ExePathBuf).parent_path().parent_path();
+            const fs::path ContentRoot = fs::path(ExePathBuf).parent_path().parent_path();
             ::SetCurrentDirectoryW(ContentRoot.c_str());
         }
     }

@@ -111,7 +111,7 @@ namespace Xen {
         };
     }
 
-    std::optional<EditorTheme> ThemeSerializer::LoadFromFile(const std::filesystem::path& ThemeFile) {
+    std::optional<EditorTheme> ThemeSerializer::LoadFromFile(const fs::path& ThemeFile) {
         if (!exists(ThemeFile)) return {};
 
         const std::ifstream F(ThemeFile);

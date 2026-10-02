@@ -37,11 +37,15 @@ xen_add_game_executable(XED
         Source/EditorUI.hpp
         Source/EditorProject.cpp
         Source/EditorProject.hpp
+        Source/EditorSettingsModal.cpp
+        Source/EditorSettingsModal.hpp
         Source/IconLibrary.cpp
         Source/IconLibrary.hpp
         Source/PropertyEditor.cpp
         Source/PropertyEditor.hpp
         Source/ProjectFileTemplate.hpp
+        Source/ProjectSettingsModal.cpp
+        Source/ProjectSettingsModal.hpp
 )
 
 target_compile_definitions(XED PUBLIC

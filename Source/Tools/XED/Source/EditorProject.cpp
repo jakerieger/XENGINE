@@ -7,7 +7,7 @@
 #include "Editor.hpp"
 
 namespace Xen {
-    std::optional<EditorProject> ProjectSerializer::LoadFromFile(const std::filesystem::path& PrxjPath) {
+    std::optional<EditorProject> ProjectSerializer::LoadFromFile(const fs::path& PrxjPath) {
         if (!exists(PrxjPath)) return None;
 
         const std::ifstream In(PrxjPath);
@@ -20,7 +20,7 @@ namespace Xen {
     }
 
     std::optional<EditorProject> ProjectSerializer::LoadFromString(const std::string& JsonStr,
-                                                                   const std::filesystem::path& ProjectRoot) {
+                                                                   const fs::path& ProjectRoot) {
         Json Root = Json::parse(JsonStr);
         if (!Root.is_object()) return None;
 
@@ -69,7 +69,7 @@ namespace Xen {
         };
     }
 
-    void ProjectSerializer::SaveToFile(const EditorProject& Project, const std::filesystem::path& PrxjPath) {
+    void ProjectSerializer::SaveToFile(const EditorProject& Project, const fs::path& PrxjPath) {
         if (Project.Version != XED_PROJECT_FORMAT_VERSION) {
             THROW_ENGINE_EXCEPTION(EditorException, "Invalid format version");
         }

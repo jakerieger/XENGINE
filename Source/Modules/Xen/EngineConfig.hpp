@@ -20,7 +20,7 @@ namespace Xen {
         u32 ResolutionX {1280};
         u32 ResolutionY {720};
 
-        static EngineConfig Read(const std::filesystem::path& Path) {
+        static EngineConfig Read(const fs::path& Path) {
             const auto ReadResult = INI::ReadFromFile(Path);
             if (!ReadResult.has_value()) { return {}; }
 
@@ -49,7 +49,7 @@ namespace Xen {
         f32 VoiceVolume {1.0f};
         f32 UIVolume {1.0f};
 
-        static AudioConfig Read(const std::filesystem::path& Path) {
+        static AudioConfig Read(const fs::path& Path) {
             const auto ReadResult = INI::ReadFromFile(Path);
             if (!ReadResult.has_value()) { return {}; }
 

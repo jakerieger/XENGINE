@@ -11,7 +11,7 @@
 #include "Scene.hpp"
 
 #include <nlohmann/json.hpp>
-#include <filesystem>
+#include <Common/Platform.hpp>
 #include <string>
 #include <unordered_map>
 
@@ -97,8 +97,8 @@ namespace Xen {
         static std::string SaveToString(const Scene& S, i32 Indent = 2);
         static void LoadFromString(Scene& S, const std::string& Text);
 
-        static void SaveToFile(const Scene& S, const std::filesystem::path& Path, i32 Indent = 2);
-        static void LoadFromFile(Scene& S, const std::filesystem::path& Path);
+        static void SaveToFile(const Scene& S, const fs::path& Path, i32 Indent = 2);
+        static void LoadFromFile(Scene& S, const fs::path& Path);
 
         static void LoadFromBytes(Scene& S, const u8* Bytes, size_t Size);
     };

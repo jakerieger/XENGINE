@@ -297,9 +297,9 @@ namespace Xen {
                 auto Created        = ComponentRegistry::Get().Create(TypeName);
                 if (!Created) {
                     THROW_ENGINE_EXCEPTION(SerializationException,
-                                          std::format("unknown component type '{}' on actor '{}' - was it registered?",
-                                                      TypeName,
-                                                      A->GetName()));
+                                           std::format("unknown component type '{}' on actor '{}' - was it registered?",
+                                                       TypeName,
+                                                       A->GetName()));
                 }
 
                 if (const auto It = CJson.find("Properties"); It != CJson.end() && It->is_object()) {
@@ -345,7 +345,7 @@ namespace Xen {
         }
     }
 
-    void SceneSerializer::SaveToFile(const Scene& S, const std::filesystem::path& Path, const i32 Indent) {
+    void SceneSerializer::SaveToFile(const Scene& S, const fs::path& Path, const i32 Indent) {
         std::ofstream Out(Path);
         if (!Out) {
             THROW_ENGINE_EXCEPTION(SerializationException, "could not open scene file for writing: " + Path.string());
@@ -353,7 +353,7 @@ namespace Xen {
         Out << SaveToString(S, Indent);
     }
 
-    void SceneSerializer::LoadFromFile(Scene& S, const std::filesystem::path& Path) {
+    void SceneSerializer::LoadFromFile(Scene& S, const fs::path& Path) {
         std::ifstream In(Path);
         if (!In) { THROW_ENGINE_EXCEPTION(SerializationException, "could not open scene file: " + Path.string()); }
         std::ostringstream Buf;

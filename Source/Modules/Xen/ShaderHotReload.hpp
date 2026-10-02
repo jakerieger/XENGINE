@@ -27,7 +27,7 @@
 
 #include <Common/XenCommon.hpp>
 
-#include <filesystem>
+#include <Common/Platform.hpp>
 #include <memory>
 
 // Same convention as DebugUI.hpp's XEN_WITH_DEBUG_UI - on by default in a
@@ -68,9 +68,7 @@ namespace Xen {
         /// (permanently inert) if SourceDir/OutputDir are empty or don't
         /// exist; DxcPath empty instead falls back to a bare "dxc.exe" PATH
         /// lookup (logged once, since it will likely fail).
-        bool Initialize(const std::filesystem::path& SourceDir,
-                        const std::filesystem::path& OutputDir,
-                        const std::filesystem::path& DxcPath);
+        bool Initialize(const fs::path& SourceDir, const fs::path& OutputDir, const fs::path& DxcPath);
 
         /// @brief Call once per frame, outside IRenderDevice::BeginFrame/
         /// EndFrame - a caller that reloads shader-owning subsystems in

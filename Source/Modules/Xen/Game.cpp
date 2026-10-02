@@ -110,7 +110,7 @@ namespace Xen {
                const PAK::AssetMountConfig& MountConfig,
                const u32 InitialWidth,
                const u32 InitialHeight,
-               const std::filesystem::path& ConfigRoot)
+               const fs::path& ConfigRoot)
         : _RenderDevice(&Device), _Embedded(true) {
         SetConfigRoot(ConfigRoot);
 
@@ -181,7 +181,7 @@ namespace Xen {
         } catch (const std::exception& Ex) { LOG_WARN("falling back to default config: %s", Ex.what()); }
     }
 
-    void Game::SetConfigRoot(const std::filesystem::path& ConfigRoot) {
+    void Game::SetConfigRoot(const fs::path& ConfigRoot) {
         _ConfigRoot = ConfigRoot;
         LoadConfigs();
     }
@@ -296,7 +296,7 @@ namespace Xen {
         _PendingPath.clear();
     }
 
-    void Game::LoadSceneFromFile(std::filesystem::path Path) {
+    void Game::LoadSceneFromFile(fs::path Path) {
         _PendingSceneChange = true;
         _PendingKind        = PendingKind::LoadFile;
         _PendingPath        = std::move(Path);

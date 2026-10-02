@@ -9,13 +9,14 @@
 #include <Xen/CommandBuffer.hpp>
 #include <Xen/Game.hpp>
 
-#include "EditorConfig.hpp"
+#include "EditorSettings.hpp"
+#include "EditorSettingsModal.hpp"
 #include "EditorTheme.hpp"
 #include "EditorUI.hpp"
 #include "EditorProject.hpp"
 #include "IconLibrary.hpp"
 
-#include <filesystem>
+#include <Common/Platform.hpp>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -41,11 +42,11 @@ namespace Xen {
             Failed,
         };
 
-        void LoadProject(const std::filesystem::path& PrxjPath);
-        CreateProjectResult CreateProject(const std::string& Name, const std::filesystem::path& Dir) const;
+        void LoadProject(const fs::path& PrxjPath);
+        CreateProjectResult CreateProject(const std::string& Name, const fs::path& Dir) const;
 
-        void LoadSceneFile(const std::filesystem::path& SceneFile) const;
-        void CreateScene(const std::string& Name, const std::filesystem::path& SceneFile) const;
+        void LoadSceneFile(const fs::path& SceneFile) const;
+        void CreateScene(const std::string& Name, const fs::path& SceneFile) const;
 
         void SetWindowTitle(const std::string& Title) const;
         void TickFrame(f32 DeltaTime);
@@ -75,7 +76,7 @@ namespace Xen {
         void Action_NewProject() const;
         void Action_OpenProject();
         void Action_OpenScene() const;
-        void Action_ShowSettings() const;
+        void Action_ShowSettings();
         void Action_NewScene() const;
         void Action_Quit();
         void Action_Save() const;
@@ -84,7 +85,6 @@ namespace Xen {
         void Modal_AddComponent() const;
         void Modal_NewProject();
         void Modal_NewScene() const;
-        void Modal_Settings() const;
 
         void CenterNextWindow() const;
 
@@ -110,10 +110,12 @@ namespace Xen {
         };
         std::vector<EditorShortcut> _Shortcuts;
 
-        EditorConfig _Config {};
+        EditorSettings _EditorSettings {};
         EditorProject _CurrentProject {};
         EditorTheme _CurrentTheme {};
         std::unique_ptr<Window> _Window;
+
+        EditorSettingsModal _SettingsModal;
 
         // Destroyed in reverse declaration order: _Icons first (its
         // Shutdown calls _Device->DestroyTexture, so it must go while

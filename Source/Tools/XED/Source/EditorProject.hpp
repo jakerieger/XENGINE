@@ -5,6 +5,7 @@
 #pragma once
 
 #include <Common/XenCommon.hpp>
+#include <Common/Platform.hpp>
 #include <nlohmann/json.hpp>
 
 namespace Xen {
@@ -16,20 +17,19 @@ namespace Xen {
         u32 Version {1};
         std::string EngineVersion {XEN_ENGINE_VERSION};
         std::string Name;
-        std::filesystem::path ProjectRoot;  // This probably doesn't need to be stored, but I'm leaving it for now.
-        std::filesystem::path ConfigDirectory;
-        std::filesystem::path ContentDirectory;
-        std::filesystem::path RuntimeDirectory;
+        fs::path ProjectRoot;  // This probably doesn't need to be stored, but I'm leaving it for now.
+        fs::path ConfigDirectory;
+        fs::path ContentDirectory;
+        fs::path RuntimeDirectory;
     };
 
     class ProjectSerializer {
         ProjectSerializer() = delete;
 
     public:
-        static std::optional<EditorProject> LoadFromFile(const std::filesystem::path& PrxjPath);
-        static std::optional<EditorProject> LoadFromString(const std::string& JsonStr,
-                                                           const std::filesystem::path& ProjectRoot);
+        static std::optional<EditorProject> LoadFromFile(const fs::path& PrxjPath);
+        static std::optional<EditorProject> LoadFromString(const std::string& JsonStr, const fs::path& ProjectRoot);
 
-        static void SaveToFile(const EditorProject& Project, const std::filesystem::path& PrxjPath);
+        static void SaveToFile(const EditorProject& Project, const fs::path& PrxjPath);
     };
 }  // namespace Xen

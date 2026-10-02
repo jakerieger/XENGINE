@@ -314,7 +314,7 @@ namespace Xen {
 
         InputMap() = default;
 
-        void Load(const std::filesystem::path& InputConfig) {
+        void Load(const fs::path& InputConfig) {
             if (!exists(InputConfig)) {
                 THROW_ENGINE_EXCEPTION(EngineException,
                                        "input config doesn't exist (missing: '" + InputConfig.string() + "')");
@@ -436,7 +436,7 @@ namespace Xen {
         i32 _MouseDeltaX {0}, _MouseDeltaY {0};
         bool _Enabled {true};
 
-        void LoadInputMap(const std::filesystem::path& InputConfig) { _InputMap.Load(InputConfig); }
+        void LoadInputMap(const fs::path& InputConfig) { _InputMap.Load(InputConfig); }
 
         void SetEnabled(const bool Enabled) { _Enabled = Enabled; }
 
