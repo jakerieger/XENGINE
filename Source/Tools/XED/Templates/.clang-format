@@ -1,0 +1,5 @@
+# These are XED's new-project templates, not compilable C++: ${...} placeholders
+# get substituted when a project is created (see ParseTemplate). clang-format
+# splits "${GAME_CLASS}" apart, which breaks substitution - so never format here.
+DisableFormat: true
+SortIncludes: Never

@@ -33,8 +33,11 @@ target_sources(XenCommon PUBLIC
 )
 
 target_compile_features(XenCommon PUBLIC cxx_std_20)
+# XEN_ENGINE_VERSION comes from the top-level project(XENGINE VERSION ...) -
+# the same version find_package(Xen <version>) checks, and the one XED stamps
+# into (and requires of) every .prxj project file.
 target_compile_definitions(XenCommon PUBLIC
-        XEN_ENGINE_VERSION="dev"
+        XEN_ENGINE_VERSION="${XENGINE_VERSION}"
         UNICODE
         _UNICODE
         WIN32_LEAN_AND_MEAN

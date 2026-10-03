@@ -41,6 +41,19 @@ function(_xen_require_engine_vars CALLER)
     endif ()
 endfunction()
 
+# Packaging runs as POST_BUILD steps, i.e. only when the game relinks - so
+# editing only content or config would leave the packaged output stale. Making
+# those files link dependencies of the executable fixes that: changing one
+# relinks the game, which re-runs its packaging. CONFIGURE_DEPENDS picks up
+# added/removed files too. (LINK_DEPENDS is honored by the Ninja and Makefile
+# generators; Visual Studio ignores it, so there a rebuild is still needed.)
+function(_xen_relink_on_changes TARGET DIR)
+    if (IS_DIRECTORY "${DIR}")
+        file(GLOB_RECURSE files CONFIGURE_DEPENDS "${DIR}/*")
+        set_property(TARGET ${TARGET} APPEND PROPERTY LINK_DEPENDS ${files})
+    endif ()
+endfunction()
+
 # Makes TARGET build after PAKTool when PAKTool is built in this same project
 # (in-tree). An installed Xen::PAKTool is an IMPORTED target with nothing to build.
 function(_xen_depend_on_paktool TARGET)
@@ -209,6 +222,7 @@ function(xen_package_engine_content TARGET)
     if (TARGET xen_engine_paks)
         add_dependencies(${TARGET} xen_engine_paks)
     endif ()
+    _xen_relink_on_changes(${TARGET} "${CMAKE_CURRENT_SOURCE_DIR}/Config")
 endfunction()
 
 # Packs the game's own CONTENT_DIR into PAK_FILENAME next to its Bin64/.
@@ -261,4 +275,6 @@ function(xen_package_game_content TARGET)
     )
 
     _xen_depend_on_paktool(${TARGET})
+    _xen_relink_on_changes(${TARGET} "${ARG_CONTENT_DIR}")
+    set_property(TARGET ${TARGET} APPEND PROPERTY LINK_DEPENDS "${ARG_IGNORE_FILE}")
 endfunction()

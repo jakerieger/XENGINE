@@ -10,6 +10,7 @@
 #
 # Layout:
 #   bin/                    tools (Release builds only)
+#   XED/                    the editor: Bin64/XED.exe, Config/, EngineContent/, Templates/ (Release only)
 #   include/                Xen/ Common/ XenPAK/ (public engine headers), D3D12MemAlloc.h, directx/
 #   include/XenVendor/      vendored headers games use: imgui, nlohmann/json, ini.h
 #   lib/                    engine + dependency static libs (Debug ones end in 'd')
@@ -58,6 +59,21 @@ if (TARGET PAKTool)
 endif ()
 if (TARGET Bin2CC)
     install(TARGETS Bin2CC RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} CONFIGURATIONS Release)
+endif ()
+
+# XED keeps the same layout as any Xen game (Game::FixContentWorkingDirectory
+# expects Config/, EngineContent/ etc. one level above Bin64/), plus its
+# new-project Templates/. Release only, like the other tools. An installed XED
+# finds its own engine install from there (two levels above XED.exe) and
+# points new projects' CMakeUserPresets.json at it.
+if (TARGET XED)
+    set(_xed_dir "${TOOLS_ROOT}/XED")
+    install(TARGETS XED RUNTIME DESTINATION XED/Bin64 CONFIGURATIONS Release)
+    install(DIRECTORY "${_xed_dir}/Config/" DESTINATION XED/Config CONFIGURATIONS Release)
+    install(DIRECTORY "${_xed_dir}/Templates/" DESTINATION XED/Templates CONFIGURATIONS Release
+            PATTERN ".clang-format" EXCLUDE)
+    install(DIRECTORY "${XEN_ENGINE_PAK_DIR}/" DESTINATION XED/EngineContent CONFIGURATIONS Release)
+    unset(_xed_dir)
 endif ()
 
 # Game helpers (include(XenGame) - XenConfig.cmake puts this dir on

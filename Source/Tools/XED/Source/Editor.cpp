@@ -82,6 +82,17 @@ namespace Xen {
         };
 
         constexpr f32 ToolbarHeight = 40.0f;
+
+        // The engine install this XED belongs to, for pointing new projects'
+        // CMake at it. An installed XED lives at <install root>/XED/Bin64,
+        // and FixContentWorkingDirectory makes <install root>/XED the working
+        // directory. Empty when XED runs from a build tree instead of an
+        // install - there's no find_package(Xen) package to point at there.
+        fs::path FindEngineInstallRoot() {
+            const fs::path Root = fs::current_path().parent_path();
+            if (exists(Root / "share" / "Xen" / "cmake" / "XenConfig.cmake")) return Root;
+            return {};
+        }
     }  // namespace
 
     // Global frame-by-frame UI state
@@ -228,6 +239,14 @@ namespace Xen {
         const auto ContentDir = Dir / "Content";
         if (!fs::create_directories(ContentDir)) { return CreateProjectResult::Failed; }
 
+        // Starter scene (camera, light, sky, post-processing) - the template
+        // EngineConfig.ini's StartupScene points here. Without an active
+        // scene a Game renders nothing at all, not even OnRender/DebugUI.
+        if (!fs::create_directories(ContentDir / "scenes")) { return CreateProjectResult::Failed; }
+        if (!fs::copy_file("Templates/Content/scenes/main.xscene", ContentDir / "scenes" / "main.xscene")) {
+            return CreateProjectResult::Failed;
+        }
+
         const auto RuntimeDir = Dir / "Runtime";
         if (!fs::create_directories(RuntimeDir)) { return CreateProjectResult::Failed; }
 
@@ -245,15 +264,30 @@ namespace Xen {
                 strcpy_s(Username, UsernameLen, "Unknown");
             }
 
+            const fs::path EngineRoot = FindEngineInstallRoot();
+
             std::unordered_map<std::string, std::string> TemplateVars = {
               {"GAME_CLASS", Name},
               {"USER", Username},
               {"DATE", DateTime::Now().DateString()},
+              {"ENGINE_VERSION", XEN_ENGINE_VERSION},
+              // Forward slashes - it ends up in JSON/CMake, where '\' escapes.
+              {"XEN_INSTALL_ROOT", EngineRoot.generic_string()},
             };
 
             auto CMakeListsTemplate  = IO::ReadString("Templates/CMakeLists.txt");
             const auto CMakeListsTxt = ParseTemplate(CMakeListsTemplate, TemplateVars);
             IO::WriteString(CMakeListsTxt, CMakeListsTxtPath);
+
+            // Machine-specific (an absolute path to this engine install), hence
+            // CMakeUserPresets.json rather than the shared CMakePresets.json.
+            if (!EngineRoot.empty()) {
+                auto PresetsTemplate = IO::ReadString("Templates/CMakeUserPresets.json");
+                IO::WriteString(ParseTemplate(PresetsTemplate, TemplateVars), Dir / "CMakeUserPresets.json");
+            } else {
+                LOG_WARN("XED isn't running from an engine install - the new project's CMake needs "
+                         "-DCMAKE_PREFIX_PATH=<engine install dir> to find the engine");
+            }
 
             auto MainCppTemplate = IO::ReadString("Templates/Runtime/main.cpp");
             const auto MainCpp   = ParseTemplate(MainCppTemplate, TemplateVars);

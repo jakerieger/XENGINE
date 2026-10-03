@@ -6,9 +6,7 @@
 
 #include <Xen/Game.hpp>
 
-class $ {
-    GAME_CLASS
-} final : public Xen::Game {
+class ${GAME_CLASS} final : public Xen::Game {
     using Game::Game;
 
 protected:
