@@ -57,7 +57,7 @@ namespace Xen {
     };
 }  // namespace Xen
 
-#define REGISTER_COMPONENT(Type)                                                                                       \
+#define XEN_COMPONENT(Type)                                                                                       \
     class Type;                                                                                                        \
     namespace {                                                                                                        \
         const struct Type##_AutoRegister {                                                                             \

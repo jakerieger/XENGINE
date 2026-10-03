@@ -9,10 +9,10 @@
 namespace Xen {
     class CameraComponent;
 
-    REGISTER_COMPONENT(FPPlayerController)
+    XEN_COMPONENT(FPPlayerController)
     class FPPlayerController : public IComponent {
     public:
-        XEN_COMPONENT_TYPE(FPPlayerController)
+        XEN_COMPONENT_STATICS(FPPlayerController)
         FPPlayerController();
         ~FPPlayerController() override;
 

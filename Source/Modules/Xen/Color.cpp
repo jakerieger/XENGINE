@@ -4,15 +4,17 @@
 
 #include "Color.hpp"
 
+#include <algorithm>
+
 namespace Xen {
     Color::Color(const f32 R, const f32 G, const f32 B, const f32 A) : _R(R), _G(G), _B(B), _A(A) {}
     Color::Color(const f32 V, const f32 A) : _R(V), _G(V), _B(V), _A(A) {}
 
     Color::Color(const u32 V) {
-        _A = (V >> 24) & 0xFF;
-        _R = (V >> 16) & 0xFF;
-        _G = (V >> 8) & 0xFF;
-        _B = V & 0xFF;
+        _A = ((V >> 24) & 0xFF) / 255.f;
+        _R = ((V >> 16) & 0xFF) / 255.f;
+        _G = ((V >> 8) & 0xFF) / 255.f;
+        _B = (V & 0xFF) / 255.f;
     }
 
     Color::Color(const std::string& Hex) {
@@ -88,6 +90,33 @@ namespace Xen {
         return !(*this == Other);
     }
 
+    u32 Color::GetComponents(const ColorChannel Channel) const {
+        f32 Value = 0.f;
+        switch (Channel) {
+            case ColorChannel::R:
+                Value = _R;
+                break;
+            case ColorChannel::G:
+                Value = _G;
+                break;
+            case ColorChannel::B:
+                Value = _B;
+                break;
+            case ColorChannel::A:
+                Value = _A;
+                break;
+        }
+        return CAST<u8>(CAST<u32>(Value * 255.f));
+    }
+
+    u32 Color::GetComponents(const ColorChannelOrder Order) const {
+        u32 Result = 0;
+        for (u32 I = 0; I < Order.Count(); ++I) {
+            Result = (Result << 8) | GetComponents(Order.At(I));
+        }
+        return Result;
+    }
+
     Color Color::WithRed(const f32 R) const {
         return {R, _G, _B, _A};
     }
@@ -102,5 +131,15 @@ namespace Xen {
 
     Color Color::WithAlpha(f32 A) const {
         return {_R, _G, _B, A};
+    }
+
+    Color Color::WithBrightness(f32 Brightness) const {
+        Brightness = std::clamp(Brightness, 0.f, 1.f);
+        return {_R * Brightness, _G * Brightness, _B * Brightness, _A};
+    }
+
+    Color Color::Lightened(f32 Amount) const {
+        Amount = std::clamp(Amount, 0.f, 1.f);
+        return {_R + (1.f - _R) * Amount, _G + (1.f - _G) * Amount, _B + (1.f - _B) * Amount, _A};
     }
 }  // namespace Xen

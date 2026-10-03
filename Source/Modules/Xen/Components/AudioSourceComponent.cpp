@@ -4,5 +4,4 @@
 
 #include "AudioSourceComponent.hpp"
 
-namespace Xen {
-} // Xen
+namespace Xen {}  // namespace Xen

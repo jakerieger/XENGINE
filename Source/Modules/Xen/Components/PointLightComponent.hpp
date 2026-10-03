@@ -12,7 +12,7 @@
 #include <algorithm>
 
 namespace Xen {
-    REGISTER_COMPONENT(PointLightComponent)
+    XEN_COMPONENT(PointLightComponent)
 
     /// @brief An omnidirectional light radiating from the owning actor's
     /// world position (Transform::Position - unlike DirectionalLightComponent's
@@ -25,7 +25,7 @@ namespace Xen {
     /// DistanceAttenuation) rather than a hard, popping cutoff.
     class PointLightComponent final : public IComponent {
     public:
-        XEN_COMPONENT_TYPE(PointLightComponent)
+        XEN_COMPONENT_STATICS(PointLightComponent)
         PointLightComponent() = default;
 
         void Reflect(IReflector& R) override;

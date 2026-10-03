@@ -12,7 +12,7 @@
 #include <algorithm>
 
 namespace Xen {
-    REGISTER_COMPONENT(DirectionalLightComponent)
+    XEN_COMPONENT(DirectionalLightComponent)
 
     /// @brief An infinitely-distant light (sun-like) whose direction comes
     /// from the owning actor's rotation, not a separately-stored vector -
@@ -23,7 +23,7 @@ namespace Xen {
     /// CameraComponent).
     class DirectionalLightComponent final : public IComponent {
     public:
-        XEN_COMPONENT_TYPE(DirectionalLightComponent)
+        XEN_COMPONENT_STATICS(DirectionalLightComponent)
         DirectionalLightComponent() = default;
 
         void Reflect(IReflector& R) override;

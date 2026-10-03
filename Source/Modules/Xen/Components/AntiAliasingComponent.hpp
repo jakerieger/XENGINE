@@ -21,7 +21,7 @@ namespace Xen {
     /// no benefit.
     enum class AntiAliasingTechnique : u8 { None, FXAA, TAA };
 
-    REGISTER_COMPONENT(AntiAliasingComponent)
+    XEN_COMPONENT(AntiAliasingComponent)
 
     /// @brief The scene's anti-aliasing settings. Scene-wide, not per-actor -
     /// Game/MeshRenderer use the first one they find, same rule as
@@ -29,7 +29,7 @@ namespace Xen {
     /// A scene with none renders with Technique's own default (TAA).
     class AntiAliasingComponent final : public IComponent {
     public:
-        XEN_COMPONENT_TYPE(AntiAliasingComponent)
+        XEN_COMPONENT_STATICS(AntiAliasingComponent)
         AntiAliasingComponent() = default;
 
         void Reflect(IReflector& R) override;

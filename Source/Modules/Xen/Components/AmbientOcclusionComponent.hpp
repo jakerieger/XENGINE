@@ -11,7 +11,7 @@
 #include "SSAO.hpp"
 
 namespace Xen {
-    REGISTER_COMPONENT(AmbientOcclusionComponent)
+    XEN_COMPONENT(AmbientOcclusionComponent)
 
     /// @brief The scene's screen-space ambient occlusion settings (see
     /// SSAO). Scene-wide, not per-actor - MeshRenderer uses the first one it
@@ -19,7 +19,7 @@ namespace Xen {
     /// scene with none renders with SSAO::Settings's defaults (on).
     class AmbientOcclusionComponent final : public IComponent {
     public:
-        XEN_COMPONENT_TYPE(AmbientOcclusionComponent)
+        XEN_COMPONENT_STATICS(AmbientOcclusionComponent)
         AmbientOcclusionComponent() = default;
 
         void Reflect(IReflector& R) override;

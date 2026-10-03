@@ -9,11 +9,24 @@
 #include "UI.hpp"
 
 #include <Common/Io.hpp>
+#include <Common/Log.hpp>
 #include <Xen/XenGameSettings.h>
 #include <Xen/SceneSerializer.hpp>
+
+#pragma region Components
+#include <Xen/Components/AmbientOcclusionComponent.hpp>
+#include <Xen/Components/AntiAliasingComponent.hpp>
+#include <Xen/Components/AudioSourceComponent.hpp>
+#include <Xen/Components/CameraComponent.hpp>
 #include <Xen/Components/DirectionalLightComponent.hpp>
-#include <Xen/Components/PostProcessComponent.hpp>
 #include <Xen/Components/EnvironmentComponent.hpp>
+#include <Xen/Components/FPPlayerController.hpp>
+#include <Xen/Components/MeshComponent.hpp>
+#include <Xen/Components/PointLightComponent.hpp>
+#include <Xen/Components/PostProcessComponent.hpp>
+#include <Xen/Components/SpotLightComponent.hpp>
+#include <Xen/Components/SpriteComponent.hpp>
+#pragma endregion
 
 #include <algorithm>
 #include <chrono>
@@ -21,6 +34,7 @@
 #include <Lmcons.h>  // contains UNLEN (maximum length of Windows username)
 
 #pragma region Embedded Resources
+#include "MaterialBindings.hpp"
 #include "Resource/InterRegular.h"
 #include "Resource/InterBold.h"
 #pragma endregion
@@ -396,6 +410,7 @@ namespace Xen {
         Style.WindowRounding   = _CurrentTheme.WindowRounding;
         Style.FrameRounding    = _CurrentTheme.FrameRounding;
         Style.TabRounding      = _CurrentTheme.TabRounding;
+        Style.ChildRounding    = _CurrentTheme.WindowRounding;
         Style.WindowBorderSize = _CurrentTheme.WindowBorderSize;
         Style.FrameBorderSize  = _CurrentTheme.FrameBorderSize;
 
@@ -416,8 +431,8 @@ namespace Xen {
         Colors[ImGuiCol_FrameBgHovered]     = _CurrentTheme.Colors.Input.WithAlpha(0.7f).To<ImVec4>();
         Colors[ImGuiCol_FrameBg]            = _CurrentTheme.Colors.Input.To<ImVec4>();
         Colors[ImGuiCol_HeaderActive] =
-          _CurrentTheme.Colors.WindowBackground.WithAlpha(0.67f).To<ImVec4>();  // Selected item in listbox
-        Colors[ImGuiCol_HeaderHovered]         = _CurrentTheme.Colors.WindowBackground.WithAlpha(0.8f).To<ImVec4>();
+          _CurrentTheme.Colors.WindowBackground.Lightened(0.3f).To<ImVec4>();  // Selected item in listbox
+        Colors[ImGuiCol_HeaderHovered]         = _CurrentTheme.Colors.WindowBackground.Lightened(0.2f).To<ImVec4>();
         Colors[ImGuiCol_Header]                = _CurrentTheme.Colors.WindowBackground.To<ImVec4>();
         Colors[ImGuiCol_MenuBarBg]             = _CurrentTheme.Colors.Input.To<ImVec4>();
         Colors[ImGuiCol_ModalWindowDimBg]      = ImVec4(0.00f, 0.00f, 0.00f, 0.5f);
@@ -438,7 +453,7 @@ namespace Xen {
         Colors[ImGuiCol_ScrollbarGrab]         = _CurrentTheme.Colors.TextPrimary.To<ImVec4>();
         Colors[ImGuiCol_SeparatorActive]       = _CurrentTheme.Colors.TextPrimary.To<ImVec4>();
         Colors[ImGuiCol_SeparatorHovered]      = _CurrentTheme.Colors.TextPrimary.To<ImVec4>();
-        Colors[ImGuiCol_Separator]             = Color("#4e4e4e").To<ImVec4>();
+        Colors[ImGuiCol_Separator]             = _CurrentTheme.Colors.Border.To<ImVec4>();
         Colors[ImGuiCol_SliderGrabActive]      = _CurrentTheme.Colors.TextPrimary.To<ImVec4>();
         Colors[ImGuiCol_SliderGrab]            = _CurrentTheme.Colors.TextPrimary.To<ImVec4>();
         Colors[ImGuiCol_TabActive]             = _CurrentTheme.Colors.TabActive.To<ImVec4>();
@@ -475,7 +490,7 @@ namespace Xen {
                         }
 
                         State.ActorEnabled = A->IsEnabled();
-                        ImGui::Checkbox("Enabled", &State.ActorEnabled);
+                        UI::Controls::CheckBox("Enabled", &State.ActorEnabled);
                         A->SetEnabled(State.ActorEnabled);
 
                         State.TransformPosition = A->GetWorldTransform().Position;
@@ -486,9 +501,9 @@ namespace Xen {
                                                    DirectX::XMConvertToDegrees(EulerAngles.z)};
                         State.TransformScale    = A->GetWorldTransform().Scale;
 
-                        ImGui::DragFloat3("Position", &State.TransformPosition.x, 0.01f);
-                        ImGui::DragFloat3("Rotation", &State.TransformRotation.x, 0.1f);
-                        ImGui::DragFloat3("Scale", &State.TransformScale.x, 0.01f);
+                        UI::Controls::DragFloatNColored("Position", &State.TransformPosition.x, 3, 0.01f);
+                        UI::Controls::DragFloatNColored("Rotation", &State.TransformRotation.x, 3, 0.01f);
+                        UI::Controls::DragFloatNColored("Scale", &State.TransformScale.x, 3, 0.01f);
 
                         A->SetPosition(State.TransformPosition);
                         // Rotating on X axis mostly works, the other two axes just snap back to zero.
@@ -515,7 +530,7 @@ namespace Xen {
                             ImGui::PushID(C);
 
                             bool ComponentEnabled = C->IsEnabled();
-                            if (ImGui::Checkbox("##ComponentEnabled", &ComponentEnabled)) {
+                            if (UI::Controls::CheckBox("##ComponentEnabled", &ComponentEnabled)) {
                                 C->SetEnabled(ComponentEnabled);
                             }
                             ImGui::SameLine();
@@ -639,7 +654,50 @@ namespace Xen {
     }
 
     void Editor::View_Log() const {
-        if (ImGui::Begin("Log")) { ImGui::TextDisabled("(engine log - later work)"); }
+        if (ImGui::Begin("Log")) {
+            Logger& Log = GetLogger();
+
+            std::vector<Logger::Entry> Snapshot;
+            {
+                std::lock_guard Lock(Log.GetBufferMutex());
+                const auto& Entries = Log.GetEntries();
+                const size_t Total  = Log.GetTotalEntries();
+                // Oldest entry is at index 0 until the ring has wrapped, after which the next write slot is the oldest.
+                const size_t Start = Total < Logger::LOGGER_MAX_ENTRIES ? 0 : Log.GetCurrentEntryIndex();
+                Snapshot.reserve(Total);
+                for (size_t I = 0; I < Total; ++I) {
+                    Snapshot.push_back(Entries[(Start + I) % Logger::LOGGER_MAX_ENTRIES]);
+                }
+            }
+
+            if (ImGui::BeginChild("LogScroll", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar)) {
+                // Only follow new lines if the user was already at the bottom.
+                const bool WasAtBottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1.0f;
+
+                for (const Logger::Entry& Entry : Snapshot) {
+                    ImVec4 Color;
+                    switch (Entry.Severity) {
+                        case Logger::Severity::Warning:
+                            Color = ImVec4(1.0f, 0.8f, 0.2f, 1.0f);
+                            break;
+                        case Logger::Severity::Error:
+                        case Logger::Severity::Critical:
+                            Color = ImVec4(1.0f, 0.35f, 0.35f, 1.0f);
+                            break;
+                        case Logger::Severity::Debug:
+                            Color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+                            break;
+                        default:
+                            Color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                            break;
+                    }
+                    ImGui::TextColored(Color, "[%s] %s", Entry.TimeStamp.c_str(), Entry.Message.c_str());
+                }
+
+                if (WasAtBottom) ImGui::SetScrollHereY(1.0f);
+            }
+            ImGui::EndChild();
+        }
         ImGui::End();
     }
 
@@ -875,6 +933,26 @@ namespace Xen {
     }
 
     void Editor::DrawMainMenuBar() {
+        // TODO: Add associated functions for creating the component. Possible some kind of factory?
+        static const std::vector<std::string> AddComponentMenuItems = {
+          "Ambient Occlusion",
+          "Anti Aliasing",
+          "Audio Source",
+          "Camera",
+          "Directional Light",
+          "Environment",
+          "First Person Player Controller",
+          "Mesh",
+          "Material",
+          "Point Light",
+          "Post Process",
+          "Spot Light",
+          "Sprite",
+        };
+
+        const bool SceneReadyToEdit =
+          _EmbeddedGame != nullptr && _EmbeddedGame->IsRunning() && _EmbeddedGame->GetActiveScene() != nullptr;
+
         if (!ImGui::BeginMainMenuBar()) return;
 
         if (ImGui::BeginMenu("File")) {
@@ -899,6 +977,7 @@ namespace Xen {
             if (ImGui::MenuItem("Exit", "Ctrl+Q")) { Action_Quit(); }
             ImGui::EndMenu();
         }
+
         if (ImGui::BeginMenu("Edit")) {
             ImGui::MenuItem("Undo", "Ctrl+Z", false, false);
             ImGui::MenuItem("Redo", "Ctrl+Y", false, false);
@@ -912,16 +991,45 @@ namespace Xen {
 
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu("View")) {
-            ImGui::MenuItem("Reset Layout", nullptr, false, false);
+
+        if (ImGui::BeginMenu("Add", SceneReadyToEdit)) {
+            if (ImGui::BeginMenu("Actor")) {
+                if (ImGui::MenuItem("Empty", nullptr, false, true)) {}
+
+                if (ImGui::MenuItem("Sun", nullptr, false, true)) {}
+
+                if (ImGui::MenuItem("Camera", nullptr, false, true)) {}
+
+                if (ImGui::MenuItem("Environment", nullptr, false, true)) {}
+
+                ImGui::EndMenu();
+            }
+
+            const bool AddComponentEnabled =
+              SceneReadyToEdit && _EmbeddedGame->GetActiveScene()->Get(State.SelectedActor) != nullptr;
+            if (ImGui::BeginMenu("Component", AddComponentEnabled)) {
+                for (auto& Item : AddComponentMenuItems) {
+                    if (ImGui::MenuItem(Item.c_str(), nullptr, false, true)) {}
+                }
+
+                ImGui::EndMenu();
+            }
+
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu("Build")) {
+
+        if (ImGui::BeginMenu("Build", SceneReadyToEdit)) {
             ImGui::MenuItem("Build Project", nullptr, false, false);
             ImGui::MenuItem("Rebuild", nullptr, false, false);
             ImGui::MenuItem("Clean", nullptr, false, false);
             ImGui::EndMenu();
         }
+
+        if (ImGui::BeginMenu("View")) {
+            ImGui::MenuItem("Reset Layout", nullptr, false, false);
+            ImGui::EndMenu();
+        }
+
         if (ImGui::BeginMenu("Help")) {
             ImGui::MenuItem("Documentation", nullptr, false, false);
             ImGui::MenuItem("About XED", nullptr, false, false);
@@ -963,19 +1071,11 @@ namespace Xen {
             const f32 ButtonHeight = IconSize.y + ImGui::GetStyle().FramePadding.y * 2.0f;
             ImGui::SetCursorPosY((ToolbarHeight - ButtonHeight) * 0.5f);
 
-            // A toolbar button whose action isn't implemented yet (see
-            // Action_DeleteActor/Action_DuplicateActor's own history) is
-            // still drawn, just disabled - same convention DrawMainMenuBar
-            // already uses for its own not-yet-wired MenuItems, so a
-            // placeholder button looks like one rather than a dead click.
             const auto ToolbarButton = [this, IconSize](const char* StrID, const EditorIcon Icon, const bool Enabled) {
                 const ImTextureID TexID = _Icons.Get(Icon);
 
                 bool Clicked = false;
                 ImGui::BeginDisabled(!Enabled);
-                // A missing icon (see IconLibrary::Get's own comment) still
-                // reserves its button's footprint, so one failed load
-                // doesn't shove every button after it out of alignment.
                 if (TexID != 0) {
                     Clicked = ImGui::ImageButton(StrID, TexID, IconSize);
                 } else {
@@ -1016,20 +1116,11 @@ namespace Xen {
     }
 
     void Editor::DrawDockspaceAndPanels(const f32 DeltaTime) {
-        // Outside any window's Begin/End on purpose - see ProcessShortcuts'
-        // own comment on why these need RouteGlobal, not the default
-        // RouteFocused, to fire regardless of which panel has focus.
         ProcessShortcuts();
 
         DrawMainMenuBar();
         DrawToolbar();
 
-        // The dockspace host window fills whatever's left of the viewport's
-        // work area below the toolbar - same shape as ImGui::
-        // DockSpaceOverViewport's own source (imgui.cpp), just with this
-        // shrunk rect instead of the viewport's own WorkPos/WorkSize, since
-        // that convenience wrapper has no way to reserve toolbar space
-        // itself.
         const ImGuiViewport* Viewport = ImGui::GetMainViewport();
         const ImVec2 DockspacePos(Viewport->WorkPos.x, Viewport->WorkPos.y + ToolbarHeight);
         const ImVec2 DockspaceSize(Viewport->WorkSize.x, Viewport->WorkSize.y - ToolbarHeight);

@@ -12,7 +12,7 @@
 #include <algorithm>
 
 namespace Xen {
-    REGISTER_COMPONENT(SpotLightComponent)
+    XEN_COMPONENT(SpotLightComponent)
 
     /// @brief A cone-shaped light radiating from the owning actor's world
     /// position toward its world-rotated direction - same derivation as
@@ -24,7 +24,7 @@ namespace Xen {
     /// a hard-edged circle of light.
     class SpotLightComponent final : public IComponent {
     public:
-        XEN_COMPONENT_TYPE(SpotLightComponent)
+        XEN_COMPONENT_STATICS(SpotLightComponent)
         SpotLightComponent() = default;
 
         void Reflect(IReflector& R) override;

@@ -4,8 +4,14 @@
 
 #pragma once
 
+#include "Component.hpp"
+#include "ComponentRegistry.hpp"
+
 namespace Xen {
+    XEN_COMPONENT(AudioSourceComponent);
 
-    class AudioSourceComponent {};
-
+    class AudioSourceComponent final : public IComponent {
+    public:
+        XEN_COMPONENT_STATICS(AudioSourceComponent);
+    };
 }  // namespace Xen

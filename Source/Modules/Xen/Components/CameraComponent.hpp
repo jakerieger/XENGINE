@@ -29,10 +29,10 @@ namespace Xen {
     /// perspective scene camera) rather than two parallel object models.
     enum class ProjectionMode : u8 { Orthographic, Perspective };
 
-    REGISTER_COMPONENT(CameraComponent);
+    XEN_COMPONENT(CameraComponent);
     class CameraComponent final : public IComponent {
     public:
-        XEN_COMPONENT_TYPE(CameraComponent);
+        XEN_COMPONENT_STATICS(CameraComponent);
         CameraComponent() = default;
 
         void Reflect(IReflector& R) override {

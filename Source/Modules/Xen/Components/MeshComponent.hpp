@@ -11,14 +11,14 @@
 #include "MeshCache.hpp"
 
 namespace Xen {
-    REGISTER_COMPONENT(MeshComponent)
+    XEN_COMPONENT(MeshComponent)
 
     /// @brief References a mesh asset (glTF/GLB - see MeshCache.cpp),
     /// resolving it to GPU buffers via the scene's MeshCache - the 3D
     /// analogue of SpriteComponent's texture reference.
     class MeshComponent final : public IComponent {
     public:
-        XEN_COMPONENT_TYPE(MeshComponent)
+        XEN_COMPONENT_STATICS(MeshComponent)
         MeshComponent() = default;
         explicit MeshComponent(AssetID Mesh);
 

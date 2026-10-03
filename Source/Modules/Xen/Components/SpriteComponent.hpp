@@ -11,11 +11,11 @@
 #include "TextureCache.hpp"
 
 namespace Xen {
-    REGISTER_COMPONENT(SpriteComponent)
+    XEN_COMPONENT(SpriteComponent)
 
       class SpriteComponent final : public IComponent {
     public:
-        XEN_COMPONENT_TYPE(SpriteComponent) SpriteComponent();
+        XEN_COMPONENT_STATICS(SpriteComponent) SpriteComponent();
         explicit SpriteComponent(AssetID Texture, Rect SourceRect = {});
 
         void Reflect(IReflector& R) override;

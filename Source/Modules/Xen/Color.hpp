@@ -10,6 +10,45 @@
 namespace Xen {
     DEFINE_ENGINE_EXCEPTION(ColorException);
 
+    enum class ColorChannel : u8 { R = 0, G = 1, B = 2, A = 3 };
+
+    /// @brief Ordered list of up to 4 color channels, built by chaining ColorChannels with '|'.
+    class ColorChannelOrder {
+    public:
+        constexpr ColorChannelOrder(const ColorChannel First, const ColorChannel Second)
+            : _Packed(static_cast<u8>(static_cast<u8>(First) | (static_cast<u8>(Second) << 2))), _Count(2) {}
+
+        NODISCARD constexpr u32 Count() const { return _Count; }
+
+        NODISCARD constexpr ColorChannel At(const u32 Index) const {
+            return static_cast<ColorChannel>((_Packed >> (Index * 2)) & 0x3);
+        }
+
+        friend constexpr ColorChannelOrder operator|(ColorChannelOrder Order, const ColorChannel Next) {
+            // A u32 holds at most 4 components; channels beyond the fourth are ignored.
+            if (Order._Count >= 4) return Order;
+            Order._Packed = static_cast<u8>(Order._Packed | (static_cast<u8>(Next) << (Order._Count * 2)));
+            Order._Count++;
+            return Order;
+        }
+
+    private:
+        u8 _Packed;
+        u8 _Count;
+    };
+
+    constexpr ColorChannelOrder operator|(const ColorChannel A, const ColorChannel B) {
+        return {A, B};
+    }
+
+    /// @brief Bring into scope with `using namespace Xen::Channel;` to write `GetComponents(A | B | G | R)`.
+    namespace Channel {
+        inline constexpr auto R = ColorChannel::R;
+        inline constexpr auto G = ColorChannel::G;
+        inline constexpr auto B = ColorChannel::B;
+        inline constexpr auto A = ColorChannel::A;
+    }  // namespace Channel
+
     class Color {
     public:
         Color() = default;
@@ -47,6 +86,18 @@ namespace Xen {
         Color WithGreen(f32 G) const;
         Color WithBlue(f32 B) const;
         Color WithAlpha(f32 A) const;
+
+        /// @brief Scales the RGB components by Brightness (0.0 = black, 1.0 = unchanged). Alpha is preserved.
+        Color WithBrightness(f32 Brightness) const;
+
+        /// @brief Blends the RGB components toward white by Amount (0.0 = unchanged, 1.0 = white). Alpha is preserved.
+        Color Lightened(f32 Amount) const;
+
+        /// @brief Packs the requested channels into a u32 as 8-bit values, in the order given. The first channel
+        /// listed occupies the most significant byte of the result, e.g. `GetComponents(A | R | G | B)` is ARGB and
+        /// `GetComponents(R | G | B)` is 0x00RRGGBB.
+        NODISCARD u32 GetComponents(ColorChannel Channel) const;
+        NODISCARD u32 GetComponents(ColorChannelOrder Order) const;
 
         template<typename T>
         NODISCARD T To() const {

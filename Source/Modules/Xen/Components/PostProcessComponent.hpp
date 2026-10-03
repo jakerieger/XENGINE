@@ -11,7 +11,7 @@
 #include "PostProcess.hpp"
 
 namespace Xen {
-    REGISTER_COMPONENT(PostProcessComponent)
+    XEN_COMPONENT(PostProcessComponent)
 
     /// @brief The scene's exposure and bloom settings (see PostProcess).
     ///
@@ -20,7 +20,7 @@ namespace Xen {
     /// scene with none renders with PostProcess::Settings's defaults.
     class PostProcessComponent final : public IComponent {
     public:
-        XEN_COMPONENT_TYPE(PostProcessComponent)
+        XEN_COMPONENT_STATICS(PostProcessComponent)
         PostProcessComponent() = default;
 
         void Reflect(IReflector& R) override;

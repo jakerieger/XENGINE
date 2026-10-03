@@ -14,7 +14,7 @@
 #include <string>
 
 namespace Xen {
-    REGISTER_COMPONENT(PBRMaterialComponent)
+    XEN_COMPONENT(PBRMaterialComponent)
 
     /// @brief Metallic-roughness PBR material: the scalar factors a Cook-
     /// Torrance BRDF needs, plus six optional texture maps (albedo/normal/
@@ -32,7 +32,7 @@ namespace Xen {
     /// author (or re-pack) a combined texture.
     class PBRMaterialComponent final : public IComponent {
     public:
-        XEN_COMPONENT_TYPE(PBRMaterialComponent)
+        XEN_COMPONENT_STATICS(PBRMaterialComponent)
         PBRMaterialComponent() = default;
 
         void Reflect(IReflector& R) override;

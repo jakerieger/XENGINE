@@ -20,7 +20,7 @@ namespace Xen {
 ///
 /// Gives each type a stable name and ID for GetComponent<T> lookups and, in a
 /// later phase, for spawning components by name when deserializing a scene.
-#define XEN_COMPONENT_TYPE(TypeName)                                                                                   \
+#define XEN_COMPONENT_STATICS(TypeName)                                                                                   \
     static constexpr const char* StaticTypeName() {                                                                    \
         return #TypeName;                                                                                              \
     }                                                                                                                  \

@@ -11,7 +11,7 @@
 #include "TextureCache.hpp"
 
 namespace Xen {
-    REGISTER_COMPONENT(EnvironmentComponent)
+    XEN_COMPONENT(EnvironmentComponent)
 
     /// @brief The scene's image-based-lighting source: one equirectangular
     /// environment map (a Radiance .hdr - see TextureCache, which uploads it
@@ -25,7 +25,7 @@ namespace Xen {
     /// unlit-by-environment scene still renders as something.
     class EnvironmentComponent final : public IComponent {
     public:
-        XEN_COMPONENT_TYPE(EnvironmentComponent)
+        XEN_COMPONENT_STATICS(EnvironmentComponent)
         EnvironmentComponent() = default;
 
         void Reflect(IReflector& R) override;
