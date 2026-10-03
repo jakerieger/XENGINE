@@ -1,5 +1,21 @@
 include_guard(GLOBAL)
 
+# Game-side CMake helpers. Works the same in-tree (the engine's own Sandbox
+# and XED) and out-of-tree (a game using find_package(Xen), whose
+# XenConfig.cmake puts this file on CMAKE_MODULE_PATH). Everything that
+# differs between the two comes from these, defined by the engine's top-level
+# CMakeLists.txt or by XenConfig.cmake respectively:
+#
+#   Xen::PAKTool                  the PAKTool executable target
+#   XEN_ENGINE_PAK_DIR            directory holding the engine paks (XEN.*.pxk)
+#                                 for the current config; may contain $<CONFIG>
+#   XEN_PAKIGNORE                 the engine's default .pakignore
+#   XEN_ENGINE_SHADER_SOURCE_DIR  (in-tree only) engine shader hot-reload
+#   XEN_ENGINE_SHADER_OUTPUT_DIR    paths - unset means hot reload is off
+#
+# Nothing in here may reference CMAKE_SOURCE_DIR as "the engine": out of tree,
+# that's the game's own project.
+
 # CACHE INTERNAL, not a plain set(): include_guard(GLOBAL) means this file's
 # body only ever runs once for the whole build, in whichever subdirectory
 # scope happens to include() it first (previously always XenPong's, the only
@@ -9,6 +25,30 @@ include_guard(GLOBAL)
 set(_XEN_GAME_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE INTERNAL "")
 
 set(XEN_DEFAULT_PAK "Data.pxk")
+
+# Fails early, with a pointer at the fix, instead of producing a build whose
+# POST_BUILD steps break with path errors.
+function(_xen_require_engine_vars CALLER)
+    foreach (var XEN_ENGINE_PAK_DIR XEN_PAKIGNORE)
+        if (NOT DEFINED ${var})
+            message(FATAL_ERROR "${CALLER}: ${var} is not set - include XenGame via find_package(Xen) "
+                    "(or from within the engine's own build), not on its own.")
+        endif ()
+    endforeach ()
+    if (NOT TARGET Xen::PAKTool)
+        message(FATAL_ERROR "${CALLER}: Xen::PAKTool is not available. For an installed engine, install a "
+                "Release build of it too - tools are only installed from Release builds.")
+    endif ()
+endfunction()
+
+# Makes TARGET build after PAKTool when PAKTool is built in this same project
+# (in-tree). An installed Xen::PAKTool is an IMPORTED target with nothing to build.
+function(_xen_depend_on_paktool TARGET)
+    get_target_property(paktool Xen::PAKTool ALIASED_TARGET)
+    if (paktool)
+        add_dependencies(${TARGET} ${paktool})
+    endif ()
+endfunction()
 
 # Creates the game's executable target. Windows-only (WIN32 subsystem, so
 # the game doesn't get a console window) - the engine dropped cross-platform
@@ -26,11 +66,18 @@ function(xen_add_game_executable TARGET)
     # folder and their POST_BUILD Config copies (and, in a shippable build,
     # their PAK_FILENAME) fight over the same files - invisible with one
     # game, a real collision the moment a second one exists.
-    set_target_properties(${TARGET} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TARGET}/Bin64")
+    #
+    # A game project that doesn't set CMAKE_RUNTIME_OUTPUT_DIRECTORY itself
+    # gets <build>/bin/<Game>/Bin64, matching the engine's own layout.
+    set(base_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+    if (NOT base_dir)
+        set(base_dir "${CMAKE_BINARY_DIR}/bin")
+    endif ()
+    set_target_properties(${TARGET} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${base_dir}/${TARGET}/Bin64")
     foreach (config ${CMAKE_CONFIGURATION_TYPES})
         string(TOUPPER ${config} config_upper)
         set_target_properties(${TARGET} PROPERTIES
-                RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TARGET}/Bin64")
+                RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${base_dir}/${TARGET}/Bin64")
     endforeach ()
 endfunction()
 
@@ -79,9 +126,13 @@ function(xen_configure_game TARGET)
     # Debug-only (see XenGameSettings.h.in's #ifdef NDEBUG split) - absolute
     # paths into the engine's OWN source tree, for ShaderHotReload. Baked in
     # unconditionally here; it's the generated header's #ifdef, not this
-    # value, that keeps them out of a Release build.
-    set(XEN_ENGINE_SHADER_SOURCE_DIR "R\"(${CMAKE_SOURCE_DIR}/Source/Shaders)\"")
-    set(XEN_ENGINE_SHADER_OUTPUT_DIR "R\"(${CMAKE_SOURCE_DIR}/EngineContent/Shaders)\"")
+    # value, that keeps them out of a Release build. Only an in-tree build
+    # defines them - against an installed engine there's no shader source to
+    # watch, and empty paths make ShaderHotReload::Initialize a quiet no-op.
+    set(hot_reload_source_dir "${XEN_ENGINE_SHADER_SOURCE_DIR}")
+    set(XEN_ENGINE_SHADER_SOURCE_DIR "R\"(${XEN_ENGINE_SHADER_SOURCE_DIR})\"")
+    set(XEN_ENGINE_SHADER_OUTPUT_DIR "R\"(${XEN_ENGINE_SHADER_OUTPUT_DIR})\"")
+    set(XEN_ENGINE_DXC_PATH "R\"()\"")
 
     # dxc.exe isn't normally on a plain user/system PATH - only on the one a
     # Visual Studio dev-tools shell (vcvars) sets up, which is what this
@@ -91,14 +142,15 @@ function(xen_configure_game TARGET)
     # baked in rather than trusting its own ambient PATH at runtime -
     # resolved once here, in the same environment that's already proven to
     # find it (this configure step runs under whatever shell invoked CMake).
-    find_program(XEN_DXC_EXECUTABLE dxc.exe)
-    if (NOT XEN_DXC_EXECUTABLE)
-        message(WARNING "xen_configure_game(${TARGET}): dxc.exe not found on PATH at configure time - "
-                "ShaderHotReload will fall back to a bare 'dxc.exe' PATH lookup at runtime, which will "
-                "likely fail unless the game is launched from a shell with the VS dev tools on PATH.")
-        set(XEN_ENGINE_DXC_PATH "R\"()\"")
-    else ()
-        set(XEN_ENGINE_DXC_PATH "R\"(${XEN_DXC_EXECUTABLE})\"")
+    if (hot_reload_source_dir)
+        find_program(XEN_DXC_EXECUTABLE dxc.exe)
+        if (NOT XEN_DXC_EXECUTABLE)
+            message(WARNING "xen_configure_game(${TARGET}): dxc.exe not found on PATH at configure time - "
+                    "ShaderHotReload will fall back to a bare 'dxc.exe' PATH lookup at runtime, which will "
+                    "likely fail unless the game is launched from a shell with the VS dev tools on PATH.")
+        else ()
+            set(XEN_ENGINE_DXC_PATH "R\"(${XEN_DXC_EXECUTABLE})\"")
+        endif ()
     endif ()
 
     set(XEN_GEN_CONTENT_DIRS "")
@@ -125,75 +177,57 @@ function(xen_configure_game TARGET)
 
     target_include_directories(${TARGET} PRIVATE "${gen_dir}")
     target_link_libraries(${TARGET} PRIVATE Xen::Xen)
-
-
 endfunction()
 
-# Compiles the engine's shared HLSL (Source/Shaders/*.hlsl) to DXIL once per
-# build, then makes TARGET depend on that output. Every game shares the same
-# compiled Engine/Shaders output, so the underlying custom target is created
-# only once, guarded by `if (NOT TARGET ...)`: without the guard, a second
-# game calling this in the same CMake configure re-declares the same global
-# target name and CMake hard-errors with "another target with the same name
-# already exists".
+# Makes TARGET build after the engine's shaders are compiled. Only meaningful
+# in-tree, where the engine (and so its shaders) is part of the same build;
+# an installed engine ships its shaders precompiled, so this is a no-op there.
 function(xen_compile_shaders TARGET)
-    if (NOT TARGET compile_engine_shaders)
-        find_package(Python3 COMPONENTS Interpreter REQUIRED)
-        add_custom_target(compile_engine_shaders ALL
-                COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/Scripts/compile_engine_shaders.py"
-                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-                COMMENT "Compiling engine shaders..."
-        )
+    if (TARGET compile_engine_shaders)
+        add_dependencies(${TARGET} compile_engine_shaders)
     endif ()
-
-    add_dependencies(${TARGET} compile_engine_shaders)
 endfunction()
 
+# Copies the game's Config/ and the engine's shared paks (XEN.Shaders.pxk,
+# XEN.Environment.pxk) next to the game's Bin64/ - see README.md's Game
+# Distribution Output layout. The paks themselves are built once by the
+# engine (CMake/EngineContent.cmake), not per game, and are only copied when
+# they actually changed.
 function(xen_package_engine_content TARGET)
+    _xen_require_engine_vars(xen_package_engine_content)
+
     set(out_dir "$<TARGET_FILE_DIR:${TARGET}>/..")
-
-
-    set(encrypt_flag "--encrypt=$<CONFIG:Release>")
-    set(metadata_flag "--metadata=$<CONFIG:Debug>")
 
     add_custom_command(
             TARGET ${TARGET} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/Config" "${out_dir}/Config"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${out_dir}/EngineContent"
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Shaders" -o "${out_dir}/EngineContent/XEN.Shaders.pxk" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool/PAKTool.exe" pack "${CMAKE_SOURCE_DIR}/EngineContent/Environment" -o "${out_dir}/EngineContent/XEN.Environment.pxk" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
+            COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different "${XEN_ENGINE_PAK_DIR}" "${out_dir}/EngineContent"
             COMMENT "Packaging ${TARGET} engine content..."
             VERBATIM
     )
 
-    add_dependencies(${TARGET} PAKTool)
+    if (TARGET xen_engine_paks)
+        add_dependencies(${TARGET} xen_engine_paks)
+    endif ()
 endfunction()
 
-# Packages a configured game's runtime content into the distribution layout
-# every game shares (see README.md's Game Distribution Output layout):
-# Config/ copied loose next to the exe, the engine's shared shader/environment
-# paks built from Source/Shaders and Engine/Environment, and the game's own
-# CONTENT_DIR packed into PAK_FILENAME. This used to be five separate
-# add_custom_command blocks pasted into every game's CMakeLists.txt - one
-# call here instead of five copy-pasted ones means they can't drift out of
-# sync (order, missing PAKTool dependency, etc.) between games.
-#
-# Depends on PAKTool directly, since this is the step that actually invokes
-# PAKTool.exe as a POST_BUILD command - call this (or otherwise depend on
-# PAKTool) before building a game, or its POST_BUILD pack steps will fail
-# with "the system cannot find the path specified" against a PAKTool.exe that
-# was never built.
+# Packs the game's own CONTENT_DIR into PAK_FILENAME next to its Bin64/.
+# Encrypted in Release, with a .pxkm metadata file in Debug - same as the
+# engine's paks.
 #
 # PAK_FILENAME can be omitted if xen_configure_game(TARGET PAK_FILENAME ...)
 # was already called for this target - it reads back the XEN_PAK_FILENAME
 # property that call recorded, so the filename isn't repeated at both call
-# sites.
+# sites. IGNORE_FILE defaults to the project's own .pakignore if it has one,
+# else the engine's.
 function(xen_package_game_content TARGET)
     cmake_parse_arguments(ARG
             ""
-            "PAK_FILENAME;CONTENT_DIR"
+            "PAK_FILENAME;CONTENT_DIR;IGNORE_FILE"
             ""
             ${ARGN})
+
+    _xen_require_engine_vars(xen_package_game_content)
 
     if (NOT ARG_PAK_FILENAME)
         get_target_property(ARG_PAK_FILENAME ${TARGET} XEN_PAK_FILENAME)
@@ -206,19 +240,25 @@ function(xen_package_game_content TARGET)
     if (NOT ARG_CONTENT_DIR)
         set(ARG_CONTENT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Content")
     endif ()
+    if (NOT ARG_IGNORE_FILE)
+        if (EXISTS "${CMAKE_SOURCE_DIR}/.pakignore")
+            set(ARG_IGNORE_FILE "${CMAKE_SOURCE_DIR}/.pakignore")
+        else ()
+            set(ARG_IGNORE_FILE "${XEN_PAKIGNORE}")
+        endif ()
+    endif ()
 
     set(out_dir "$<TARGET_FILE_DIR:${TARGET}>/..")
-
 
     set(encrypt_flag "--encrypt=$<CONFIG:Release>")
     set(metadata_flag "--metadata=$<CONFIG:Debug>")
 
     add_custom_command(
             TARGET ${TARGET} POST_BUILD
-            COMMAND "${TOOLS_BIN_DIR}/PAKTool/PAKTool.exe" pack "${ARG_CONTENT_DIR}" -o "${out_dir}/${ARG_PAK_FILENAME}" -i "${CMAKE_SOURCE_DIR}/.pakignore" ${encrypt_flag} ${metadata_flag}
-            COMMENT "Packaging ${TARGET} content (Config, ${ARG_PAK_FILENAME})..."
+            COMMAND "$<TARGET_FILE:Xen::PAKTool>" pack "${ARG_CONTENT_DIR}" -o "${out_dir}/${ARG_PAK_FILENAME}" -i "${ARG_IGNORE_FILE}" ${encrypt_flag} ${metadata_flag}
+            COMMENT "Packaging ${TARGET} content (${ARG_PAK_FILENAME})..."
             VERBATIM
     )
 
-    add_dependencies(${TARGET} PAKTool)
+    _xen_depend_on_paktool(${TARGET})
 endfunction()

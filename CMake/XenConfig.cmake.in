@@ -1,5 +1,10 @@
 @PACKAGE_INIT@
 
+# XenGame.cmake's packaging steps use cmake -E copy_directory_if_different.
+if (CMAKE_VERSION VERSION_LESS 3.26)
+    message(FATAL_ERROR "Xen requires CMake 3.26 or newer (found ${CMAKE_VERSION}).")
+endif ()
+
 # Xen's exported targets link these packages' targets publicly, and both are
 # installed into the same prefix alongside Xen.
 include(CMakeFindDependencyMacro)
@@ -25,5 +30,31 @@ foreach (_xen_target
     endif ()
 endforeach ()
 unset(_xen_target)
+
+# ---- Game helpers: include(XenGame) ------------------------------------------
+# These are the variables XenGame.cmake reads (see its header). There's no
+# engine shader source in an install, so engine shader hot reload stays off.
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+set_and_check(XEN_PAKIGNORE "@PACKAGE_XEN_INSTALL_DATADIR@/.pakignore")
+
+# Prebuilt engine paks: a Debug game gets the Debug variant (unencrypted, with
+# metadata), every other config the Release one - whichever of the two was
+# installed stands in for a missing other.
+set(_xen_paks "@PACKAGE_XEN_INSTALL_DATADIR@/EngineContent")
+set(_xen_paks_debug "${_xen_paks}/Debug")
+set(_xen_paks_release "${_xen_paks}/Release")
+if (NOT EXISTS "${_xen_paks_debug}/XEN.Shaders.pxk")
+    set(_xen_paks_debug "${_xen_paks_release}")
+endif ()
+if (NOT EXISTS "${_xen_paks_release}/XEN.Shaders.pxk")
+    set(_xen_paks_release "${_xen_paks_debug}")
+endif ()
+if (NOT EXISTS "${_xen_paks_release}/XEN.Shaders.pxk")
+    message(FATAL_ERROR "Xen: no prebuilt engine paks found under ${_xen_paks} - the install is incomplete.")
+endif ()
+set(XEN_ENGINE_PAK_DIR "$<IF:$<CONFIG:Debug>,${_xen_paks_debug},${_xen_paks_release}>")
+unset(_xen_paks)
+unset(_xen_paks_debug)
+unset(_xen_paks_release)
 
 check_required_components(Xen)

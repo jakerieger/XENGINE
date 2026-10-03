@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.26)
 project(XENGINE VERSION 0.1.0)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -41,16 +41,23 @@ set(TOOLS_ROOT ${SOURCE_ROOT}/Tools)
 include(CMake/FetchDeps.cmake)
 include(Source/Vendor/Vendor.cmake)
 
-set(TOOLS_BIN_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Tools")
-message(STATUS "Tools bin directory: ${TOOLS_BIN_DIR}")
-
-# CMake helpers for engine
+# CMake helpers for games (include(XenGame)). XenGame.cmake reads the
+# variables below; an installed engine's XenConfig.cmake defines the same ones
+# (minus the hot-reload paths), so it works in-tree and out-of-tree alike.
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Source/Modules/Xen/CMake")
+set(XEN_ENGINE_PAK_DIR "${CMAKE_BINARY_DIR}/EngineContent/$<CONFIG>")  # built by CMake/EngineContent.cmake
+set(XEN_PAKIGNORE "${CMAKE_SOURCE_DIR}/.pakignore")
+# In-tree only: Debug games hot-reload engine shaders straight from the source tree.
+set(XEN_ENGINE_SHADER_SOURCE_DIR "${SOURCE_ROOT}/Shaders")
+set(XEN_ENGINE_SHADER_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/EngineContent/Shaders")
 
 add_subdirectory(${MODULES_ROOT}/Common)
 add_subdirectory(${MODULES_ROOT}/Xen)
 add_subdirectory(${MODULES_ROOT}/XenPAK)
 add_subdirectory(${MODULES_ROOT}/CrashHandler)
+
+# Engine shaders + engine paks. Before any game is added - see the file's header.
+include(CMake/EngineContent.cmake)
 
 if (BUILD_TOOLS)
     add_subdirectory(${TOOLS_ROOT})

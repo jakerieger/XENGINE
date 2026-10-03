@@ -13,12 +13,15 @@
 #   include/                Xen/ Common/ XenPAK/ (public engine headers), D3D12MemAlloc.h, directx/
 #   include/XenVendor/      vendored headers games use: imgui, nlohmann/json, ini.h
 #   lib/                    engine + dependency static libs (Debug ones end in 'd')
-#   share/Xen/cmake/        XenConfig.cmake and friends
+#   share/Xen/cmake/        XenConfig.cmake and friends, XenGame.cmake (game helpers)
+#   share/Xen/EngineContent/<Config>/  prebuilt engine paks (XEN.Shaders.pxk, XEN.Environment.pxk)
+#   share/Xen/.pakignore    default ignore list for packing game content
 #   share/directx-headers/, share/cmake/D3D12MemoryAllocator/ - those deps' own packages
 
 include(CMakePackageConfigHelpers)
 
-set(XEN_INSTALL_CMAKEDIR "${CMAKE_INSTALL_DATAROOTDIR}/Xen/cmake")
+set(XEN_INSTALL_DATADIR "${CMAKE_INSTALL_DATAROOTDIR}/Xen")
+set(XEN_INSTALL_CMAKEDIR "${XEN_INSTALL_DATADIR}/cmake")
 
 set_target_properties(XenCommon PROPERTIES EXPORT_NAME Common)
 set_target_properties(XenPAK PROPERTIES EXPORT_NAME PAK)
@@ -57,10 +60,28 @@ if (TARGET Bin2CC)
     install(TARGETS Bin2CC RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} CONFIGURATIONS Release)
 endif ()
 
+# Game helpers (include(XenGame) - XenConfig.cmake puts this dir on
+# CMAKE_MODULE_PATH) and the engine's default pak ignore list.
+install(FILES
+        ${SOURCE_ROOT}/Modules/Xen/CMake/XenGame.cmake
+        ${SOURCE_ROOT}/Modules/Xen/CMake/XenGameSettings.h.in
+        DESTINATION ${XEN_INSTALL_CMAKEDIR}
+)
+install(FILES ${CMAKE_SOURCE_DIR}/.pakignore DESTINATION ${XEN_INSTALL_DATADIR})
+
+# Prebuilt engine paks, one variant per installed config (EngineContent/Debug,
+# EngineContent/Release) - XenConfig.cmake picks the right one per game config.
+if (TARGET xen_engine_paks)
+    install(DIRECTORY "${XEN_ENGINE_PAK_DIR}/"
+            DESTINATION "${XEN_INSTALL_DATADIR}/EngineContent/$<CONFIG>"
+    )
+endif ()
+
 configure_package_config_file(
         ${CMAKE_CURRENT_LIST_DIR}/XenConfig.cmake.in
         ${CMAKE_CURRENT_BINARY_DIR}/XenConfig.cmake
         INSTALL_DESTINATION ${XEN_INSTALL_CMAKEDIR}
+        PATH_VARS XEN_INSTALL_DATADIR
 )
 # Pre-1.0, a minor version bump may break the API, so only an exact
 # major.minor match is compatible.
