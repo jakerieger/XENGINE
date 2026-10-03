@@ -73,7 +73,9 @@ namespace Xen {
         /// fully shadowed diffuse surface looking nearly as bright as a lit
         /// one, reading as faded/washed-out shadows rather than a real one.
         NODISCARD f32 GetShadowAmbientDarkening() const { return _ShadowAmbientDarkening; }
-        void SetShadowAmbientDarkening(const f32 Darkening) { _ShadowAmbientDarkening = std::clamp(Darkening, 0.0f, 1.0f); }
+        void SetShadowAmbientDarkening(const f32 Darkening) {
+            _ShadowAmbientDarkening = std::clamp(Darkening, 0.0f, 1.0f);
+        }
 
     private:
         Float3 _Color {1.0f, 1.0f, 1.0f};

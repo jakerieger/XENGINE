@@ -65,7 +65,7 @@ namespace Xen {
         }
         ImGui::EndChild();
 
-        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0.0f, 1.0f));
 
         const f32 ButtonWidth  = ImGui::GetFontSize() * 6.0f;
         const f32 ButtonsTotal = ButtonWidth * 2.0f + Style.ItemSpacing.x;

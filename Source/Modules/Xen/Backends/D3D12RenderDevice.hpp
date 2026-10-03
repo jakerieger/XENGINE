@@ -325,7 +325,7 @@ namespace Xen::RHI::D3D12Backend {
         std::array<bool, MaxFramesInFlight> _BackBufferIsRenderTarget {};
 
         static constexpr u32 SrvHeapCapacity     = 4096;
-        static constexpr u32 SamplerHeapCapacity  = 64;
+        static constexpr u32 SamplerHeapCapacity = 64;
         ComPtr<ID3D12DescriptorHeap> _SrvHeap;
         ComPtr<ID3D12DescriptorHeap> _SamplerHeap;
         u32 _SrvDescriptorSize {0};
@@ -454,6 +454,5 @@ namespace Xen::RHI::D3D12Backend {
         std::vector<GpuScopeTiming> _LastResolvedGpuTimings;
 
         bool _Initialized {false};
-
     };
 }  // namespace Xen::RHI::D3D12Backend

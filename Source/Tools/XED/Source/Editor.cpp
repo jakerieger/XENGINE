@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <memory>
 #include <Lmcons.h>  // contains UNLEN (maximum length of Windows username)
 
 #pragma region Embedded Resources
@@ -128,9 +129,10 @@ namespace Xen {
         // or create a new project to load. Later, a flag of some kind will be added that tells the editor this failed.
         if (!_EditorSettings.CurrentProject.empty() && fs::exists(_EditorSettings.CurrentProject)) {
             LoadProject(_EditorSettings.CurrentProject);
-        } else {
-            Modal_NewProject();
         }
+        // else {
+        //     Modal_NewProject();
+        // }
     }
 
     Editor::~Editor() {
@@ -167,8 +169,11 @@ namespace Xen {
         PAK::AssetMountConfig MountConfig = BuildMountConfig(Xen::Generated::GameSettings(), 0, nullptr);
         MountConfig.ContentDirs           = {_CurrentProject.ContentDirectory};
 
-        _EmbeddedGame.reset(
-          new Game(*_Device, MountConfig, _SceneViewportWidth, _SceneViewportHeight, _CurrentProject.ConfigDirectory));
+        _EmbeddedGame = std::make_unique<Game>(*_Device,
+                                               MountConfig,
+                                               _SceneViewportWidth,
+                                               _SceneViewportHeight,
+                                               _CurrentProject.ConfigDirectory);
         _EmbeddedGame->StartEmbedded();
 
         SetWindowTitle(_CurrentProject.Name);
@@ -180,7 +185,7 @@ namespace Xen {
         }
     }
 
-    Editor::CreateProjectResult Editor::CreateProject(const std::string& Name, const fs::path& Dir) const {
+    Editor::CreateProjectResult Editor::CreateProject(const std::string& Name, const fs::path& Dir) {
         EditorProject Project;
         Project.Name             = Name;
         Project.ProjectRoot      = Dir;
@@ -351,7 +356,7 @@ namespace Xen {
         _Device->EndFrame();
     }
 
-    void Editor::EnsureDefaultLayout(const unsigned int DockspaceID, const f32 Width, const f32 Height) const {
+    void Editor::EnsureDefaultLayout(const unsigned int DockspaceID, const f32 Width, const f32 Height) {
         if (ImGui::DockBuilderGetNode(DockspaceID)) return;  // a saved layout already exists
 
         ImGui::DockBuilderRemoveNode(DockspaceID);
@@ -394,6 +399,9 @@ namespace Xen {
         Style.TabRounding      = _CurrentTheme.TabRounding;
         Style.WindowBorderSize = _CurrentTheme.WindowBorderSize;
         Style.FrameBorderSize  = _CurrentTheme.FrameBorderSize;
+
+        Style.WindowPadding = ImVec2(6.0f, 6.0f);
+        Style.FramePadding  = ImVec2(6.0f, 6.0f);
 
         Colors[ImGuiCol_BorderShadow]       = ImVec4(0.f, 0.f, 0.f, 0.f);
         Colors[ImGuiCol_Border]             = _CurrentTheme.Colors.Border.To<ImVec4>();

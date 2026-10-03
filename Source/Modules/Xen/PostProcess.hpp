@@ -125,12 +125,12 @@ namespace Xen {
         /// combine. DeltaTime drives auto exposure's eye-adaptation ramp;
         /// ignored entirely when Settings_.AutoExposureEnabled is off.
         void Render(RHI::CommandBuffer& Commands,
-                   RHI::TextureHandle SceneColor,
-                   u32 SceneWidth,
-                   u32 SceneHeight,
-                   RHI::TextureHandle Target,
-                   f32 DeltaTime,
-                   const Settings& Settings_);
+                    RHI::TextureHandle SceneColor,
+                    u32 SceneWidth,
+                    u32 SceneHeight,
+                    RHI::TextureHandle Target,
+                    f32 DeltaTime,
+                    const Settings& Settings_);
 
     private:
         void EnsureBloomChain(u32 SceneWidth, u32 SceneHeight);

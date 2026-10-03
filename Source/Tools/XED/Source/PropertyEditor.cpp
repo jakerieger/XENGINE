@@ -42,8 +42,12 @@ namespace Xen {
         // DragFloat's own min==max-means-unbounded convenience), so this
         // one does need the explicit HasRange() branch.
         u32 Min = CAST<u32>(Meta.Min), Max = CAST<u32>(Meta.Max);
-        const bool Changed = ImGui::DragScalar(
-          Name, ImGuiDataType_U32, &Value, 1.0f, Meta.HasRange() ? &Min : nullptr, Meta.HasRange() ? &Max : nullptr);
+        const bool Changed = ImGui::DragScalar(Name,
+                                               ImGuiDataType_U32,
+                                               &Value,
+                                               1.0f,
+                                               Meta.HasRange() ? &Min : nullptr,
+                                               Meta.HasRange() ? &Max : nullptr);
         if (Changed) _Edited = true;
         ImGui::EndDisabled();
     }
@@ -52,8 +56,12 @@ namespace Xen {
         MaybeDrawCategory(Meta);
         ImGui::BeginDisabled(Meta.ReadOnly);
         u64 Min = CAST<u64>(Meta.Min), Max = CAST<u64>(Meta.Max);
-        const bool Changed = ImGui::DragScalar(
-          Name, ImGuiDataType_U64, &Value, 1.0f, Meta.HasRange() ? &Min : nullptr, Meta.HasRange() ? &Max : nullptr);
+        const bool Changed = ImGui::DragScalar(Name,
+                                               ImGuiDataType_U64,
+                                               &Value,
+                                               1.0f,
+                                               Meta.HasRange() ? &Min : nullptr,
+                                               Meta.HasRange() ? &Max : nullptr);
         if (Changed) _Edited = true;
         ImGui::EndDisabled();
     }

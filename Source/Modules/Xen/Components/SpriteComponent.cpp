@@ -90,25 +90,25 @@ namespace Xen {
 
         const Transform WorldTransform = GetOwner()->GetWorldTransform();
         const Float2 Size {Source.Width / PixelsPerUnit * std::abs(WorldTransform.Scale.x),
-                          Source.Height / PixelsPerUnit * std::abs(WorldTransform.Scale.y)};
+                           Source.Height / PixelsPerUnit * std::abs(WorldTransform.Scale.y)};
 
         return Rect {WorldTransform.Position.x - Size.x * 0.5f,
-                    WorldTransform.Position.y - Size.y * 0.5f,
-                    Size.x,
-                    Size.y};
+                     WorldTransform.Position.y - Size.y * 0.5f,
+                     Size.x,
+                     Size.y};
     }
 
     void SpriteComponent::BeginPlay() {
         if (!_TextureAsset.IsValid()) {
             THROW_ENGINE_EXCEPTION(EngineException,
-                                  std::format("SpriteComponent on actor '{}' has no texture asset assigned",
-                                              GetOwner() ? GetOwner()->GetName() : "<none>"));
+                                   std::format("SpriteComponent on actor '{}' has no texture asset assigned",
+                                               GetOwner() ? GetOwner()->GetName() : "<none>"));
         }
 
         const Scene* S = GetScene();
         if (!S || !S->GetContext().Textures) {
             THROW_ENGINE_EXCEPTION(EngineException,
-                                  "SpriteComponent requires a scene with a TextureCache in its EngineContext");
+                                   "SpriteComponent requires a scene with a TextureCache in its EngineContext");
         }
 
         _Texture  = S->GetContext().Textures->Acquire(_TextureAsset);

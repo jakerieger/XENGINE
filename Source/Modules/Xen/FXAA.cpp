@@ -39,7 +39,8 @@ namespace Xen {
         Shutdown();
     }
 
-    bool FXAA::Initialize(RHI::IRenderDevice& Device, const PAK::AssetRegistry& Assets, const RHI::Format TargetFormat) {
+    bool
+    FXAA::Initialize(RHI::IRenderDevice& Device, const PAK::AssetRegistry& Assets, const RHI::Format TargetFormat) {
         _Device       = &Device;
         _TargetFormat = TargetFormat;
 
@@ -75,11 +76,11 @@ namespace Xen {
         }
 
         RHI::SamplerDesc SamplerDesc;
-        SamplerDesc.MipFilter   = RHI::MipMode::None;  // the source has exactly one mip; every sample picks it implicitly
-        SamplerDesc.AddressU    = RHI::AddressMode::ClampToEdge;
-        SamplerDesc.AddressV    = RHI::AddressMode::ClampToEdge;
-        SamplerDesc.DebugName   = "XEN.FXAA";
-        _Sampler                = Device.CreateSampler(SamplerDesc);
+        SamplerDesc.MipFilter = RHI::MipMode::None;  // the source has exactly one mip; every sample picks it implicitly
+        SamplerDesc.AddressU  = RHI::AddressMode::ClampToEdge;
+        SamplerDesc.AddressV  = RHI::AddressMode::ClampToEdge;
+        SamplerDesc.DebugName = "XEN.FXAA";
+        _Sampler              = Device.CreateSampler(SamplerDesc);
 
         if (!_Pipeline.IsValid() || !_Sampler.IsValid()) {
             Shutdown();
@@ -96,10 +97,10 @@ namespace Xen {
         if (_Sampler.IsValid()) _Device->DestroySampler(_Sampler);
         if (_Scratch.IsValid()) _Device->DestroyTexture(_Scratch);
 
-        _Pipeline = {};
-        _Layout   = {};
-        _Sampler  = {};
-        _Scratch  = {};
+        _Pipeline     = {};
+        _Layout       = {};
+        _Sampler      = {};
+        _Scratch      = {};
         _ScratchWidth = _ScratchHeight = 0;
         _Device                        = nullptr;
     }
@@ -116,15 +117,13 @@ namespace Xen {
         Desc.Usage     = RHI::TextureUsage::ColorTarget | RHI::TextureUsage::Sampled;
         Desc.DebugName = "XEN.FXAA.Scratch";
 
-        _Scratch      = _Device->CreateTexture(Desc);
+        _Scratch       = _Device->CreateTexture(Desc);
         _ScratchWidth  = Width;
         _ScratchHeight = Height;
     }
 
-    RHI::TextureHandle FXAA::Render(const RHI::TextureHandle Source,
-                                    const u32 Width,
-                                    const u32 Height,
-                                    const Settings& Settings_) {
+    RHI::TextureHandle
+    FXAA::Render(const RHI::TextureHandle Source, const u32 Width, const u32 Height, const Settings& Settings_) {
         if (!_Device || !_Pipeline.IsValid() || !Settings_.Enabled) return Source;
 
         EnsureScratch(Width, Height);

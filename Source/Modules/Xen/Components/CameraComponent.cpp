@@ -47,8 +47,10 @@ namespace Xen {
         using namespace DirectX;
 
         if (_ProjectionMode == ProjectionMode::Perspective) {
-            const XMMATRIX Proj =
-              XMMatrixPerspectiveFovRH(XMConvertToRadians(_FieldOfViewDegrees), GetAspectRatio(), _NearPlane, _FarPlane);
+            const XMMATRIX Proj = XMMatrixPerspectiveFovRH(XMConvertToRadians(_FieldOfViewDegrees),
+                                                           GetAspectRatio(),
+                                                           _NearPlane,
+                                                           _FarPlane);
 
             Float4x4 Out;
             XMStoreFloat4x4(&Out, Proj);
@@ -70,9 +72,9 @@ namespace Xen {
     }
 
     Rect CameraComponent::GetViewBounds() const {
-        const Transform T   = GetCameraTransform();
-        const Float2 Size   = GetVisibleWorldSize();
-        const f32 RotZ      = T.GetRotationZ();
+        const Transform T = GetCameraTransform();
+        const Float2 Size = GetVisibleWorldSize();
+        const f32 RotZ    = T.GetRotationZ();
 
         if (RotZ == 0.0f) {
             return Rect {
@@ -103,7 +105,7 @@ namespace Xen {
         // Screen origin is top-left with y down; world is y up, hence the flip
         // on the y term.
         const Float2 Ndc {ScreenPos.x / CAST<f32>(_ViewportWidth) * 2.0f - 1.0f,
-                         1.0f - ScreenPos.y / CAST<f32>(_ViewportHeight) * 2.0f};
+                          1.0f - ScreenPos.y / CAST<f32>(_ViewportHeight) * 2.0f};
 
         Float2 ViewSpace {Ndc.x * Size.x * 0.5f, Ndc.y * Size.y * 0.5f};
 
@@ -132,7 +134,7 @@ namespace Xen {
         const Float2 Ndc {Relative.x / (Size.x * 0.5f), Relative.y / (Size.y * 0.5f)};
 
         return Float2 {(Ndc.x + 1.0f) * 0.5f * CAST<f32>(_ViewportWidth),
-                      (1.0f - Ndc.y) * 0.5f * CAST<f32>(_ViewportHeight)};
+                       (1.0f - Ndc.y) * 0.5f * CAST<f32>(_ViewportHeight)};
     }
 
     Transform CameraComponent::GetCameraTransform() const {

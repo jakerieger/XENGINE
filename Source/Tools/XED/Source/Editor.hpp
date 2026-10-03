@@ -43,7 +43,7 @@ namespace Xen {
         };
 
         void LoadProject(const fs::path& PrxjPath);
-        CreateProjectResult CreateProject(const std::string& Name, const fs::path& Dir) const;
+        static CreateProjectResult CreateProject(const std::string& Name, const fs::path& Dir);
 
         void LoadSceneFile(const fs::path& SceneFile) const;
         void CreateScene(const std::string& Name, const fs::path& SceneFile) const;
@@ -57,7 +57,7 @@ namespace Xen {
         // Width/Height rather than an ImVec2, so this header (like EditorUI.hpp/
         // DebugUI.hpp) doesn't need to pull in Dear ImGui's own headers just to
         // declare it.
-        void EnsureDefaultLayout(unsigned int DockspaceID, f32 Width, f32 Height) const;
+        static void EnsureDefaultLayout(unsigned int DockspaceID, f32 Width, f32 Height);
 
         void LoadTheme(const std::string& ThemeFile);
         void ApplyCurrentTheme() const;

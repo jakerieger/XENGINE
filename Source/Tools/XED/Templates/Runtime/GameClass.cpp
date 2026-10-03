@@ -6,8 +6,17 @@
 
 using namespace Xen;
 
-void ${GAME_CLASS}::OnStartup() {}
+void $ {
+    GAME_CLASS
+}
+::OnStartup() {}
 
-void ${GAME_CLASS}::OnUpdate(f32 DeltaTime) {}
+void $ {
+    GAME_CLASS
+}
+::OnUpdate(f32 DeltaTime) {}
 
-void ${GAME_CLASS}::OnRender() {}
+void $ {
+    GAME_CLASS
+}
+::OnRender() {}

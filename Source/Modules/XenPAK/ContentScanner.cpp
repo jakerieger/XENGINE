@@ -15,7 +15,7 @@ namespace Xen::PAK {
     std::vector<ScannedAsset> ScanContentDirectory(const fs::path& RootDir, CollisionPolicy Policy) {
         if (!exists(RootDir)) {
             THROW_ENGINE_EXCEPTION(EngineException,
-                                  "ScanContentDirectory - root directory does not exist: " + RootDir.string());
+                                   "ScanContentDirectory - root directory does not exist: " + RootDir.string());
         }
 
         std::vector<ScannedAsset> Results;

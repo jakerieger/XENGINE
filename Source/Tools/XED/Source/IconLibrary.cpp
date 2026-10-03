@@ -26,12 +26,12 @@ namespace Xen {
         // matching ResTool-generated identifier (EditorIcons.h) - the two
         // differ in case/spelling (e.g. EditorIcon::Move vs. MOVEICON_BYTES)
         // since ResTool just uppercases a source filename's stem.
-#define XED_ICON_ENTRY(EnumName, SymbolName)                                                                         \
-    {EditorIcon::EnumName,                                                                                          \
-     SymbolName##_BYTES,                                                                                            \
-     SymbolName##_COMPRESSED_SIZE,                                                                                  \
-     SymbolName##_ORIGINAL_SIZE,                                                                                    \
-     CAST<u32>(SymbolName##_WIDTH),                                                                                 \
+#define XED_ICON_ENTRY(EnumName, SymbolName)                                                                           \
+    {EditorIcon::EnumName,                                                                                             \
+     SymbolName##_BYTES,                                                                                               \
+     SymbolName##_COMPRESSED_SIZE,                                                                                     \
+     SymbolName##_ORIGINAL_SIZE,                                                                                       \
+     CAST<u32>(SymbolName##_WIDTH),                                                                                    \
      CAST<u32>(SymbolName##_HEIGHT)}
 
         constexpr IconDesc kIconTable[] = {
@@ -64,8 +64,7 @@ namespace Xen {
         _Device = &Device;
 
         for (const IconDesc& Desc : kIconTable) {
-            const auto Pixels =
-              Brotli::Decompress(std::span(Desc.Bytes, Desc.CompressedSize), Desc.OriginalSize);
+            const auto Pixels = Brotli::Decompress(std::span(Desc.Bytes, Desc.CompressedSize), Desc.OriginalSize);
             if (!Pixels.has_value()) {
                 LOG_ERR("IconLibrary: failed to decompress icon %u", CAST<u32>(Desc.Icon));
                 continue;

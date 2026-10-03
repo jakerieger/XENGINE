@@ -19,9 +19,9 @@
 
 namespace Xen {
     struct RadianceImage {
-        u32 Width {0};   // after any downsampling to MaxWidth
+        u32 Width {0};  // after any downsampling to MaxWidth
         u32 Height {0};
-        u32 SourceWidth {0};   // as stored in the file
+        u32 SourceWidth {0};  // as stored in the file
         u32 SourceHeight {0};
 
         /// Mip 0, tightly packed RGBA16F (8 bytes per texel).

@@ -233,7 +233,7 @@ float4 PSMain(PSInput In) : SV_Target {
 
                 for (u32 i = 0; i < Count; ++i) {
                     const SpriteDrawItem& Item = Items[i];
-                    const TextureInfo Info = Textures.GetInfo(Item.Texture);
+                    const TextureInfo Info     = Textures.GetInfo(Item.Texture);
 
                     // A texture with no recorded size would divide by zero
                     // below. Emit a degenerate quad instead of NaNs, which
@@ -246,13 +246,13 @@ float4 PSMain(PSInput In) : SV_Target {
                     // Position.z/Scale.z never reach the sprite pipeline.
                     Center   = Float2 {Item.WorldTransform.Position.x, Item.WorldTransform.Position.y};
                     Size     = Float2 {Item.SourceRect.Width / PixelsPerUnit * Item.WorldTransform.Scale.x,
-                                    Item.SourceRect.Height / PixelsPerUnit * Item.WorldTransform.Scale.y};
+                                   Item.SourceRect.Height / PixelsPerUnit * Item.WorldTransform.Scale.y};
                     Rotation = Item.WorldTransform.GetRotationZ();
                     _Pad     = 0.0f;
                     UVRect   = Float4 {Item.SourceRect.X / TexWidth,
-                                    Item.SourceRect.Y / TexHeight,
-                                    Item.SourceRect.Width / TexWidth,
-                                    Item.SourceRect.Height / TexHeight};
+                                     Item.SourceRect.Y / TexHeight,
+                                     Item.SourceRect.Width / TexWidth,
+                                     Item.SourceRect.Height / TexHeight};
                     Tint     = Item.Tint;
                 }
 

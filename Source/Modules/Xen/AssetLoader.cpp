@@ -30,10 +30,10 @@ namespace Xen {
             }
         }
 
-        _Done       = 0;
-        _NextIndex  = 0;
-        _Decoding   = 0;
-        _Cancelled  = false;
+        _Done      = 0;
+        _NextIndex = 0;
+        _Decoding  = 0;
+        _Cancelled = false;
         _Ready.clear();
         _Active = true;
 
@@ -102,7 +102,8 @@ namespace Xen {
             else _Meshes->AdoptPreloaded(Request.ID, std::move(Next.Mesh));
             ++_Done;
 
-            const f64 Elapsed = std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - Start).count();
+            const f64 Elapsed =
+              std::chrono::duration<f64, std::milli>(std::chrono::steady_clock::now() - Start).count();
             if (Elapsed >= BudgetMs) break;
         }
 

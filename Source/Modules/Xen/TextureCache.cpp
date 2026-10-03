@@ -100,24 +100,24 @@ namespace Xen {
     TextureCache::Entry
     TextureCache::UploadEntry(const AssetID ID, DecodedTexture&& Decoded, const u32 InitialRefCount) {
         Entry E;
-        E.Info                       = Decoded.Info;
-        const bool IsHdr             = Decoded.IsHdr;
-        const bool Srgb              = Decoded.Srgb;
-        std::vector<u8>& Pixels      = Decoded.Pixels;
+        E.Info                                = Decoded.Info;
+        const bool IsHdr                      = Decoded.IsHdr;
+        const bool Srgb                       = Decoded.Srgb;
+        std::vector<u8>& Pixels               = Decoded.Pixels;
         std::vector<std::vector<u8>>& MipTail = Decoded.MipTail;
 
         // GPU-generated mips (MipGenerator) need the generator actually
         // initialized - without it, a texture that asked for mips just gets
         // one, same as a game that left GenerateMips off entirely.
         const bool GenerateOnGpu = !IsHdr && _Config.GenerateMips && _MipGen.IsInitialized();
-        const u32 Levels = IsHdr ? CAST<u32>(MipTail.size()) + 1
-                            : (GenerateOnGpu ? ComputeMipLevels(E.Info.Width, E.Info.Height) : 1);
+        const u32 Levels =
+          IsHdr ? CAST<u32>(MipTail.size()) + 1 : (GenerateOnGpu ? ComputeMipLevels(E.Info.Width, E.Info.Height) : 1);
 
         RHI::TextureDesc Desc;
-        Desc.Type      = RHI::TextureType::Texture2D;
-        Desc.Fmt       = IsHdr ? RHI::Format::RGBA16_FLOAT : (Srgb ? RHI::Format::RGBA8_SRGB : RHI::Format::RGBA8_UNORM);
-        Desc.Width     = E.Info.Width;
-        Desc.Height    = E.Info.Height;
+        Desc.Type   = RHI::TextureType::Texture2D;
+        Desc.Fmt    = IsHdr ? RHI::Format::RGBA16_FLOAT : (Srgb ? RHI::Format::RGBA8_SRGB : RHI::Format::RGBA8_UNORM);
+        Desc.Width  = E.Info.Width;
+        Desc.Height = E.Info.Height;
         Desc.MipLevels = Levels;
         Desc.Usage     = RHI::TextureUsage::Sampled | RHI::TextureUsage::CopyDst;
         // MipGenerator renders into mips 1.. as color targets - see

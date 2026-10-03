@@ -36,9 +36,9 @@ namespace Xen {
     struct DecodedTexture {
         TextureInfo Info {};
         bool IsHdr {false};
-        bool Srgb {false};  // LDR only; ignored for an HDR image (always RGBA16F)
-        std::vector<u8> Pixels;                   // mip 0
-        std::vector<std::vector<u8>> MipTail;     // mips 1..N (HDR only)
+        bool Srgb {false};                     // LDR only; ignored for an HDR image (always RGBA16F)
+        std::vector<u8> Pixels;                // mip 0
+        std::vector<std::vector<u8>> MipTail;  // mips 1..N (HDR only)
     };
 
     class TextureCache {

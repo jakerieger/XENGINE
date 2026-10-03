@@ -31,7 +31,8 @@ namespace Xen {
         bool ReadLine(Cursor& C, std::string& Line) {
             Line.clear();
             if (C.Pos >= C.Size) return false;
-            while (C.Pos < C.Size && C.Data[C.Pos] != '\n') Line.push_back(CAST<char>(C.Data[C.Pos++]));
+            while (C.Pos < C.Size && C.Data[C.Pos] != '\n')
+                Line.push_back(CAST<char>(C.Data[C.Pos++]));
             if (C.Pos < C.Size) ++C.Pos;  // the newline
             if (!Line.empty() && Line.back() == '\r') Line.pop_back();
             return true;
@@ -61,10 +62,12 @@ namespace Xen {
                             Count -= 128;
                             if (!C.Has(1) || Count > Width - X) return false;
                             const u8 Value = C.Data[C.Pos++];
-                            for (u32 i = 0; i < Count; ++i) Dst[(CAST<size_t>(X++)) * 4 + Channel] = Value;
+                            for (u32 i = 0; i < Count; ++i)
+                                Dst[(CAST<size_t>(X++)) * 4 + Channel] = Value;
                         } else {  // a dump: Count literal values
                             if (Count == 0 || !C.Has(Count) || Count > Width - X) return false;
-                            for (u32 i = 0; i < Count; ++i) Dst[(CAST<size_t>(X++)) * 4 + Channel] = C.Data[C.Pos++];
+                            for (u32 i = 0; i < Count; ++i)
+                                Dst[(CAST<size_t>(X++)) * 4 + Channel] = C.Data[C.Pos++];
                         }
                     }
                 }
@@ -81,7 +84,8 @@ namespace Xen {
         void PackRow(const float* Rgba, const size_t Count, u8* OutHalves) {
             // Clamp first: a float above half range converts to infinity.
             std::vector<float> Clamped(Rgba, Rgba + Count);
-            for (float& V : Clamped) V = std::min(V, HalfMax);
+            for (float& V : Clamped)
+                V = std::min(V, HalfMax);
             DirectX::PackedVector::XMConvertFloatToHalfStream(RCAST<HALF*>(OutHalves),
                                                               sizeof(HALF),
                                                               Clamped.data(),
@@ -119,16 +123,16 @@ namespace Xen {
                 LoadRow(y0, RowA);
                 LoadRow(y1, RowB);
 
-                const float W0    = RowWeight(y0);
-                const float W1    = y1 == y0 ? 0.0f : RowWeight(y1);
-                const float WSum  = W0 + W1;
+                const float W0   = RowWeight(y0);
+                const float W1   = y1 == y0 ? 0.0f : RowWeight(y1);
+                const float WSum = W0 + W1;
 
                 for (u32 x = 0; x < NextW; ++x) {
                     const u32 x0 = std::min(x * 2, PrevW - 1);
                     const u32 x1 = std::min(x * 2 + 1, PrevW - 1);
                     for (u32 c = 0; c < 4; ++c) {
-                        const float A = 0.5f * (RowA[x0 * 4 + c] + RowA[x1 * 4 + c]);
-                        const float B = 0.5f * (RowB[x0 * 4 + c] + RowB[x1 * 4 + c]);
+                        const float A  = 0.5f * (RowA[x0 * 4 + c] + RowA[x1 * 4 + c]);
+                        const float B  = 0.5f * (RowB[x0 * 4 + c] + RowB[x1 * 4 + c]);
                         Out[x * 4 + c] = (W0 * A + W1 * B) / WSum;
                     }
                 }
@@ -147,7 +151,8 @@ namespace Xen {
                (Size >= sizeof(Rgbe) - 1 && std::memcmp(Bytes, Rgbe, sizeof(Rgbe) - 1) == 0);
     }
 
-    bool DecodeRadianceHdr(const u8* Bytes, const size_t Size, const u32 MaxWidth, RadianceImage& Out, std::string& Error) {
+    bool
+    DecodeRadianceHdr(const u8* Bytes, const size_t Size, const u32 MaxWidth, RadianceImage& Out, std::string& Error) {
         Cursor C {Bytes, Size};
 
         std::string Line;
@@ -179,7 +184,8 @@ namespace Xen {
         // are K x K box averages of the source, so the file is never held in
         // memory at its full size.
         u32 Shift = 0;
-        while ((Out.SourceWidth >> Shift) > MaxWidth && (Out.SourceWidth >> Shift) > 1) ++Shift;
+        while ((Out.SourceWidth >> Shift) > MaxWidth && (Out.SourceWidth >> Shift) > 1)
+            ++Shift;
         const u32 K = 1u << Shift;
 
         Out.Width  = std::max(Out.SourceWidth >> Shift, 1u);
@@ -191,7 +197,8 @@ namespace Xen {
         // three multiplies rather than a ldexp call (E == 0 is black).
         float ExponentScale[256];
         ExponentScale[0] = 0.0f;
-        for (int E = 1; E < 256; ++E) ExponentScale[E] = std::ldexp(1.0f, E - (128 + 8));
+        for (int E = 1; E < 256; ++E)
+            ExponentScale[E] = std::ldexp(1.0f, E - (128 + 8));
 
         std::vector<u8> Rgbe;
         std::vector<float> Accum(CAST<size_t>(Out.Width) * 4);

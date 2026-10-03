@@ -30,13 +30,13 @@ xen_add_game_executable(XED
         Source/main.cpp
         Source/Editor.cpp
         Source/Editor.hpp
-        Source/EditorConfig.hpp
         Source/EditorTheme.cpp
         Source/EditorTheme.hpp
         Source/EditorUI.cpp
         Source/EditorUI.hpp
         Source/EditorProject.cpp
         Source/EditorProject.hpp
+        Source/EditorSettings.hpp
         Source/EditorSettingsModal.cpp
         Source/EditorSettingsModal.hpp
         Source/IconLibrary.cpp

@@ -57,7 +57,8 @@ namespace Xen {
         cgltf_options Options {};
         GltfHandle Gltf;
         if (cgltf_parse(&Options, Encoded.Data(), Encoded.Size(), &Gltf.Data) != cgltf_result_success) {
-            THROW_ENGINE_EXCEPTION(EngineException, std::format("mesh asset {} is not a valid glTF/GLB file", ID.Value));
+            THROW_ENGINE_EXCEPTION(EngineException,
+                                   std::format("mesh asset {} is not a valid glTF/GLB file", ID.Value));
         }
 
         // No base path is passed: this asset came out of a pak, not off
@@ -70,8 +71,8 @@ namespace Xen {
             THROW_ENGINE_EXCEPTION(
               EngineException,
               std::format("mesh asset {} references an external buffer file, which isn't supported from a "
-                           "pak - re-export with embedded/binary buffers (GLB, or .gltf with a data URI)",
-                           ID.Value));
+                          "pak - re-export with embedded/binary buffers (GLB, or .gltf with a data URI)",
+                          ID.Value));
         }
 
         if (Gltf.Data->meshes_count == 0 || Gltf.Data->meshes[0].primitives_count == 0) {
@@ -97,8 +98,8 @@ namespace Xen {
         for (cgltf_size PrimIndex = 0; PrimIndex < Mesh.primitives_count; ++PrimIndex) {
             const cgltf_primitive& Primitive = Mesh.primitives[PrimIndex];
             if (Primitive.type != cgltf_primitive_type_triangles) {
-                THROW_ENGINE_EXCEPTION(
-                  EngineException, std::format("mesh asset {} uses a non-triangle primitive topology", ID.Value));
+                THROW_ENGINE_EXCEPTION(EngineException,
+                                       std::format("mesh asset {} uses a non-triangle primitive topology", ID.Value));
             }
 
             const cgltf_accessor* PositionAccessor = FindAttribute(Primitive, cgltf_attribute_type_position);
@@ -107,8 +108,8 @@ namespace Xen {
             const cgltf_accessor* UVAccessor       = FindAttribute(Primitive, cgltf_attribute_type_texcoord);
 
             if (!PositionAccessor || !NormalAccessor) {
-                THROW_ENGINE_EXCEPTION(
-                  EngineException, std::format("mesh asset {} is missing POSITION or NORMAL attributes", ID.Value));
+                THROW_ENGINE_EXCEPTION(EngineException,
+                                       std::format("mesh asset {} is missing POSITION or NORMAL attributes", ID.Value));
             }
 
             // Every index below is rebased by this, so it stays valid
@@ -156,7 +157,8 @@ namespace Xen {
                     Indices[FirstIndex + i] = VertexBase + CAST<u32>(cgltf_accessor_read_index(Primitive.indices, i));
                 }
             } else {
-                for (u32 i = 0; i < PrimIndexCount; ++i) Indices[FirstIndex + i] = VertexBase + i;
+                for (u32 i = 0; i < PrimIndexCount; ++i)
+                    Indices[FirstIndex + i] = VertexBase + i;
             }
 
             MeshSubmesh Sub;
@@ -173,7 +175,8 @@ namespace Xen {
         std::vector<u16> Indices16;
         if (UseU16) {
             Indices16.resize(IndexCount);
-            for (u32 i = 0; i < IndexCount; ++i) Indices16[i] = CAST<u16>(Indices[i]);
+            for (u32 i = 0; i < IndexCount; ++i)
+                Indices16[i] = CAST<u16>(Indices[i]);
         }
 
         DecodedMesh Out;
@@ -197,7 +200,7 @@ namespace Xen {
             Out.Info.BoundsMax = Max;
         }
         Out.Info.Submeshes = std::move(Submeshes);
-        Out.Vertices        = std::move(Vertices);
+        Out.Vertices       = std::move(Vertices);
         if (UseU16) Out.Indices16 = std::move(Indices16);
         else Out.Indices32 = std::move(Indices);
 
@@ -219,16 +222,17 @@ namespace Xen {
         Mesh.VertexBuffer  = _Device->CreateBuffer(VBDesc);
 
         RHI::BufferDesc IBDesc;
-        IBDesc.Size        = UseU16 ? Decoded.Indices16.size() * sizeof(u16) : Decoded.Indices32.size() * sizeof(u32);
-        IBDesc.Usage       = RHI::BufferUsage::Index;
-        IBDesc.Memory      = RHI::MemoryUsage::GpuOnly;
-        IBDesc.InitialData = UseU16 ? CAST<const void*>(Decoded.Indices16.data())
-                                    : CAST<const void*>(Decoded.Indices32.data());
-        IBDesc.DebugName   = "Mesh IB";
-        Mesh.IndexBuffer   = _Device->CreateBuffer(IBDesc);
+        IBDesc.Size   = UseU16 ? Decoded.Indices16.size() * sizeof(u16) : Decoded.Indices32.size() * sizeof(u32);
+        IBDesc.Usage  = RHI::BufferUsage::Index;
+        IBDesc.Memory = RHI::MemoryUsage::GpuOnly;
+        IBDesc.InitialData =
+          UseU16 ? CAST<const void*>(Decoded.Indices16.data()) : CAST<const void*>(Decoded.Indices32.data());
+        IBDesc.DebugName = "Mesh IB";
+        Mesh.IndexBuffer = _Device->CreateBuffer(IBDesc);
 
         if (!Mesh.VertexBuffer.IsValid() || !Mesh.IndexBuffer.IsValid()) {
-            THROW_ENGINE_EXCEPTION(EngineException, std::format("GPU mesh buffer creation failed for asset {}", ID.Value));
+            THROW_ENGINE_EXCEPTION(EngineException,
+                                   std::format("GPU mesh buffer creation failed for asset {}", ID.Value));
         }
 
         return Mesh;

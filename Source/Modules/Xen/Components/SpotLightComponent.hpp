@@ -48,8 +48,8 @@ namespace Xen {
         /// nothing at all.
         NODISCARD f32 GetOuterConeAngle() const { return _OuterConeAngle; }
         void SetOuterConeAngle(const f32 Degrees) {
-            _OuterConeAngle  = std::clamp(Degrees, 0.1f, 89.9f);
-            _InnerConeAngle  = std::min(_InnerConeAngle, _OuterConeAngle);
+            _OuterConeAngle = std::clamp(Degrees, 0.1f, 89.9f);
+            _InnerConeAngle = std::min(_InnerConeAngle, _OuterConeAngle);
         }
 
         /// @brief World-space direction the light points, derived from the

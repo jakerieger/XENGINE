@@ -90,12 +90,12 @@ namespace Xen {
                                                           ASSET("xen.shader.bloomdownsample.ps"),
                                                           RHI::ShaderStage::Fragment,
                                                           "XEN.Shaders.BloomDownsample.ps");
-        const RHI::ShaderHandle UpsampleVs = LoadShader(Device,
+        const RHI::ShaderHandle UpsampleVs   = LoadShader(Device,
                                                         Assets,
                                                         ASSET("xen.shader.bloomupsample.vs"),
                                                         RHI::ShaderStage::Vertex,
                                                         "XEN.Shaders.BloomUpsample.vs");
-        const RHI::ShaderHandle UpsamplePs = LoadShader(Device,
+        const RHI::ShaderHandle UpsamplePs   = LoadShader(Device,
                                                         Assets,
                                                         ASSET("xen.shader.bloomupsample.ps"),
                                                         RHI::ShaderStage::Fragment,
@@ -158,17 +158,17 @@ namespace Xen {
 
         if (CompositeVs.IsValid() && CompositePs.IsValid() && _CompositeLayout.IsValid()) {
             RHI::GraphicsPipelineDesc Desc;
-            Desc.VertexShader                 = CompositeVs;
-            Desc.FragmentShader               = CompositePs;
-            Desc.PipelineLayout               = _CompositeLayout;
-            Desc.Topology                     = RHI::PrimitiveTopology::TriangleList;
-            Desc.ColorAttachmentCount         = 1;
-            Desc.ColorFormats[0]              = TargetFormat;
+            Desc.VertexShader         = CompositeVs;
+            Desc.FragmentShader       = CompositePs;
+            Desc.PipelineLayout       = _CompositeLayout;
+            Desc.Topology             = RHI::PrimitiveTopology::TriangleList;
+            Desc.ColorAttachmentCount = 1;
+            Desc.ColorFormats[0]      = TargetFormat;
             // Non-premultiplied alpha, blended over whatever the target
             // already holds - see the class comment.
-            Desc.Blend.Attachments[0]         = RHI::BlendAttachmentState::AlphaBlend();
-            Desc.DebugName                    = "XEN.Shaders.PostProcessComposite";
-            _CompositePipeline                = Device.CreateGraphicsPipeline(Desc);
+            Desc.Blend.Attachments[0] = RHI::BlendAttachmentState::AlphaBlend();
+            Desc.DebugName            = "XEN.Shaders.PostProcessComposite";
+            _CompositePipeline        = Device.CreateGraphicsPipeline(Desc);
         }
 
         if (CompositeVs.IsValid()) Device.DestroyShader(CompositeVs);
@@ -194,19 +194,22 @@ namespace Xen {
                                                           ASSET("xen.shader.luminancemeasure.ps"),
                                                           RHI::ShaderStage::Fragment,
                                                           "XEN.Shaders.LuminanceMeasure.ps");
-        const RHI::ShaderHandle LumReduceVs = LoadShader(Device,
+        const RHI::ShaderHandle LumReduceVs  = LoadShader(Device,
                                                          Assets,
                                                          ASSET("xen.shader.luminancereduce.vs"),
                                                          RHI::ShaderStage::Vertex,
                                                          "XEN.Shaders.LuminanceReduce.vs");
-        const RHI::ShaderHandle LumReducePs = LoadShader(Device,
+        const RHI::ShaderHandle LumReducePs  = LoadShader(Device,
                                                          Assets,
                                                          ASSET("xen.shader.luminancereduce.ps"),
                                                          RHI::ShaderStage::Fragment,
                                                          "XEN.Shaders.LuminanceReduce.ps");
-        const RHI::ShaderHandle LumAdaptVs = LoadShader(
-          Device, Assets, ASSET("xen.shader.luminanceadapt.vs"), RHI::ShaderStage::Vertex, "XEN.Shaders.LuminanceAdapt.vs");
-        const RHI::ShaderHandle LumAdaptPs = LoadShader(Device,
+        const RHI::ShaderHandle LumAdaptVs   = LoadShader(Device,
+                                                        Assets,
+                                                        ASSET("xen.shader.luminanceadapt.vs"),
+                                                        RHI::ShaderStage::Vertex,
+                                                        "XEN.Shaders.LuminanceAdapt.vs");
+        const RHI::ShaderHandle LumAdaptPs   = LoadShader(Device,
                                                         Assets,
                                                         ASSET("xen.shader.luminanceadapt.ps"),
                                                         RHI::ShaderStage::Fragment,
@@ -258,7 +261,8 @@ namespace Xen {
             _LumAdaptPipeline         = Device.CreateGraphicsPipeline(Desc);
         }
 
-        for (const RHI::ShaderHandle Shader : {LumMeasureVs, LumMeasurePs, LumReduceVs, LumReducePs, LumAdaptVs, LumAdaptPs}) {
+        for (const RHI::ShaderHandle Shader :
+             {LumMeasureVs, LumMeasurePs, LumReduceVs, LumReducePs, LumAdaptVs, LumAdaptPs}) {
             if (Shader.IsValid()) Device.DestroyShader(Shader);
         }
 
@@ -268,11 +272,11 @@ namespace Xen {
         }
 
         RHI::SamplerDesc SamplerDesc;
-        SamplerDesc.MipFilter   = RHI::MipMode::None;  // every sample picks its mip explicitly (SampleLevel)
-        SamplerDesc.AddressU    = RHI::AddressMode::ClampToEdge;
-        SamplerDesc.AddressV    = RHI::AddressMode::ClampToEdge;
-        SamplerDesc.DebugName   = "XEN.PostProcess";
-        _Sampler                = Device.CreateSampler(SamplerDesc);
+        SamplerDesc.MipFilter = RHI::MipMode::None;  // every sample picks its mip explicitly (SampleLevel)
+        SamplerDesc.AddressU  = RHI::AddressMode::ClampToEdge;
+        SamplerDesc.AddressV  = RHI::AddressMode::ClampToEdge;
+        SamplerDesc.DebugName = "XEN.PostProcess";
+        _Sampler              = Device.CreateSampler(SamplerDesc);
 
         // The two ping-ponged adapted-luminance textures never resize (see
         // the class comment), so they're created once here rather than in
@@ -281,13 +285,13 @@ namespace Xen {
         // doesn't carry two pointless 1x1 textures for its whole lifetime.
         if (_LumMeasurePipeline.IsValid() && _LumReducePipeline.IsValid() && _LumAdaptPipeline.IsValid()) {
             RHI::TextureDesc AdaptDesc;
-            AdaptDesc.Width       = 1;
-            AdaptDesc.Height      = 1;
-            AdaptDesc.Fmt         = LuminanceFormat;
-            AdaptDesc.Usage       = RHI::TextureUsage::ColorTarget | RHI::TextureUsage::Sampled;
-            AdaptDesc.DebugName   = "XEN.PostProcess.AdaptedLuminance";
-            _AdaptedLuminance[0]  = Device.CreateTexture(AdaptDesc);
-            _AdaptedLuminance[1]  = Device.CreateTexture(AdaptDesc);
+            AdaptDesc.Width      = 1;
+            AdaptDesc.Height     = 1;
+            AdaptDesc.Fmt        = LuminanceFormat;
+            AdaptDesc.Usage      = RHI::TextureUsage::ColorTarget | RHI::TextureUsage::Sampled;
+            AdaptDesc.DebugName  = "XEN.PostProcess.AdaptedLuminance";
+            _AdaptedLuminance[0] = Device.CreateTexture(AdaptDesc);
+            _AdaptedLuminance[1] = Device.CreateTexture(AdaptDesc);
         }
 
         if (!_CompositePipeline.IsValid() || !_Sampler.IsValid()) {
@@ -341,8 +345,8 @@ namespace Xen {
         _LumChain.clear();
         _LumBaseWidth = _LumBaseHeight = 0;
         _AdaptedLuminance[0] = _AdaptedLuminance[1] = {};
-        _AdaptedLuminanceIndex  = 0;
-        _AdaptedLuminancePrimed = false;
+        _AdaptedLuminanceIndex                      = 0;
+        _AdaptedLuminancePrimed                     = false;
 
         _Device = nullptr;
     }
@@ -359,7 +363,8 @@ namespace Xen {
         _Scratches.clear();
 
         u32 Levels = 1;
-        for (u32 W = Width, H = Height; W > 8 && H > 8 && Levels < MaxBloomLevels; W /= 2, H /= 2) ++Levels;
+        for (u32 W = Width, H = Height; W > 8 && H > 8 && Levels < MaxBloomLevels; W /= 2, H /= 2)
+            ++Levels;
 
         RHI::TextureDesc Desc;
         Desc.Width     = Width;
@@ -382,10 +387,11 @@ namespace Xen {
             _Scratches.resize(_BloomLevels);
             for (u32 Level = 0; Level < _BloomLevels; ++Level) {
                 RHI::TextureDesc ScratchDesc;
-                ScratchDesc.Width     = std::max(Width >> Level, 1u);
-                ScratchDesc.Height    = std::max(Height >> Level, 1u);
-                ScratchDesc.Fmt       = BloomFormat;
-                ScratchDesc.Usage = RHI::TextureUsage::ColorTarget | RHI::TextureUsage::Sampled | RHI::TextureUsage::CopyDst;
+                ScratchDesc.Width  = std::max(Width >> Level, 1u);
+                ScratchDesc.Height = std::max(Height >> Level, 1u);
+                ScratchDesc.Fmt    = BloomFormat;
+                ScratchDesc.Usage =
+                  RHI::TextureUsage::ColorTarget | RHI::TextureUsage::Sampled | RHI::TextureUsage::CopyDst;
                 ScratchDesc.DebugName = "XEN.PostProcess.Scratch";
                 _Scratches[Level]     = _Device->CreateTexture(ScratchDesc);
             }
@@ -407,17 +413,18 @@ namespace Xen {
         // with one texel fetch and needs it to actually be the whole frame's
         // average, not a coarse-but-not-quite-there approximation of it.
         u32 Levels = 1;
-        for (u32 W = Width, H = Height; W > 1 || H > 1; W = std::max(W / 2, 1u), H = std::max(H / 2, 1u)) ++Levels;
+        for (u32 W = Width, H = Height; W > 1 || H > 1; W = std::max(W / 2, 1u), H = std::max(H / 2, 1u))
+            ++Levels;
 
         _LumChain.resize(Levels);
         u32 LevelWidth = Width, LevelHeight = Height;
         for (u32 Level = 0; Level < Levels; ++Level) {
             RHI::TextureDesc Desc;
-            Desc.Width     = LevelWidth;
-            Desc.Height    = LevelHeight;
-            Desc.Fmt       = LuminanceFormat;
-            Desc.Usage     = RHI::TextureUsage::ColorTarget | RHI::TextureUsage::Sampled;
-            Desc.DebugName = "XEN.PostProcess.Luminance";
+            Desc.Width       = LevelWidth;
+            Desc.Height      = LevelHeight;
+            Desc.Fmt         = LuminanceFormat;
+            Desc.Usage       = RHI::TextureUsage::ColorTarget | RHI::TextureUsage::Sampled;
+            Desc.DebugName   = "XEN.PostProcess.Luminance";
             _LumChain[Level] = _Device->CreateTexture(Desc);
 
             LevelWidth  = std::max(LevelWidth / 2, 1u);
@@ -442,8 +449,8 @@ namespace Xen {
         const bool UseBloom = WantsBloom && _BloomChain.IsValid();
 
         const bool WantsAutoExposure = Settings_.AutoExposureEnabled && _LumMeasurePipeline.IsValid() &&
-          _LumReducePipeline.IsValid() && _LumAdaptPipeline.IsValid() && _AdaptedLuminance[0].IsValid() &&
-          _AdaptedLuminance[1].IsValid();
+                                       _LumReducePipeline.IsValid() && _LumAdaptPipeline.IsValid() &&
+                                       _AdaptedLuminance[0].IsValid() && _AdaptedLuminance[1].IsValid();
         if (WantsAutoExposure) EnsureLuminanceChain(SceneWidth, SceneHeight);
         const bool UseAutoExposure = WantsAutoExposure && !_LumChain.empty();
 
@@ -491,7 +498,7 @@ namespace Xen {
             // step's destination mip already holds its own downsampled
             // content (Load, not Clear) for the blend to land on.
             for (u32 Level = _BloomLevels - 1; Level > 0; --Level) {
-                const u32 DstLevel      = Level - 1;
+                const u32 DstLevel        = Level - 1;
                 const u32 SourceMipWidth  = std::max(_BloomWidth >> Level, 1u);
                 const u32 SourceMipHeight = std::max(_BloomHeight >> Level, 1u);
 

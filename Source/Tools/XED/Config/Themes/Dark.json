@@ -14,7 +14,7 @@
     "textSecondary": "#797872",
     "textDisabled": "#706e69"
   },
-  "windowRounding": 0.0,
+  "windowRounding": 4.0,
   "frameRounding": 4.0,
   "tabRounding": 4.0,
   "windowBorderSize": 1.0,

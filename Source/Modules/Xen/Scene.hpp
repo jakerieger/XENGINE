@@ -24,7 +24,7 @@ namespace Xen {
     /// inherited the slot.
     class Scene {
         friend class Editor;
-        
+
     public:
         explicit Scene(std::string Name = "Scene");
         Scene(std::string Name, const EngineContext& Context);

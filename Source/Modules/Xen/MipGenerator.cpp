@@ -41,8 +41,11 @@ namespace Xen {
     bool MipGenerator::Initialize(RHI::IRenderDevice& Device, const PAK::AssetRegistry& Assets) {
         _Device = &Device;
 
-        const RHI::ShaderHandle Vertex = LoadShader(
-          Device, Assets, ASSET("xen.shader.generatemips.vs"), RHI::ShaderStage::Vertex, "XEN.Shaders.GenerateMips.vs");
+        const RHI::ShaderHandle Vertex   = LoadShader(Device,
+                                                    Assets,
+                                                    ASSET("xen.shader.generatemips.vs"),
+                                                    RHI::ShaderStage::Vertex,
+                                                    "XEN.Shaders.GenerateMips.vs");
         const RHI::ShaderHandle Fragment = LoadShader(Device,
                                                       Assets,
                                                       ASSET("xen.shader.generatemips.ps"),
@@ -113,8 +116,8 @@ namespace Xen {
         _Sampler       = {};
         _Scratch       = {};
         _ScratchWidth = _ScratchHeight = 0;
-        _ScratchFormat = RHI::Format::Unknown;
-        _Device        = nullptr;
+        _ScratchFormat                 = RHI::Format::Unknown;
+        _Device                        = nullptr;
     }
 
     void MipGenerator::EnsureScratch(const u32 Width, const u32 Height, const RHI::Format Format) {
@@ -137,11 +140,8 @@ namespace Xen {
         _ScratchFormat = Format;
     }
 
-    void MipGenerator::Generate(const RHI::TextureHandle Texture,
-                                const u32 Width,
-                                const u32 Height,
-                                const u32 Levels,
-                                const bool Srgb) {
+    void MipGenerator::Generate(
+      const RHI::TextureHandle Texture, const u32 Width, const u32 Height, const u32 Levels, const bool Srgb) {
         if (!_Device || Levels <= 1) return;
 
         const RHI::PipelineHandle Pipeline = Srgb ? _SrgbPipeline : _UnormPipeline;
@@ -176,7 +176,7 @@ namespace Xen {
             // for why that still matters).
             _Commands.CopyTexture(Texture, Level - 1, _Scratch, 0);
 
-            RHI::RenderPassDesc Pass = RHI::RenderPassDesc::ColorTarget(Texture);
+            RHI::RenderPassDesc Pass          = RHI::RenderPassDesc::ColorTarget(Texture);
             Pass.ColorAttachments[0].MipLevel = Level;
             Pass.DebugName                    = "Generate mip";
             _Commands.BeginRenderPass(Pass);

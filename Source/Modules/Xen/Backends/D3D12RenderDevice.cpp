@@ -30,7 +30,8 @@ namespace Xen::RHI::D3D12Backend {
                                           void*) {
             constexpr u32 MaxLoggedPerMessage = 3;
 
-            const bool Serious = Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION || Severity == D3D12_MESSAGE_SEVERITY_ERROR;
+            const bool Serious =
+              Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION || Severity == D3D12_MESSAGE_SEVERITY_ERROR;
             if (!Serious) {
                 static std::mutex CountsMutex;
                 static std::unordered_map<i32, u32> Counts;
@@ -48,10 +49,18 @@ namespace Xen::RHI::D3D12Backend {
             }
 
             switch (Severity) {
-                case D3D12_MESSAGE_SEVERITY_CORRUPTION: LOG_CRIT("D3D12 corruption (id %d): %s", CAST<i32>(Id), Description); break;
-                case D3D12_MESSAGE_SEVERITY_ERROR: LOG_ERR("D3D12 error (id %d): %s", CAST<i32>(Id), Description); break;
-                case D3D12_MESSAGE_SEVERITY_WARNING: LOG_WARN("D3D12 warning (id %d): %s", CAST<i32>(Id), Description); break;
-                default: LOG_INFO("D3D12 (id %d): %s", CAST<i32>(Id), Description); break;
+                case D3D12_MESSAGE_SEVERITY_CORRUPTION:
+                    LOG_CRIT("D3D12 corruption (id %d): %s", CAST<i32>(Id), Description);
+                    break;
+                case D3D12_MESSAGE_SEVERITY_ERROR:
+                    LOG_ERR("D3D12 error (id %d): %s", CAST<i32>(Id), Description);
+                    break;
+                case D3D12_MESSAGE_SEVERITY_WARNING:
+                    LOG_WARN("D3D12 warning (id %d): %s", CAST<i32>(Id), Description);
+                    break;
+                default:
+                    LOG_INFO("D3D12 (id %d): %s", CAST<i32>(Id), Description);
+                    break;
             }
         }
 
@@ -558,7 +567,7 @@ namespace Xen::RHI::D3D12Backend {
         }
 
         TransitionTexture(*Tex,
-                           D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+                          D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
         D3D12_SHADER_RESOURCE_VIEW_DESC SrvDesc {};
         SrvDesc.Format                  = Tex->Format;
@@ -605,7 +614,7 @@ namespace Xen::RHI::D3D12Backend {
             GpuScopeTiming Timing {};
             std::memcpy(Timing.Name, Scope.Name, sizeof(Timing.Name));
             Timing.Milliseconds = CAST<f32>(CAST<f64>(DeltaTicks) / CAST<f64>(_TimestampFrequency) * 1000.0);
-            Timing.Depth         = Scope.Depth;
+            Timing.Depth        = Scope.Depth;
             _LastResolvedGpuTimings.push_back(Timing);
         }
 
@@ -654,7 +663,8 @@ namespace Xen::RHI::D3D12Backend {
         while (!_RetiredTextures.empty() && _RetiredTextures.front().FenceValue <= Completed) {
             const D3DTexture& Tex = _RetiredTextures.front().Item;
             if (Tex.SrvHeapIndex != UINT32_MAX) _FreeSrvSlots.push_back(Tex.SrvHeapIndex);
-            for (const u32 RtvSlot : Tex.RtvSlots) _FreeOffscreenRtvSlots.push_back(RtvSlot);
+            for (const u32 RtvSlot : Tex.RtvSlots)
+                _FreeOffscreenRtvSlots.push_back(RtvSlot);
             if (Tex.DsvHeapIndex != UINT32_MAX) _FreeOffscreenDsvSlots.push_back(Tex.DsvHeapIndex);
             _RetiredTextures.pop_front();
         }
@@ -708,9 +718,12 @@ namespace Xen::RHI::D3D12Backend {
         const auto TrianglesPerInstance = [this](const u32 ElementCount) -> u32 {
             if (!_CurrentPipeline) return 0;
             switch (_CurrentPipeline->Topology) {
-                case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST: return ElementCount / 3;
-                case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP: return ElementCount >= 3 ? ElementCount - 2 : 0;
-                default: return 0;
+                case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST:
+                    return ElementCount / 3;
+                case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
+                    return ElementCount >= 3 ? ElementCount - 2 : 0;
+                default:
+                    return 0;
             }
         };
 
@@ -866,8 +879,9 @@ namespace Xen::RHI::D3D12Backend {
                         // Self-transitioning: a texture that was just an
                         // offscreen render target (or was never rendered into
                         // at all yet) may not be SRV-readable already.
-                        TransitionTexture(
-                          *Tex, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+                        TransitionTexture(*Tex,
+                                          D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
+                                            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
                         if (const auto* Binding = _CurrentLayout->Find(P.Slot, BindingType::SampledTexture)) {
                             D3D12_GPU_DESCRIPTOR_HANDLE Handle = _SrvHeap->GetGPUDescriptorHandleForHeapStart();
@@ -916,7 +930,7 @@ namespace Xen::RHI::D3D12Backend {
                 }
 
                 case CmdType::CopyTexture: {
-                    const auto& P = It.Payload<Cmd::CopyTexture>();
+                    const auto& P   = It.Payload<Cmd::CopyTexture>();
                     D3DTexture* Src = _Textures.Get(P.Src);
                     D3DTexture* Dst = _Textures.Get(P.Dst);
                     if (!Src || !Dst) break;
@@ -1002,9 +1016,9 @@ namespace Xen::RHI::D3D12Backend {
                         const u32 CopyLen = std::min<u32>(Label.Length, CAST<u32>(sizeof(Entry.Name)) - 1);
                         std::memcpy(Entry.Name, Text, CopyLen);
                         Entry.Name[CopyLen] = '\0';
-                        Entry.StartIndex = _NextTimestampIndex;
-                        Entry.EndIndex   = _NextTimestampIndex;
-                        Entry.Depth      = CAST<u32>(_ActiveGpuScopeStack.size());
+                        Entry.StartIndex    = _NextTimestampIndex;
+                        Entry.EndIndex      = _NextTimestampIndex;
+                        Entry.Depth         = CAST<u32>(_ActiveGpuScopeStack.size());
 
                         std::vector<PendingGpuScope>& List = _PendingGpuScopes[_FrameIndex];
                         const u32 ListIndex                = CAST<u32>(List.size());
@@ -1229,7 +1243,8 @@ namespace Xen::RHI::D3D12Backend {
               D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
             for (u8 i = 0; i < _CurrentColorAttachmentCount; ++i) {
-                if (D3DTexture* Tex = _Textures.Get(_CurrentColorAttachments[i])) TransitionTexture(*Tex, ShaderReadable);
+                if (D3DTexture* Tex = _Textures.Get(_CurrentColorAttachments[i]))
+                    TransitionTexture(*Tex, ShaderReadable);
             }
 
             if (_CurrentHasDepthAttachment) {
@@ -1462,7 +1477,7 @@ namespace Xen::RHI::D3D12Backend {
         }
 
         Tex.Usage = Desc.Usage;
-        Tex.Type      = Desc.Type;
+        Tex.Type  = Desc.Type;
         // A cube is always exactly six slices; an array is whatever was asked for.
         Tex.Layers = Desc.Type == TextureType::TextureCube ? 6 : std::max<u32>(Desc.ArrayLayers, 1);
 
@@ -1479,8 +1494,8 @@ namespace Xen::RHI::D3D12Backend {
         // and an SRV over the same memory can't both use a depth-typed
         // format, so the resource itself must be typeless, with the DSV and
         // SRV each applying their own compatible format over it.
-        const DXGI_FORMAT ResourceFormat = (WantsDepthTarget && WantsSampled) ? ToTypelessDepthFormat(Desc.Fmt)
-                                                                               : Tex.Format;
+        const DXGI_FORMAT ResourceFormat =
+          (WantsDepthTarget && WantsSampled) ? ToTypelessDepthFormat(Desc.Fmt) : Tex.Format;
 
         D3D12_RESOURCE_DESC ResDesc {};
         ResDesc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -1492,8 +1507,8 @@ namespace Xen::RHI::D3D12Backend {
         ResDesc.Format           = ResourceFormat;
         ResDesc.SampleDesc.Count = std::max<u32>(Desc.SampleCount, 1);
         ResDesc.Flags            = WantsColorTarget   ? D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
-                                    : WantsDepthTarget ? D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
-                                                        : D3D12_RESOURCE_FLAG_NONE;
+                                   : WantsDepthTarget ? D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+                                                      : D3D12_RESOURCE_FLAG_NONE;
 
         // A plain sampled-only texture (e.g. a sprite) is created COMMON and
         // transitioned explicitly by UploadTexture; a render/depth target is
@@ -1501,8 +1516,8 @@ namespace Xen::RHI::D3D12Backend {
         // nothing else transitions it before the first render pass that
         // targets it.
         const D3D12_RESOURCE_STATES InitialState = WantsColorTarget   ? D3D12_RESOURCE_STATE_RENDER_TARGET
-                                                    : WantsDepthTarget ? D3D12_RESOURCE_STATE_DEPTH_WRITE
-                                                                       : D3D12_RESOURCE_STATE_COMMON;
+                                                   : WantsDepthTarget ? D3D12_RESOURCE_STATE_DEPTH_WRITE
+                                                                      : D3D12_RESOURCE_STATE_COMMON;
 
         // Lets the GPU allocate a color/depth target for its fast-clear path
         // instead of a slower generic one on every LoadOp::Clear (D3D12
@@ -1523,8 +1538,12 @@ namespace Xen::RHI::D3D12Backend {
             OptimizedClearPtr                   = &OptimizedClear;
         }
 
-        const HRESULT Hr = _Allocator->CreateResource(
-          &AllocDesc, &ResDesc, InitialState, OptimizedClearPtr, &Tex.Allocation, IID_PPV_ARGS(&Tex.Resource));
+        const HRESULT Hr = _Allocator->CreateResource(&AllocDesc,
+                                                      &ResDesc,
+                                                      InitialState,
+                                                      OptimizedClearPtr,
+                                                      &Tex.Allocation,
+                                                      IID_PPV_ARGS(&Tex.Resource));
         if (FAILED(Hr)) return {};
 
         Tex.CurrentState = InitialState;
@@ -1542,9 +1561,9 @@ namespace Xen::RHI::D3D12Backend {
                     SrvDesc.ViewDimension         = D3D12_SRV_DIMENSION_TEXTURECUBE;
                     SrvDesc.TextureCube.MipLevels = ResDesc.MipLevels;
                 } else if (Tex.Layers > 1) {
-                    SrvDesc.ViewDimension                = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
-                    SrvDesc.Texture2DArray.MipLevels     = ResDesc.MipLevels;
-                    SrvDesc.Texture2DArray.ArraySize     = Tex.Layers;
+                    SrvDesc.ViewDimension            = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+                    SrvDesc.Texture2DArray.MipLevels = ResDesc.MipLevels;
+                    SrvDesc.Texture2DArray.ArraySize = Tex.Layers;
                 } else {
                     SrvDesc.ViewDimension       = D3D12_SRV_DIMENSION_TEXTURE2D;
                     SrvDesc.Texture2D.MipLevels = ResDesc.MipLevels;
@@ -1671,7 +1690,8 @@ namespace Xen::RHI::D3D12Backend {
             ToCopyDest.Transition.StateBefore = Tex->CurrentState;
             ToCopyDest.Transition.StateAfter  = D3D12_RESOURCE_STATE_COPY_DEST;
             ToCopyDest.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-            if (ToCopyDest.Transition.StateBefore != D3D12_RESOURCE_STATE_COPY_DEST) List->ResourceBarrier(1, &ToCopyDest);
+            if (ToCopyDest.Transition.StateBefore != D3D12_RESOURCE_STATE_COPY_DEST)
+                List->ResourceBarrier(1, &ToCopyDest);
 
             D3D12_TEXTURE_COPY_LOCATION Dst {};
             Dst.pResource        = Tex->Resource.Get();
@@ -1702,8 +1722,7 @@ namespace Xen::RHI::D3D12Backend {
         // ExecuteUploadAndWait runs and waits synchronously above, so the GPU
         // has already executed the barrier by the time we get here - safe to
         // update the tracked state on this thread with no race.
-        Tex->CurrentState =
-          D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        Tex->CurrentState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
     }
 
     void D3D12RenderDevice::DestroyTexture(const TextureHandle Handle) {
@@ -1723,12 +1742,10 @@ namespace Xen::RHI::D3D12Backend {
           ToD3DFilter(Desc.MinFilter, Desc.MagFilter, Desc.MipFilter, Desc.MaxAnisotropy > 1 && !Desc.Compare);
         // The comparison variant of every D3D12_FILTER is the plain one with
         // the reduction-type bits set to COMPARISON (0x80).
-        if (Desc.Compare) {
-            SamplerDesc_.Filter = CAST<D3D12_FILTER>(CAST<u32>(SamplerDesc_.Filter) | 0x80u);
-        }
-        SamplerDesc_.AddressU = ToD3DAddressMode(Desc.AddressU);
-        SamplerDesc_.AddressV = ToD3DAddressMode(Desc.AddressV);
-        SamplerDesc_.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        if (Desc.Compare) { SamplerDesc_.Filter = CAST<D3D12_FILTER>(CAST<u32>(SamplerDesc_.Filter) | 0x80u); }
+        SamplerDesc_.AddressU       = ToD3DAddressMode(Desc.AddressU);
+        SamplerDesc_.AddressV       = ToD3DAddressMode(Desc.AddressV);
+        SamplerDesc_.AddressW       = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
         SamplerDesc_.MaxAnisotropy  = std::max<UINT>(Desc.MaxAnisotropy, 1);
         SamplerDesc_.MinLOD         = Desc.MinLod;
         SamplerDesc_.MaxLOD         = Desc.MaxLod;
@@ -1881,8 +1898,10 @@ namespace Xen::RHI::D3D12Backend {
                     ErrBlob ? CAST<const char*>(ErrBlob->GetBufferPointer()) : "unknown error");
             return {};
         }
-        if (FAILED(_Device->CreateRootSignature(
-              0, SigBlob->GetBufferPointer(), SigBlob->GetBufferSize(), IID_PPV_ARGS(&Layout.RootSignature))))
+        if (FAILED(_Device->CreateRootSignature(0,
+                                                SigBlob->GetBufferPointer(),
+                                                SigBlob->GetBufferSize(),
+                                                IID_PPV_ARGS(&Layout.RootSignature))))
             return {};
 
         return _Layouts.Allocate(std::move(Layout));
@@ -1895,8 +1914,8 @@ namespace Xen::RHI::D3D12Backend {
     }
 
     PipelineHandle D3D12RenderDevice::CreateGraphicsPipeline(const GraphicsPipelineDesc& Desc) {
-        const D3DShader* VS               = _Shaders.Get(Desc.VertexShader);
-        const D3DShader* PS               = _Shaders.Get(Desc.FragmentShader);
+        const D3DShader* VS                = _Shaders.Get(Desc.VertexShader);
+        const D3DShader* PS                = _Shaders.Get(Desc.FragmentShader);
         const D3DPipelineLayout* LayoutPtr = _Layouts.Get(Desc.PipelineLayout);
         // No fragment shader is a depth-only pipeline; an invalid handle for
         // one that WAS given is still an error.
@@ -1929,8 +1948,8 @@ namespace Xen::RHI::D3D12Backend {
         }
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC PsoDesc {};
-        PsoDesc.pRootSignature        = LayoutPtr->RootSignature.Get();
-        PsoDesc.VS                    = {VS->Bytecode->GetBufferPointer(), VS->Bytecode->GetBufferSize()};
+        PsoDesc.pRootSignature = LayoutPtr->RootSignature.Get();
+        PsoDesc.VS             = {VS->Bytecode->GetBufferPointer(), VS->Bytecode->GetBufferSize()};
         if (PS) PsoDesc.PS = {PS->Bytecode->GetBufferPointer(), PS->Bytecode->GetBufferSize()};
         PsoDesc.InputLayout           = {InputElements.data(), CAST<UINT>(InputElements.size())};
         PsoDesc.PrimitiveTopologyType = ToD3DTopologyType(Desc.Topology);
@@ -2007,7 +2026,7 @@ namespace Xen::RHI::D3D12Backend {
     }
 
     PipelineHandle D3D12RenderDevice::CreateComputePipeline(const ComputePipelineDesc& Desc) {
-        const D3DShader* CS               = _Shaders.Get(Desc.ComputeShader);
+        const D3DShader* CS                = _Shaders.Get(Desc.ComputeShader);
         const D3DPipelineLayout* LayoutPtr = _Layouts.Get(Desc.PipelineLayout);
         if (!CS || !LayoutPtr) return {};
 

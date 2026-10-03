@@ -31,7 +31,8 @@ namespace Xen::PAK {
         // Salt/KeyCheck are meaningless (zeroed) on a pak built without
         // --encrypt - nothing to check the key against.
         if (_Encrypted && ComputeKeyCheck(_Salt, GetBuiltInKeySchedule()) != Header.KeyCheck) {
-            THROW_ENGINE_EXCEPTION(CryptoException, "key check failed - wrong decryption key for: " + _PakPath.string());
+            THROW_ENGINE_EXCEPTION(CryptoException,
+                                   "key check failed - wrong decryption key for: " + _PakPath.string());
         }
 
         _Table.reserve(Header.TableEntryCount);

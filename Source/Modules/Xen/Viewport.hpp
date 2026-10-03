@@ -65,10 +65,10 @@ namespace Xen {
                         RHI::Format ColorFormat = RHI::Format::BGRA8_UNORM,
                         bool WithDepth          = false,
                         RHI::Format DepthFormat = RHI::Format::D32_FLOAT,
-                        f32 ClearR = 0.1f,
-                        f32 ClearG = 0.1f,
-                        f32 ClearB = 0.1f,
-                        f32 ClearA = 1.0f);
+                        f32 ClearR              = 0.1f,
+                        f32 ClearG              = 0.1f,
+                        f32 ClearB              = 0.1f,
+                        f32 ClearA              = 1.0f);
         void Shutdown();
 
         NODISCARD bool IsInitialized() const { return _Device != nullptr; }
@@ -89,9 +89,7 @@ namespace Xen {
 
         NODISCARD u32 GetWidth() const { return _Width; }
         NODISCARD u32 GetHeight() const { return _Height; }
-        NODISCARD f32 GetAspectRatio() const {
-            return _Height > 0 ? CAST<f32>(_Width) / CAST<f32>(_Height) : 1.0f;
-        }
+        NODISCARD f32 GetAspectRatio() const { return _Height > 0 ? CAST<f32>(_Width) / CAST<f32>(_Height) : 1.0f; }
 
     private:
         RHI::IRenderDevice* _Device {nullptr};
