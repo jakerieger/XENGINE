@@ -1,8 +1,22 @@
 cmake_minimum_required(VERSION 3.25)
-project(XENGINE)
+project(XENGINE VERSION 0.1.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+include(GNUInstallDirs)
+
+# Debug and Release are installed side by side into one prefix (MSVC can't mix
+# the two runtimes in one link), so every library - ours and the fetched deps
+# alike, hence before FetchDeps - needs a distinct Debug file name.
+# Executables ignore this variable.
+set(CMAKE_DEBUG_POSTFIX d)
+
+# Embed debug info in the .obj/.lib files (/Z7) instead of per-target compile
+# PDBs (/Zi): the installed static libs then carry their own debug info, rather
+# than every game's Debug link warning LNK4099 about PDBs that were never
+# installed. Linked executables still produce their own PDB as usual.
+set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo>:Embedded>")
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -45,3 +59,6 @@ endif ()
 if (BUILD_SANDBOX)
     add_subdirectory(${SOURCE_ROOT}/Sandbox)
 endif ()
+
+# cmake --install rules + the find_package(Xen) package
+include(CMake/XenInstall.cmake)

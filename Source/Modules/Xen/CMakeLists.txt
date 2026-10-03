@@ -133,7 +133,10 @@ target_sources(Xen PUBLIC
         ${IMGUI_HEADERS}
         ${IMGUI_BACKEND_HEADERS}
 )
-target_include_directories(Xen PUBLIC $<BUILD_INTERFACE:${VENDOR_ROOT}/imgui/backends>)
+target_include_directories(Xen PUBLIC
+        $<BUILD_INTERFACE:${VENDOR_ROOT}/imgui/backends>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/XenVendor/backends>
+)
 
 # stb_image/cgltf are implementation details - no public header includes them.
 target_include_directories(Xen PRIVATE ${VENDOR_ROOT})

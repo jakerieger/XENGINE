@@ -1,6 +1,10 @@
 include(FetchContent)
 
 # ==== [ DirectX-Headers ] ============================================================================================
+# Installed as its own package (find_package(directx-headers)) because Xen's
+# exported targets link Microsoft::DirectX-Headers/DirectX-Guids publicly.
+# Off by default when it isn't the top-level project.
+set(DXHEADERS_INSTALL ON CACHE BOOL "" FORCE)
 FetchContent_Declare(
         DirectX-Headers
         GIT_REPOSITORY https://github.com/microsoft/DirectX-Headers.git

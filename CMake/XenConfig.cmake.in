@@ -1,0 +1,29 @@
+@PACKAGE_INIT@
+
+# Xen's exported targets link these packages' targets publicly, and both are
+# installed into the same prefix alongside Xen.
+include(CMakeFindDependencyMacro)
+find_dependency(directx-headers CONFIG)
+find_dependency(D3D12MemoryAllocator CONFIG)
+
+include("${CMAKE_CURRENT_LIST_DIR}/XenTargets.cmake")
+# Only present when a Release build was installed (tools are Release-only).
+include("${CMAKE_CURRENT_LIST_DIR}/XenToolsTargets.cmake" OPTIONAL)
+
+# Only Debug and Release are installed. Map the other standard configurations
+# onto Release explicitly - left to its default, CMake may pick the Debug libs
+# for e.g. RelWithDebInfo, which then fails to link (/MDd vs /MD runtime).
+foreach (_xen_target
+        Xen::Common Xen::PAK Xen::Xen Xen::lz4_static
+        Microsoft::DirectX-Headers Microsoft::DirectX-Guids
+        GPUOpen::D3D12MemoryAllocator)
+    if (TARGET ${_xen_target})
+        set_target_properties(${_xen_target} PROPERTIES
+                MAP_IMPORTED_CONFIG_RELWITHDEBINFO "Release;Debug"
+                MAP_IMPORTED_CONFIG_MINSIZEREL "Release;Debug"
+        )
+    endif ()
+endforeach ()
+unset(_xen_target)
+
+check_required_components(Xen)
