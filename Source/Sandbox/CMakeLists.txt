@@ -19,4 +19,4 @@ xen_compile_shaders(Sandbox)
 xen_package_engine_content(Sandbox)
 xen_package_game_content(Sandbox)
 
-target_include_directories(Sandbox PRIVATE Runtime ${MODULES_ROOT} ${VENDOR_ROOT})
+target_include_directories(Sandbox PRIVATE Runtime)

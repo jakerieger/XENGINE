@@ -3,8 +3,8 @@
 //
 
 #include "MeshComponent.hpp"
-#include "Actor.hpp"
-#include "Scene.hpp"
+#include <Xen/Actor.hpp>
+#include <Xen/Scene.hpp>
 
 namespace Xen {
     MeshComponent::MeshComponent(const AssetID Mesh) : _MeshAsset(Mesh) {}

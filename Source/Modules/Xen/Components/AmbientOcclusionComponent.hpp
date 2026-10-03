@@ -6,9 +6,9 @@
 
 #include <Common/XenCommon.hpp>
 
-#include "Component.hpp"
-#include "ComponentRegistry.hpp"
-#include "SSAO.hpp"
+#include <Xen/Component.hpp>
+#include <Xen/ComponentRegistry.hpp>
+#include <Xen/SSAO.hpp>
 
 namespace Xen {
     XEN_COMPONENT(AmbientOcclusionComponent)

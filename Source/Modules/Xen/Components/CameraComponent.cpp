@@ -3,7 +3,7 @@
 //
 
 #include "CameraComponent.hpp"
-#include "Actor.hpp"
+#include <Xen/Actor.hpp>
 
 namespace Xen {
     Float4x4 CameraComponent::GetViewMatrix() const {

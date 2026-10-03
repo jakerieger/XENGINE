@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "ComponentRegistry.hpp"
+#include <Xen/ComponentRegistry.hpp>
 
 namespace Xen {
     class CameraComponent;

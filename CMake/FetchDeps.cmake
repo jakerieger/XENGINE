@@ -33,22 +33,11 @@ FetchContent_Declare(
         GIT_TAG v2.7.2
 )
 
-# ==== [ brotli ] =====================================================================================================
-set(BROTLI_DISABLE_TESTS ON CACHE BOOL "Disable Brotli tests" FORCE)
-set(BROTLI_BUNDLED_MODE ON CACHE BOOL "Configure Brotli for bundled usage" FORCE)
-set(BROTLI_LIBS brotlienc brotlidec brotlicommon)
-FetchContent_Declare(
-        brotli
-        GIT_REPOSITORY https://github.com/google/brotli.git
-        GIT_TAG v1.2.0
-)
-
 FetchContent_MakeAvailable(
         DirectX-Headers
         D3D12MemoryAllocator
         lz4
         CLI11
-        brotli
 )
 
 # D3D12MemoryAllocator's own CMakeLists doesn't know about DirectX-Headers - it only

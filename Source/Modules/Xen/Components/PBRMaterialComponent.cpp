@@ -3,7 +3,7 @@
 //
 
 #include "PBRMaterialComponent.hpp"
-#include "Scene.hpp"
+#include <Xen/Scene.hpp>
 
 namespace Xen {
     void PBRMaterialComponent::Reflect(IReflector& R) {

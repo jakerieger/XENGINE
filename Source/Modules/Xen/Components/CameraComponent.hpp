@@ -6,9 +6,9 @@
 
 #include <Common/XenCommon.hpp>
 
-#include "Component.hpp"
-#include "ComponentRegistry.hpp"
-#include "Transform.hpp"
+#include <Xen/Component.hpp>
+#include <Xen/ComponentRegistry.hpp>
+#include <Xen/Transform.hpp>
 
 #include <algorithm>
 

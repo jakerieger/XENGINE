@@ -4,7 +4,7 @@
 
 #include "FPPlayerController.hpp"
 #include "CameraComponent.hpp"
-#include "Actor.hpp"
+#include <Xen/Actor.hpp>
 
 namespace Xen {
     FPPlayerController::FPPlayerController() {
@@ -26,4 +26,4 @@ namespace Xen {
     void FPPlayerController::FixedTick(const f32 FixedDelta) {}
 
     void FPPlayerController::EndPlay() {}
-}  // namespace Xen
+}  // namespace Xen

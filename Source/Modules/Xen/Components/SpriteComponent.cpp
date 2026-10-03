@@ -6,9 +6,9 @@
 #include <Common/Exception.hpp>
 
 #include "SpriteComponent.hpp"
-#include "Actor.hpp"
+#include <Xen/Actor.hpp>
 #include "CameraComponent.hpp"
-#include "Scene.hpp"
+#include <Xen/Scene.hpp>
 
 #include <cmath>
 
@@ -147,4 +147,4 @@ namespace Xen {
         _TextureAsset = ID;
         _Texture      = New;
     }
-}  // namespace Xen
+}  // namespace Xen

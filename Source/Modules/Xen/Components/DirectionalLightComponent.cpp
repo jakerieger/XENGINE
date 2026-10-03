@@ -3,7 +3,7 @@
 //
 
 #include "DirectionalLightComponent.hpp"
-#include "Actor.hpp"
+#include <Xen/Actor.hpp>
 
 namespace Xen {
     void DirectionalLightComponent::Reflect(IReflector& R) {

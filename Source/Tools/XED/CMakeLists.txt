@@ -1,5 +1,3 @@
-project(XENGINE)
-
 include(XenGame)
 
 file(GLOB RESOURCE_HEADERS
@@ -17,14 +15,6 @@ xen_add_game_executable(XED
         # Win32 Resource
         Resource/App.rc
         Resource/Resource.h
-        # Vendor
-        ${VENDOR_ROOT}/nlohmann/json.hpp
-        ${VENDOR_ROOT}/stb_image.cpp
-        ${VENDOR_ROOT}/stb_image.h
-        ${VENDOR_ROOT}/ini.h
-        ${VENDOR_ROOT}/cgltf.cpp
-        ${VENDOR_ROOT}/cgltf.h
-        ${IMGUI_SOURCES}
         ${RESOURCE_HEADERS}
         # Editor
         Source/main.cpp
@@ -41,7 +31,7 @@ xen_add_game_executable(XED
         Source/EditorSettingsModal.hpp
         Source/IconLibrary.cpp
         Source/IconLibrary.hpp
-        Source/ImGuiHelpers.hpp
+        Source/UI.hpp
         Source/PropertyEditor.cpp
         Source/PropertyEditor.hpp
         Source/ProjectFileTemplate.hpp
@@ -49,31 +39,13 @@ xen_add_game_executable(XED
         Source/ProjectSettingsModal.hpp
 )
 
-target_compile_definitions(XED PUBLIC
-        UNICODE
-        _UNICODE
-        WIN32_LEAN_AND_MEAN
-        NOMINMAX
-        _CRT_SECURE_NO_WARNINGS
-)
+# Everything else XED needs (Common, PAK, D3D12, Dear ImGui, nlohmann/json,
+# stb_image's implementation) comes through Xen::Xen's usage requirements -
+# XED must not compile its own copy of any vendor source Xen already contains.
+target_link_libraries(XED PRIVATE Xen::Xen)
 
-target_link_libraries(XED PRIVATE
-        Xen::Common
-        Xen::PAK
-        Xen::Xen
-        Microsoft::DirectX-Headers
-        Microsoft::DirectX-Guids
-        D3D12MemoryAllocator
-        d3d12.lib
-        dxgi.lib
-        dxguid.lib
-        d3dcompiler.lib
-        brotlicommon
-        brotlienc
-        brotlidec
-)
-
-target_include_directories(XED PRIVATE ${MODULES_ROOT} ${VENDOR_ROOT} ${VENDOR_ROOT}/imgui)
+# <stb_image.h> for IconLibrary - not part of Xen's public interface.
+target_include_directories(XED PRIVATE ${VENDOR_ROOT})
 
 xen_configure_game(XED
         ALLOW_NO_PAK

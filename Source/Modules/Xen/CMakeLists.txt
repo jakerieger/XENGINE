@@ -1,131 +1,142 @@
-project(XENGINE)
-
 add_library(Xen STATIC
-        # Vendor
-        ${VENDOR_ROOT}/nlohmann/json.hpp
+        # Vendor - compiled into Xen once; games and tools get these symbols by linking Xen::Xen
         ${VENDOR_ROOT}/stb_image.cpp
-        ${VENDOR_ROOT}/stb_image.h
-        ${VENDOR_ROOT}/ini.h
         ${VENDOR_ROOT}/cgltf.cpp
-        ${VENDOR_ROOT}/cgltf.h
         ${IMGUI_SOURCES}
         # Engine
         Actor.cpp
-        Actor.hpp
-        ActorHandle.hpp
         AssetLoader.cpp
-        AssetLoader.hpp
         AssetPreloader.cpp
-        AssetPreloader.hpp
-        AssetSettings.hpp
         Color.cpp
-        Color.hpp
-        CommandBuffer.hpp
-        Component.hpp
         ComponentRegistry.cpp
-        ComponentRegistry.hpp
         DebugUI.cpp
-        DebugUI.hpp
-        EngineConfig.hpp
-        EngineContext.hpp
         EnvironmentBaker.cpp
-        EnvironmentBaker.hpp
         FXAA.cpp
-        FXAA.hpp
         Game.cpp
-        Game.hpp
-        Input.hpp
         LightCulling.cpp
-        LightCulling.hpp
-        LightData.hpp
         LoadingScreen.cpp
-        LoadingScreen.hpp
-        MaterialBindings.hpp
         MeshCache.cpp
-        MeshCache.hpp
         MeshRenderer.cpp
-        MeshRenderer.hpp
         MipGenerator.cpp
-        MipGenerator.hpp
         PostProcess.cpp
-        PostProcess.hpp
-        Reflection.hpp
-        RenderDevice.hpp
         RadianceHdr.cpp
-        RadianceHdr.hpp
         RHI.cpp
-        RHI.hpp
         Scene.cpp
-        Scene.hpp
-        UIOverlay.hpp
         SceneSerializer.cpp
-        SceneSerializer.hpp
         ShaderHotReload.cpp
-        ShaderHotReload.hpp
         SpriteRenderer.cpp
-        SpriteRenderer.hpp
         SpriteBatcher.cpp
-        SpriteBatcher.hpp
         SSAO.cpp
-        SSAO.hpp
         TAA.cpp
-        TAA.hpp
         TextureCache.cpp
-        TextureCache.hpp
-        Transform.hpp
         Viewport.cpp
-        Viewport.hpp
         Window.cpp
-        Window.hpp
         # Engine/Components - concrete IComponent implementations (Component.hpp/
-        # ComponentRegistry.* above are the base interface + registry, not a
+        # ComponentRegistry.* are the base interface + registry, not a
         # component themselves, so they stay at the module root).
         Components/AmbientOcclusionComponent.cpp
-        Components/AmbientOcclusionComponent.hpp
         Components/AntiAliasingComponent.cpp
-        Components/AntiAliasingComponent.hpp
         Components/AudioSourceComponent.cpp
-        Components/AudioSourceComponent.hpp
         Components/CameraComponent.cpp
-        Components/CameraComponent.hpp
         Components/DirectionalLightComponent.cpp
-        Components/DirectionalLightComponent.hpp
         Components/EnvironmentComponent.cpp
-        Components/EnvironmentComponent.hpp
         Components/FPPlayerController.cpp
-        Components/FPPlayerController.hpp
         Components/MeshComponent.cpp
-        Components/MeshComponent.hpp
         Components/PBRMaterialComponent.cpp
-        Components/PBRMaterialComponent.hpp
         Components/PointLightComponent.cpp
-        Components/PointLightComponent.hpp
         Components/PostProcessComponent.cpp
-        Components/PostProcessComponent.hpp
         Components/SpotLightComponent.cpp
-        Components/SpotLightComponent.hpp
         Components/SpriteComponent.cpp
-        Components/SpriteComponent.hpp
         # Engine/Backends - Windows + D3D12 only; the engine has no other target platform.
-        Backends/D3D12Translate.hpp
         Backends/D3D12RenderDevice.cpp
-        Backends/D3D12RenderDevice.hpp
 )
 add_library(Xen::Xen ALIAS Xen)
 
-target_include_directories(Xen PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-        $<BUILD_INTERFACE:${VENDOR_ROOT}>/imgui
-        $<BUILD_INTERFACE:${VENDOR_ROOT}>/imgui/backends
+# Public headers, included as <Xen/...>. Headers in subfolders must include
+# their parent folder's headers as <Xen/...> too - Source/Modules/Xen itself
+# is deliberately not on any consumer's include path.
+target_sources(Xen PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS ${MODULES_ROOT}
+        FILES
+        Actor.hpp
+        ActorHandle.hpp
+        AssetLoader.hpp
+        AssetPreloader.hpp
+        AssetSettings.hpp
+        Color.hpp
+        CommandBuffer.hpp
+        Component.hpp
+        ComponentRegistry.hpp
+        DebugUI.hpp
+        EngineConfig.hpp
+        EngineContext.hpp
+        EnvironmentBaker.hpp
+        FXAA.hpp
+        Game.hpp
+        Input.hpp
+        LightCulling.hpp
+        LightData.hpp
+        LoadingScreen.hpp
+        MaterialBindings.hpp
+        MeshCache.hpp
+        MeshRenderer.hpp
+        MipGenerator.hpp
+        PostProcess.hpp
+        Reflection.hpp
+        RenderDevice.hpp
+        RadianceHdr.hpp
+        RHI.hpp
+        Scene.hpp
+        UIOverlay.hpp
+        SceneSerializer.hpp
+        ShaderHotReload.hpp
+        SpriteRenderer.hpp
+        SpriteBatcher.hpp
+        SSAO.hpp
+        TAA.hpp
+        TextureCache.hpp
+        Transform.hpp
+        Viewport.hpp
+        Window.hpp
+        Components/AmbientOcclusionComponent.hpp
+        Components/AntiAliasingComponent.hpp
+        Components/AudioSourceComponent.hpp
+        Components/CameraComponent.hpp
+        Components/DirectionalLightComponent.hpp
+        Components/EnvironmentComponent.hpp
+        Components/FPPlayerController.hpp
+        Components/MeshComponent.hpp
+        Components/PBRMaterialComponent.hpp
+        Components/PointLightComponent.hpp
+        Components/PostProcessComponent.hpp
+        Components/SpotLightComponent.hpp
+        Components/SpriteComponent.hpp
+        Backends/D3D12Translate.hpp
+        Backends/D3D12RenderDevice.hpp
 )
 
-target_compile_definitions(Xen PUBLIC
-        UNICODE
-        _UNICODE
-        WIN32_LEAN_AND_MEAN
-        NOMINMAX
-        _CRT_SECURE_NO_WARNINGS
+# Vendored headers games use directly: nlohmann/json via SceneSerializer.hpp,
+# and Dear ImGui (included flat - see Vendor.cmake).
+target_sources(Xen PUBLIC
+        FILE_SET vendor
+        TYPE HEADERS
+        BASE_DIRS ${VENDOR_ROOT}
+        FILES
+        ${VENDOR_ROOT}/nlohmann/json.hpp
 )
+target_sources(Xen PUBLIC
+        FILE_SET imgui
+        TYPE HEADERS
+        BASE_DIRS ${VENDOR_ROOT}/imgui
+        FILES
+        ${IMGUI_HEADERS}
+        ${IMGUI_BACKEND_HEADERS}
+)
+target_include_directories(Xen PUBLIC $<BUILD_INTERFACE:${VENDOR_ROOT}/imgui/backends>)
+
+# stb_image/cgltf are implementation details - no public header includes them.
+target_include_directories(Xen PRIVATE ${VENDOR_ROOT})
 
 target_link_libraries(Xen PUBLIC
         Xen::Common
@@ -138,4 +149,3 @@ target_link_libraries(Xen PUBLIC
         dxguid.lib
         d3dcompiler.lib
 )
-target_include_directories(Xen PRIVATE ${MODULES_ROOT} ${VENDOR_ROOT})

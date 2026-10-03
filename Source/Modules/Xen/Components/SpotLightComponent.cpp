@@ -3,7 +3,7 @@
 //
 
 #include "SpotLightComponent.hpp"
-#include "Actor.hpp"
+#include <Xen/Actor.hpp>
 
 namespace Xen {
     void SpotLightComponent::Reflect(IReflector& R) {

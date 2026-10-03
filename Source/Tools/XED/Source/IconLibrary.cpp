@@ -6,56 +6,51 @@
 #include "EditorUI.hpp"
 #include "Resource/EditorIcons.h"
 
-#include <Common/Brotli.hpp>
 #include <Common/Log.hpp>
+#include <stb_image.h>
 
 #include <iterator>
+#include <memory>
 
 namespace Xen {
     namespace {
         struct IconDesc {
             EditorIcon Icon;
             const unsigned char* Bytes;
-            size_t CompressedSize;
-            size_t OriginalSize;
-            u32 Width;
-            u32 Height;
+            u32 Size;
         };
 
         // EnumName is this table's EditorIcon enumerator; SymbolName is the
-        // matching ResTool-generated identifier (EditorIcons.h) - the two
-        // differ in case/spelling (e.g. EditorIcon::Move vs. MOVEICON_BYTES)
-        // since ResTool just uppercases a source filename's stem.
-#define XED_ICON_ENTRY(EnumName, SymbolName)                                                                           \
-    {EditorIcon::EnumName,                                                                                             \
-     SymbolName##_BYTES,                                                                                               \
-     SymbolName##_COMPRESSED_SIZE,                                                                                     \
-     SymbolName##_ORIGINAL_SIZE,                                                                                       \
-     CAST<u32>(SymbolName##_WIDTH),                                                                                    \
-     CAST<u32>(SymbolName##_HEIGHT)}
+        // matching Bin2CC-generated identifier (EditorIcons.h), which is just
+        // the source PNG's filename uppercased (e.g. Move.png -> MOVE_PNG).
+#define XED_ICON_ENTRY(EnumName, SymbolName) {EditorIcon::EnumName, SymbolName##_DATA, SymbolName##_SIZE}
 
         constexpr IconDesc kIconTable[] = {
-          XED_ICON_ENTRY(CleanCode, CLEANCODE),
-          XED_ICON_ENTRY(CompileCode, COMPILECODE),
-          XED_ICON_ENTRY(FocusSelected, FOCUSSELECTED),
-          XED_ICON_ENTRY(GridToggle, GRIDTOGGLE),
-          XED_ICON_ENTRY(Move, MOVEICON),
-          XED_ICON_ENTRY(OpenFolder, OPENFOLDER),
-          XED_ICON_ENTRY(Pause, PAUSEICON),
-          XED_ICON_ENTRY(Play, PLAYICON),
-          XED_ICON_ENTRY(PlayWindowed, PLAYWINDOWEDICON),
-          XED_ICON_ENTRY(Redo, REDOICON),
-          XED_ICON_ENTRY(Rotate, ROTATEICON),
-          XED_ICON_ENTRY(Scale, SCALEICON),
-          XED_ICON_ENTRY(SelectAsset, SELECTASSETICON),
-          XED_ICON_ENTRY(Select, SELECTICON),
-          XED_ICON_ENTRY(Stop, STOPICON),
-          XED_ICON_ENTRY(Undo, UNDOICON),
+          XED_ICON_ENTRY(CleanCode, CLEANCODE_PNG),
+          XED_ICON_ENTRY(CompileCode, COMPILECODE_PNG),
+          XED_ICON_ENTRY(FocusSelected, FOCUSSELECTED_PNG),
+          XED_ICON_ENTRY(GridToggle, GRIDTOGGLE_PNG),
+          XED_ICON_ENTRY(Move, MOVE_PNG),
+          XED_ICON_ENTRY(OpenFolder, OPENFOLDER_PNG),
+          XED_ICON_ENTRY(Pause, PAUSE_PNG),
+          XED_ICON_ENTRY(Play, PLAY_PNG),
+          XED_ICON_ENTRY(PlayWindowed, PLAYWINDOWED_PNG),
+          XED_ICON_ENTRY(Redo, REDO_PNG),
+          XED_ICON_ENTRY(Rotate, ROTATE_PNG),
+          XED_ICON_ENTRY(Scale, SCALE_PNG),
+          XED_ICON_ENTRY(SelectAsset, SELECTASSET_PNG),
+          XED_ICON_ENTRY(Select, SELECT_PNG),
+          XED_ICON_ENTRY(Stop, STOP_PNG),
+          XED_ICON_ENTRY(Undo, UNDO_PNG),
         };
 #undef XED_ICON_ENTRY
 
         static_assert(std::size(kIconTable) == CAST<size_t>(EditorIcon::Count),
                       "kIconTable must have exactly one entry per EditorIcon");
+
+        struct StbiDeleter {
+            void operator()(stbi_uc* Pixels) const { stbi_image_free(Pixels); }
+        };
     }  // namespace
 
     bool IconLibrary::Initialize(RHI::IRenderDevice& Device, EditorUI& UI) {
@@ -64,17 +59,19 @@ namespace Xen {
         _Device = &Device;
 
         for (const IconDesc& Desc : kIconTable) {
-            const auto Pixels = Brotli::Decompress(std::span(Desc.Bytes, Desc.CompressedSize), Desc.OriginalSize);
-            if (!Pixels.has_value()) {
-                LOG_ERR("IconLibrary: failed to decompress icon %u", CAST<u32>(Desc.Icon));
+            int W = 0, H = 0, Channels = 0;
+            const std::unique_ptr<stbi_uc, StbiDeleter> Pixels(
+              stbi_load_from_memory(Desc.Bytes, CAST<int>(Desc.Size), &W, &H, &Channels, STBI_rgb_alpha));
+            if (!Pixels) {
+                LOG_ERR("IconLibrary: failed to decode icon %u: %s", CAST<u32>(Desc.Icon), stbi_failure_reason());
                 continue;
             }
 
             RHI::TextureDesc TexDesc;
             TexDesc.Type      = RHI::TextureType::Texture2D;
             TexDesc.Fmt       = RHI::Format::RGBA8_UNORM;
-            TexDesc.Width     = Desc.Width;
-            TexDesc.Height    = Desc.Height;
+            TexDesc.Width     = CAST<u32>(W);
+            TexDesc.Height    = CAST<u32>(H);
             TexDesc.MipLevels = 1;
             TexDesc.Usage     = RHI::TextureUsage::Sampled | RHI::TextureUsage::CopyDst;
 
@@ -85,10 +82,10 @@ namespace Xen {
             }
 
             RHI::TextureUploadDesc Upload;
-            Upload.Data     = Pixels->data();
-            Upload.DataSize = Pixels->size();
-            Upload.Width    = Desc.Width;
-            Upload.Height   = Desc.Height;
+            Upload.Data     = Pixels.get();
+            Upload.DataSize = CAST<size_t>(W) * CAST<size_t>(H) * 4;
+            Upload.Width    = CAST<u32>(W);
+            Upload.Height   = CAST<u32>(H);
             _Device->UploadTexture(Handle, Upload);
 
             const size_t Index = CAST<size_t>(Desc.Icon);

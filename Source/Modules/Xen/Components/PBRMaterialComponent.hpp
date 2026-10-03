@@ -6,9 +6,9 @@
 
 #include <Common/XenCommon.hpp>
 
-#include "Component.hpp"
-#include "ComponentRegistry.hpp"
-#include "TextureCache.hpp"
+#include <Xen/Component.hpp>
+#include <Xen/ComponentRegistry.hpp>
+#include <Xen/TextureCache.hpp>
 
 #include <algorithm>
 #include <string>

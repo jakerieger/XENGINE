@@ -4,10 +4,11 @@
 
 #include "Sandbox.hpp"
 
+#include <Common/Log.hpp>
+#include <cstdio>
+
 #ifdef XEN_WITH_DEBUG_UI
     #include <imgui.h>
-    #include <Common/Log.hpp>
-    #include <cstdio>
 #endif
 
 using namespace Xen;

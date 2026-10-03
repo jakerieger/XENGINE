@@ -3,7 +3,7 @@
 //
 
 #include "EnvironmentComponent.hpp"
-#include "Scene.hpp"
+#include <Xen/Scene.hpp>
 
 namespace Xen {
     void EnvironmentComponent::Reflect(IReflector& R) {

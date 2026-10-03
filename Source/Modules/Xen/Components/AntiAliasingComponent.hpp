@@ -6,10 +6,10 @@
 
 #include <Common/XenCommon.hpp>
 
-#include "Component.hpp"
-#include "ComponentRegistry.hpp"
-#include "FXAA.hpp"
-#include "TAA.hpp"
+#include <Xen/Component.hpp>
+#include <Xen/ComponentRegistry.hpp>
+#include <Xen/FXAA.hpp>
+#include <Xen/TAA.hpp>
 
 namespace Xen {
     /// @brief Which anti-aliasing pass (if any) the scene wants - the

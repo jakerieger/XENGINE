@@ -22,9 +22,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
 
         Sandbox Game("Sandbox", Xen::BuildMountConfig(Xen::Generated::GameSettings(), Arguments.Argc, Arguments.Argv));
 
-#ifndef NDEBUG
-        SceneBuilder::Build(Game.GetContext());
-#endif
+        // #ifndef NDEBUG
+        //         SceneBuilder::Build(Game.GetContext());
+        // #endif
 
         Game.Run();
     } catch (...) { return 1; }

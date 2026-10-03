@@ -1,10 +1,13 @@
 //
 // Created by Jake Rieger on 9/29/2026.
 //
-// Turns the Brotli-compressed, embedded icon images in Resource/EditorIcons.h
-// into GPU textures with stable ImTextureIDs, for toolbar/menu buttons.
-// Decompression + upload happens once, in Initialize - after that, Get() is
-// just an array lookup.
+// Turns the embedded PNG icons in Resource/EditorIcons.h into GPU textures
+// with stable ImTextureIDs, for toolbar/menu buttons. Decoding + upload
+// happens once, in Initialize - after that, Get() is just an array lookup.
+//
+// EditorIcons.h is generated from Resource/icons/*.png with:
+//   Bin2CC --raw -o Source/Resource/EditorIcons.h Resource/icons/*.png
+// (run from Source/Tools/XED).
 
 #pragma once
 
@@ -45,12 +48,12 @@ namespace Xen {
     public:
         ~IconLibrary() { Shutdown(); }
 
-        /// @brief Decompresses and uploads every icon in Resource/EditorIcons.h
+        /// @brief Decodes and uploads every icon in Resource/EditorIcons.h
         /// as its own GPU texture, and registers each with UI (via
         /// EditorUI::CreateStaticTextureID) for a stable ImTextureID. Device
         /// and UI must both already be initialized, and must outlive this
         /// IconLibrary. Returns false only if UI itself isn't initialized;
-        /// an individual icon failing to decompress/upload is logged and
+        /// an individual icon failing to decode/upload is logged and
         /// skipped rather than failing the whole call, matching the rest of
         /// the codebase's "safe no-op instead of a crash" convention - Get()
         /// just returns 0 for that icon, and Dear ImGui simply has nothing

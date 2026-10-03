@@ -6,8 +6,8 @@
 
 #include <Common/XenCommon.hpp>
 
-#include "Component.hpp"
-#include "ComponentRegistry.hpp"
+#include <Xen/Component.hpp>
+#include <Xen/ComponentRegistry.hpp>
 
 #include <algorithm>
 

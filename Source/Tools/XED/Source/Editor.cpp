@@ -34,7 +34,7 @@
 #include <Lmcons.h>  // contains UNLEN (maximum length of Windows username)
 
 #pragma region Embedded Resources
-#include "MaterialBindings.hpp"
+#include <Xen/MaterialBindings.hpp>
 #include "Resource/InterRegular.h"
 #include "Resource/InterBold.h"
 #pragma endregion

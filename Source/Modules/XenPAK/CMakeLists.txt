@@ -1,38 +1,47 @@
-project(XENGINE)
-
 add_library(XenPAK STATIC
         Aes.cpp
-        Aes.hpp
-        AssetBuffer.hpp
-        AssetID.hpp
         AssetMount.cpp
-        AssetMount.hpp
         AssetRegistry.cpp
-        AssetRegistry.hpp
-        AssetSource.hpp
         BinaryIO.cpp
-        BinaryIO.hpp
         Canonicalize.cpp
-        Canonicalize.hpp
         Codec.cpp
-        Codec.hpp
         ContentScanner.cpp
-        ContentScanner.hpp
         Crypto.cpp
-        Crypto.hpp
         LooseFileSource.cpp
-        LooseFileSource.hpp
         PakFileSource.cpp
-        PakFileSource.hpp
         PakFormat.cpp
-        PakFormat.hpp
         PakManifest.cpp
-        PakManifest.hpp
 )
 add_library(Xen::PAK ALIAS XenPAK)
 
-target_link_libraries(XenPAK PRIVATE
-        Xen::Common
-        lz4_static
+# Public headers, included as <XenPAK/...>.
+target_sources(XenPAK PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS ${MODULES_ROOT}
+        FILES
+        Aes.hpp
+        AssetBuffer.hpp
+        AssetID.hpp
+        AssetMount.hpp
+        AssetRegistry.hpp
+        AssetSource.hpp
+        BinaryIO.hpp
+        Canonicalize.hpp
+        Codec.hpp
+        ContentScanner.hpp
+        Crypto.hpp
+        LooseFileSource.hpp
+        PakFileSource.hpp
+        PakFormat.hpp
+        PakManifest.hpp
 )
-target_include_directories(XenPAK PRIVATE ${MODULES_ROOT} ${VENDOR_ROOT})
+
+# Common is PUBLIC because XenPAK's headers include <Common/...>; lz4 is an
+# implementation detail of Codec.cpp only.
+target_link_libraries(XenPAK
+        PUBLIC Xen::Common
+        PRIVATE lz4_static
+)
+
+# nlohmann/json, used privately by PakManifest.cpp.
+target_include_directories(XenPAK PRIVATE ${VENDOR_ROOT})

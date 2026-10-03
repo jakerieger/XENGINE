@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include "Component.hpp"
-#include "ComponentRegistry.hpp"
+#include <Xen/Component.hpp>
+#include <Xen/ComponentRegistry.hpp>
 
 namespace Xen {
     XEN_COMPONENT(AudioSourceComponent);

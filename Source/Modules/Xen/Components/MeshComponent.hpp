@@ -6,9 +6,9 @@
 
 #include <Common/XenCommon.hpp>
 
-#include "Component.hpp"
-#include "ComponentRegistry.hpp"
-#include "MeshCache.hpp"
+#include <Xen/Component.hpp>
+#include <Xen/ComponentRegistry.hpp>
+#include <Xen/MeshCache.hpp>
 
 namespace Xen {
     XEN_COMPONENT(MeshComponent)

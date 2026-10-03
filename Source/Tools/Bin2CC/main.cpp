@@ -1,27 +1,19 @@
 //
 // Created by Jake Rieger on 9/28/2026.
 //
-
-// dear imgui
-// (binary_to_compressed_c.cpp) - stripped down: u8 encoding + stb_compress only.
-// Helper tool to turn a file into a compressed C array header, to embed font data in your source code.
+// Bin2CC - embeds one or more files as C byte arrays in a single header.
 //
-// The data is compressed with stb_compress(), then written as an unsigned char array (not endianness dependent).
-// Load compressed TTF fonts with ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF()
+// Each input becomes a <SYMBOL>_SIZE / <SYMBOL>_DATA pair. The symbol name is derived from the input file name:
+// directory is stripped, letters are uppercased, and anything that isn't a letter or digit becomes '_'.
+//   "fonts/My Font.ttf"  ->  MY_FONT_TTF_SIZE / MY_FONT_TTF_DATA
 //
-// Build with, e.g:
-//   # cl.exe binary_to_compressed_c.cpp
-//   # g++ binary_to_compressed_c.cpp
-//   # clang++ binary_to_compressed_c.cpp
+// By default the data is compressed with stb_compress() (from dear imgui's binary_to_compressed_c.cpp), for fonts
+// loaded with ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(). Pass --raw to embed the bytes as-is instead -
+// for formats that are already compressed, like PNG (decode with stbi_load_from_memory).
 //
 // Usage:
-//   binary_to_compressed_c <inputfile> [outputfile]
-//
-// The symbol name is derived from the input file name: directory is stripped, letters are uppercased,
-// and anything that isn't a letter or digit (spaces, dots, dashes...) becomes '_'.
-//   "fonts/My Font.ttf"  ->  MY_FONT_TTF_SIZE / MY_FONT_TTF_DATA
-// If no output file is given, it is written to the current directory as <lowercase symbol>.h
-//   "fonts/My Font.ttf"  ->  my_font_ttf.h
+//   Bin2CC <inputfile> [-o outputfile]           -> output defaults to <lowercase symbol>.h
+//   Bin2CC --raw -o Icons.h a.png b.png ...      -> -o is required with more than one input
 
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
@@ -29,7 +21,13 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <ctype.h>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
+#include <vector>
+
+#include <CLI/CLI.hpp>
 
 // stb_compress* from stb.h - declaration
 typedef unsigned int stb_uint;
@@ -38,39 +36,78 @@ stb_uint stb_compress(stb_uchar* out, stb_uchar* in, stb_uint len);
 
 static const int BYTES_PER_LINE = 12;
 
-static std::string make_symbol_name(const char* path);
-static bool binary_to_compressed_c(const char* filename, const char* out_filename, const std::string& symbol);
+static std::string make_symbol_name(const std::string& path);
+static bool read_file(const std::filesystem::path& path, std::vector<unsigned char>& data);
+static std::vector<unsigned char> compress(const std::vector<unsigned char>& data);
+static void write_array(FILE* out, const std::string& symbol, const std::vector<unsigned char>& bytes);
 
 int main(int argc, char** argv) {
-    if (argc < 2 || argc > 3) {
-        printf("Syntax: %s <inputfile> [outputfile]\n", argv[0]);
-        return 0;
-    }
+    CLI::App app {"Bin2CC - Embeds files as C byte arrays in a header, optionally stb_compress'd."};
 
-    const char* in_filename = argv[1];
-    std::string symbol      = make_symbol_name(in_filename);
+    std::vector<std::filesystem::path> inputs;
+    std::filesystem::path output;
+    bool raw = false;
 
-    std::string out_filename;
-    if (argc == 3) {
-        out_filename = argv[2];
-    } else {
-        out_filename = symbol;
-        for (char& c : out_filename)
+    app.add_option("inputs", inputs, "Input file(s)")->required()->check(CLI::ExistingFile)->expected(1, -1);
+    app.add_option("-o,--output", output, "Output header (defaults to <lowercase symbol>.h for a single input)");
+    app.add_flag("--raw", raw, "Embed bytes as-is instead of stb_compress'ing them (for PNG etc.)");
+
+    try {
+        app.parse(argc, argv);
+    } catch (const CLI::ParseError& e) { return app.exit(e); }
+
+    if (output.empty()) {
+        if (inputs.size() > 1) {
+            fprintf(stderr, "Error: -o/--output is required when embedding more than one file\n");
+            return 1;
+        }
+        std::string name = make_symbol_name(inputs.front().string());
+        for (char& c : name)
             c = (char)tolower((unsigned char)c);
-        out_filename += ".h";
+        output = name + ".h";
     }
 
-    bool ret = binary_to_compressed_c(in_filename, out_filename.c_str(), symbol);
-    if (!ret) return 1;
+    FILE* out = fopen(output.string().c_str(), "w");
+    if (!out) {
+        fprintf(stderr, "Error opening output file: '%s'\n", output.string().c_str());
+        return 1;
+    }
 
-    printf("Wrote '%s' (%s_SIZE / %s_DATA)\n", out_filename.c_str(), symbol.c_str(), symbol.c_str());
+    fprintf(out, "#pragma once\n\n");
+    fprintf(out, "extern \"C\" {\n");
+
+    bool ok = true;
+    for (size_t i = 0; i < inputs.size() && ok; i++) {
+        std::vector<unsigned char> data;
+        if (!read_file(inputs[i], data)) {
+            fprintf(stderr, "Error reading input file: '%s'\n", inputs[i].string().c_str());
+            ok = false;
+            break;
+        }
+
+        const std::string symbol = make_symbol_name(inputs[i].string());
+        if (i > 0) fputc('\n', out);
+        write_array(out, symbol, raw ? data : compress(data));
+        printf("Embedded '%s' (%s_SIZE / %s_DATA)\n", inputs[i].string().c_str(), symbol.c_str(), symbol.c_str());
+    }
+
+    fprintf(out, "}\n");
+
+    if (ferror(out)) ok = false;
+    if (fclose(out) != 0) ok = false;
+    if (!ok) {
+        fprintf(stderr, "Error writing output file: '%s'\n", output.string().c_str());
+        return 1;
+    }
+
+    printf("Wrote '%s'\n", output.string().c_str());
     return 0;
 }
 
-static std::string make_symbol_name(const char* path) {
+static std::string make_symbol_name(const std::string& path) {
     // Strip directory
-    const char* base = path;
-    for (const char* p = path; *p; p++)
+    const char* base = path.c_str();
+    for (const char* p = base; *p; p++)
         if (*p == '/' || *p == '\\') base = p + 1;
 
     std::string s;
@@ -84,64 +121,35 @@ static std::string make_symbol_name(const char* path) {
     return s;
 }
 
-static bool binary_to_compressed_c(const char* filename, const char* out_filename, const std::string& symbol) {
-    // Read file
-    FILE* f = fopen(filename, "rb");
-    if (!f) {
-        fprintf(stderr, "Error opening input file: '%s'\n", filename);
-        return false;
-    }
-    int data_sz;
-    if (fseek(f, 0, SEEK_END) || (data_sz = (int)ftell(f)) == -1 || fseek(f, 0, SEEK_SET)) {
-        fclose(f);
-        fprintf(stderr, "Error reading input file: '%s'\n", filename);
-        return false;
-    }
-    char* data = new char[data_sz + 4];
-    if (fread(data, 1, data_sz, f) != (size_t)data_sz) {
-        fclose(f);
-        delete[] data;
-        fprintf(stderr, "Error reading input file: '%s'\n", filename);
-        return false;
-    }
-    memset(data + data_sz, 0, 4);
-    fclose(f);
+static bool read_file(const std::filesystem::path& path, std::vector<unsigned char>& data) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+    data.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+    return !f.bad();
+}
 
-    // Compress
-    int maxlen        = data_sz + 512 + (data_sz >> 2) + sizeof(int);  // total guess
-    char* compressed  = new char[maxlen];
-    int compressed_sz = (int)stb_compress((stb_uchar*)compressed, (stb_uchar*)data, (stb_uint)data_sz);
+static std::vector<unsigned char> compress(const std::vector<unsigned char>& data) {
+    // 4 bytes of zero padding past the end, same as imgui's binary_to_compressed_c
+    std::vector<unsigned char> padded(data.size() + 4, 0);
+    memcpy(padded.data(), data.data(), data.size());
 
-    // Write header
-    FILE* out = fopen(out_filename, "w");
-    if (!out) {
-        fprintf(stderr, "Error opening output file: '%s'\n", out_filename);
-        delete[] data;
-        delete[] compressed;
-        return false;
-    }
+    std::vector<unsigned char> compressed(data.size() + 512 + (data.size() >> 2) + sizeof(int));  // total guess
+    const stb_uint size = stb_compress(compressed.data(), padded.data(), (stb_uint)data.size());
+    compressed.resize(size);
+    return compressed;
+}
 
+static void write_array(FILE* out, const std::string& symbol, const std::vector<unsigned char>& bytes) {
     const char* sym = symbol.c_str();
-    fprintf(out, "#pragma once\n\n");
-    fprintf(out, "extern \"C\" {\n");
-    fprintf(out, "static const unsigned int %s_SIZE = %d;\n", sym, compressed_sz);
-    fprintf(out, "static const unsigned char %s_DATA[%d] = {", sym, compressed_sz);
-    for (int i = 0; i < compressed_sz; i++) {
+    const int size  = (int)bytes.size();
+    fprintf(out, "static const unsigned int %s_SIZE = %d;\n", sym, size);
+    fprintf(out, "static const unsigned char %s_DATA[%d] = {", sym, size);
+    for (int i = 0; i < size; i++) {
         if ((i % BYTES_PER_LINE) == 0) fprintf(out, "\n    ");
         else fputc(' ', out);
-        fprintf(out, "0x%02x,", (unsigned char)compressed[i]);
+        fprintf(out, "0x%02x,", bytes[i]);
     }
     fprintf(out, "\n};\n");
-    fprintf(out, "}\n");
-
-    bool ok = !ferror(out);
-    if (fclose(out) != 0) ok = false;
-    if (!ok) fprintf(stderr, "Error writing output file: '%s'\n", out_filename);
-
-    // Cleanup
-    delete[] data;
-    delete[] compressed;
-    return ok;
 }
 
 // stb_compress* from stb.h - definition
@@ -410,4 +418,4 @@ stb_uint stb_compress(stb_uchar* out, stb_uchar* input, stb_uint length) {
     stb_compress_inner(input, length);
 
     return (stb_uint)(stb__out - out);
-}
+}
