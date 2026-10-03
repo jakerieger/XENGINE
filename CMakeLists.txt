@@ -51,9 +51,11 @@ set(XEN_PAKIGNORE "${CMAKE_SOURCE_DIR}/.pakignore")
 set(XEN_ENGINE_SHADER_SOURCE_DIR "${SOURCE_ROOT}/Shaders")
 set(XEN_ENGINE_SHADER_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/EngineContent/Shaders")
 
+# Common and XenPAK first: Xen (the engine DLL) compiles them in and reads
+# their header sets at configure time.
 add_subdirectory(${MODULES_ROOT}/Common)
-add_subdirectory(${MODULES_ROOT}/Xen)
 add_subdirectory(${MODULES_ROOT}/XenPAK)
+add_subdirectory(${MODULES_ROOT}/Xen)
 add_subdirectory(${MODULES_ROOT}/CrashHandler)
 
 # Engine shaders + engine paks. Before any game is added - see the file's header.

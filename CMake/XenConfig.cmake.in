@@ -19,7 +19,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/XenToolsTargets.cmake" OPTIONAL)
 # onto Release explicitly - left to its default, CMake may pick the Debug libs
 # for e.g. RelWithDebInfo, which then fails to link (/MDd vs /MD runtime).
 foreach (_xen_target
-        Xen::Common Xen::PAK Xen::Xen Xen::lz4_static
+        Xen::Xen
         Microsoft::DirectX-Headers Microsoft::DirectX-Guids
         GPUOpen::D3D12MemoryAllocator)
     if (TARGET ${_xen_target})

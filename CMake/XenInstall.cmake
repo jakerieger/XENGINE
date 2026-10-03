@@ -9,11 +9,11 @@
 # A game then only needs -DCMAKE_PREFIX_PATH=<prefix> and find_package(Xen).
 #
 # Layout:
-#   bin/                    tools (Release builds only)
+#   bin/                    Xen[d].dll (+ .pdb), tools (Release builds only)
 #   XED/                    the editor: Bin64/XED.exe, Config/, EngineContent/, Templates/ (Release only)
 #   include/                Xen/ Common/ XenPAK/ (public engine headers), D3D12MemAlloc.h, directx/
 #   include/XenVendor/      vendored headers games use: imgui, nlohmann/json, ini.h
-#   lib/                    engine + dependency static libs (Debug ones end in 'd')
+#   lib/                    Xen[d].lib import libs, dependency static libs (Debug ones end in 'd')
 #   share/Xen/cmake/        XenConfig.cmake and friends, XenGame.cmake (game helpers)
 #   share/Xen/EngineContent/<Config>/  prebuilt engine paks (XEN.Shaders.pxk, XEN.Environment.pxk)
 #   share/Xen/.pakignore    default ignore list for packing game content
@@ -24,15 +24,11 @@ include(CMakePackageConfigHelpers)
 set(XEN_INSTALL_DATADIR "${CMAKE_INSTALL_DATAROOTDIR}/Xen")
 set(XEN_INSTALL_CMAKEDIR "${XEN_INSTALL_DATADIR}/cmake")
 
-set_target_properties(XenCommon PROPERTIES EXPORT_NAME Common)
-set_target_properties(XenPAK PROPERTIES EXPORT_NAME PAK)
-
-# lz4_static is linked PRIVATE by XenPAK, but a static library's private link
-# dependencies still have to be linked by whatever finally links it, so the
-# export must carry it too. lz4 runs in bundled mode (no install rules of its
-# own), so it rides along in our export set as Xen::lz4_static.
-install(TARGETS XenCommon XenPAK Xen lz4_static
+# The engine is a single DLL - Common, PAK and lz4 are compiled into it, so
+# Xen::Xen is the only engine target a game ever sees.
+install(TARGETS Xen
         EXPORT XenTargets
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         FILE_SET HEADERS DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         FILE_SET vendor DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/XenVendor
@@ -42,6 +38,8 @@ install(EXPORT XenTargets
         NAMESPACE Xen::
         DESTINATION ${XEN_INSTALL_CMAKEDIR}
 )
+# The DLL's debug symbols, so a game's debugger can step into the engine.
+install(FILES $<TARGET_PDB_FILE:Xen> DESTINATION ${CMAKE_INSTALL_BINDIR} OPTIONAL)
 
 # Tools are installed from Release builds only - otherwise the Debug and
 # Release installs would overwrite each other's bin/*.exe. PAKTool is exported
@@ -69,6 +67,7 @@ endif ()
 if (TARGET XED)
     set(_xed_dir "${TOOLS_ROOT}/XED")
     install(TARGETS XED RUNTIME DESTINATION XED/Bin64 CONFIGURATIONS Release)
+    install(FILES $<TARGET_FILE:Xen> DESTINATION XED/Bin64 CONFIGURATIONS Release)
     install(DIRECTORY "${_xed_dir}/Config/" DESTINATION XED/Config CONFIGURATIONS Release)
     install(DIRECTORY "${_xed_dir}/Templates/" DESTINATION XED/Templates CONFIGURATIONS Release
             PATTERN ".clang-format" EXCLUDE)

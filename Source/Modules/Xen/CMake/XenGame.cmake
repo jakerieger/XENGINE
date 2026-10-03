@@ -92,6 +92,15 @@ function(xen_add_game_executable TARGET)
         set_target_properties(${TARGET} PROPERTIES
                 RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${base_dir}/${TARGET}/Bin64")
     endforeach ()
+
+    # The engine is a DLL (Xen[d].dll): put it, and any other DLL the
+    # game links, next to the executable. Evaluated at generate time, so it
+    # covers the Xen::Xen link xen_configure_game adds later.
+    add_custom_command(
+            TARGET ${TARGET} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:${TARGET}> $<TARGET_FILE_DIR:${TARGET}>
+            COMMAND_EXPAND_LISTS
+    )
 endfunction()
 
 function(xen_configure_game TARGET)

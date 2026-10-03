@@ -1,4 +1,8 @@
-add_library(Xen STATIC
+# The engine DLL (Xen.dll / Xend.dll). One shared copy of the
+# engine per process - games, XED and the game modules XED loads all use the
+# same component registry, logger and ImGui context, and objects can cross
+# module boundaries freely.
+add_library(Xen SHARED
         # Vendor - compiled into Xen once; games and tools get these symbols by linking Xen::Xen
         ${VENDOR_ROOT}/stb_image.cpp
         ${VENDOR_ROOT}/cgltf.cpp
@@ -51,6 +55,12 @@ add_library(Xen STATIC
         Backends/D3D12RenderDevice.cpp
 )
 add_library(Xen::Xen ALIAS Xen)
+
+# Exports every function from the engine's own objects (Common and PAK
+# included) without per-class annotations. Global *data* still needs an
+# explicit dllimport on the consumer side - the only such case today is
+# Dear ImGui's GImGui, handled via IMGUI_API below.
+set_target_properties(Xen PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 # Public headers, included as <Xen/...>. Headers in subfolders must include
 # their parent folder's headers as <Xen/...> too - Source/Modules/Xen itself
@@ -141,9 +151,33 @@ target_include_directories(Xen PUBLIC
 # stb_image/cgltf are implementation details - no public header includes them.
 target_include_directories(Xen PRIVATE ${VENDOR_ROOT})
 
+# Dear ImGui is compiled into this DLL, and imgui_internal.h's inline code
+# reads the GImGui global directly - so consumers must import it.
+target_compile_definitions(Xen
+        PRIVATE "IMGUI_API=__declspec(dllexport)"
+        INTERFACE "IMGUI_API=__declspec(dllimport)"
+)
+
+# Common and PAK are object libraries compiled into this DLL (PRIVATE: their
+# objects land here, not in consumers). Their public interface - headers and
+# compile definitions - is re-exported from Xen below, since consumers only
+# ever link Xen::Xen. lz4 rides along privately with XenPAK.
+target_link_libraries(Xen PRIVATE XenCommon XenPAK)
+foreach (_lib XenCommon XenPAK)
+    get_target_property(_headers ${_lib} HEADER_SET)
+    target_sources(Xen PUBLIC FILE_SET HEADERS BASE_DIRS ${MODULES_ROOT} FILES ${_headers})
+endforeach ()
+get_target_property(_common_vendor_headers XenCommon HEADER_SET_vendor)
+target_sources(Xen PUBLIC FILE_SET vendor FILES ${_common_vendor_headers})
+get_target_property(_common_definitions XenCommon INTERFACE_COMPILE_DEFINITIONS)
+target_compile_definitions(Xen PUBLIC ${_common_definitions})
+target_compile_features(Xen PUBLIC cxx_std_20)
+unset(_lib)
+unset(_headers)
+unset(_common_vendor_headers)
+unset(_common_definitions)
+
 target_link_libraries(Xen PUBLIC
-        Xen::Common
-        Xen::PAK
         Microsoft::DirectX-Headers
         Microsoft::DirectX-Guids
         D3D12MemoryAllocator

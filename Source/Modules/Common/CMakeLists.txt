@@ -1,4 +1,7 @@
-add_library(XenCommon STATIC
+# OBJECT library: compiled into the engine DLL (Xen) and into PAKTool, which
+# stays independent of the engine DLL. Never installed on its own - Xen
+# re-exports its headers and public definitions (see Xen/CMakeLists.txt).
+add_library(XenCommon OBJECT
         Io.cpp
         Log.cpp
 )

@@ -1,4 +1,5 @@
-add_library(XenPAK STATIC
+# OBJECT library, like XenCommon: compiled into the engine DLL and PAKTool.
+add_library(XenPAK OBJECT
         Aes.cpp
         AssetMount.cpp
         AssetRegistry.cpp
