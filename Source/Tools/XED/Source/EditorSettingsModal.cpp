@@ -3,9 +3,7 @@
 //
 
 #include "EditorSettingsModal.hpp"
-
-#include <imgui.h>
-#include <imgui_internal.h>
+#include "UI.hpp"
 
 namespace Xen {
     void EditorSettingsModal::Draw() {

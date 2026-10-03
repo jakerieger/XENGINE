@@ -41,6 +41,7 @@ xen_add_game_executable(XED
         Source/EditorSettingsModal.hpp
         Source/IconLibrary.cpp
         Source/IconLibrary.hpp
+        Source/ImGuiHelpers.hpp
         Source/PropertyEditor.cpp
         Source/PropertyEditor.hpp
         Source/ProjectFileTemplate.hpp

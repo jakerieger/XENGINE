@@ -6,15 +6,14 @@
 #include "PropertyEditor.hpp"
 #include "ProjectFileTemplate.hpp"
 
+#include "UI.hpp"
+
 #include <Common/Io.hpp>
 #include <Xen/XenGameSettings.h>
 #include <Xen/SceneSerializer.hpp>
 #include <Xen/Components/DirectionalLightComponent.hpp>
 #include <Xen/Components/PostProcessComponent.hpp>
 #include <Xen/Components/EnvironmentComponent.hpp>
-
-#include <imgui.h>
-#include <imgui_internal.h>
 
 #include <algorithm>
 #include <chrono>
@@ -675,7 +674,7 @@ namespace Xen {
         _Running = false;
     }
 
-    void Editor::Action_Save() const {
+    void Editor::Action_SaveScene() const {
         if (!_EmbeddedGame || !_EmbeddedGame->IsRunning() || !exists(State.CurrentSceneFile)) { return; }
         const auto* CurrentScene = _EmbeddedGame->GetActiveScene();
         if (!CurrentScene) { return; }
@@ -687,7 +686,7 @@ namespace Xen {
                       MB_OK | MB_ICONINFORMATION);
     }
 
-    void Editor::Action_SaveAs() {}
+    void Editor::Action_SaveSceneAs() {}
 
     void Editor::Action_DeleteActor(Scene* S) const {
         if (!S) return;
@@ -705,13 +704,8 @@ namespace Xen {
         if (NewHandle.IsSet()) { State.SelectedActor = NewHandle; }
     }
 
-    void Editor::CenterNextWindow() const {
-        const ImVec2 Center = ImGui::GetMainViewport()->GetCenter();
-        ImGui::SetNextWindowPos(Center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    }
-
     void Editor::Modal_AddComponent() const {
-        CenterNextWindow();
+        UI::CenterNextWindow();
 
         if (ImGui::BeginPopupModal("Add Component", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::Text("Select which component to add");
@@ -728,7 +722,7 @@ namespace Xen {
     }
 
     void Editor::Modal_NewProject() {
-        CenterNextWindow();
+        UI::CenterNextWindow();
 
         static std::array<char, MAX_PATH> ProjectName {};
         static std::array<char, MAX_PATH> ProjectDir {};
@@ -824,7 +818,7 @@ namespace Xen {
     }
 
     void Editor::Modal_NewScene() const {
-        CenterNextWindow();
+        UI::CenterNextWindow();
 
         static std::array<char, MAX_PATH> SceneNameBuffer {};
 
@@ -865,13 +859,6 @@ namespace Xen {
 
     void Editor::ProcessShortcuts() const {
         for (const auto& [Keys, Action] : _Shortcuts) {
-            // RouteGlobal, not the Shortcut()-default RouteFocused: these are
-            // editor-wide bindings (Ctrl+O should open a project no matter
-            // which panel - Scene, Hierarchy, whatever - currently has
-            // focus), not scoped to one particular window. Called from
-            // DrawDockspaceAndPanels, outside any window's own Begin/End, so
-            // there's no "currently focused window" for RouteFocused to even
-            // attach to in the first place.
             if (ImGui::Shortcut(CAST<ImGuiKeyChord>(Keys), ImGuiInputFlags_RouteGlobal)) { Action(); }
         }
     }
@@ -879,9 +866,9 @@ namespace Xen {
     void Editor::SetupShortcuts() {
         RegisterShortcut(ImGuiMod_Ctrl | ImGuiKey_O, [this] { Action_OpenProject(); });
         RegisterShortcut(ImGuiMod_Ctrl | ImGuiKey_Q, [this] { Action_Quit(); });
-        RegisterShortcut(ImGuiMod_Ctrl | ImGuiKey_S, [this] { Action_Save(); });
-        RegisterShortcut(ImGuiMod_Shift | ImGuiMod_Ctrl | ImGuiKey_S, [this] { Action_SaveAs(); });
-        RegisterShortcut(ImGuiMod_Shift | ImGuiMod_Ctrl | ImGuiKey_S, [this] { Action_ShowSettings(); });
+        RegisterShortcut(ImGuiMod_Ctrl | ImGuiKey_S, [this] { Action_SaveScene(); });
+        RegisterShortcut(ImGuiMod_Shift | ImGuiMod_Ctrl | ImGuiKey_S, [this] { Action_SaveSceneAs(); });
+        RegisterShortcut(ImGuiMod_Ctrl | ImGuiMod_Alt | ImGuiKey_S, [this] { Action_ShowSettings(); });
         RegisterShortcut(ImGuiMod_Ctrl | ImGuiKey_N, [this] { Action_NewProject(); });
         RegisterShortcut(ImGuiMod_Shift | ImGuiMod_Ctrl | ImGuiKey_O, [this] { Action_OpenScene(); });
         RegisterShortcut(ImGuiMod_Shift | ImGuiMod_Ctrl | ImGuiKey_N, [this] { Action_NewScene(); });
@@ -890,10 +877,6 @@ namespace Xen {
     void Editor::DrawMainMenuBar() {
         if (!ImGui::BeginMainMenuBar()) return;
 
-        // BeginMainMenuBar already shrinks ImGui::GetMainViewport()->WorkPos/
-        // WorkSize by its own height, so DrawToolbar (and, below it, the
-        // dockspace host window) automatically start under this bar without
-        // either of them needing to know how tall it is.
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Project", "Ctrl+N", false, true)) { Action_NewProject(); }
             if (ImGui::MenuItem("Open Project", "Ctrl+O", false, true)) { Action_OpenProject(); }
@@ -906,10 +889,13 @@ namespace Xen {
 
             const bool SaveOptionsEnabled =
               _EmbeddedGame != nullptr && _EmbeddedGame->GetActiveScene() != nullptr && exists(State.CurrentSceneFile);
-            if (ImGui::MenuItem("Save", "Ctrl+S", false, SaveOptionsEnabled)) { Action_Save(); }
-            if (ImGui::MenuItem("Save As...", "Ctrl+Shift+S", false, SaveOptionsEnabled)) { Action_SaveAs(); }
+            if (ImGui::MenuItem("Save Scene", "Ctrl+S", false, SaveOptionsEnabled)) { Action_SaveScene(); }
+            if (ImGui::MenuItem("Save Scene As...", "Ctrl+Shift+S", false, SaveOptionsEnabled)) {
+                Action_SaveSceneAs();
+            }
 
             ImGui::Separator();
+
             if (ImGui::MenuItem("Exit", "Ctrl+Q")) { Action_Quit(); }
             ImGui::EndMenu();
         }
@@ -922,7 +908,7 @@ namespace Xen {
             ImGui::MenuItem("Paste", "Ctrl+V", false, false);
             ImGui::Separator();
 
-            if (ImGui::MenuItem("Settings...", "Ctrl+Shift+S", false, true)) { Action_ShowSettings(); }
+            if (ImGui::MenuItem("Settings...", "Ctrl+Alt+S", false, true)) { Action_ShowSettings(); }
 
             ImGui::EndMenu();
         }

@@ -79,14 +79,12 @@ namespace Xen {
         void Action_ShowSettings();
         void Action_NewScene() const;
         void Action_Quit();
-        void Action_Save() const;
-        void Action_SaveAs();
+        void Action_SaveScene() const;
+        void Action_SaveSceneAs();
 
         void Modal_AddComponent() const;
         void Modal_NewProject();
         void Modal_NewScene() const;
-
-        void CenterNextWindow() const;
 
         // Keyboard shortcuts: register once (typically in the constructor)
         // with RegisterShortcut(Keys, Action), then ProcessShortcuts() fires
