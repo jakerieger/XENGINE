@@ -68,6 +68,7 @@ endif ()
 # Headless physics tests: no window, device or Sandbox needed.
 add_subdirectory(${SOURCE_ROOT}/Tests/Physics)
 add_subdirectory(${SOURCE_ROOT}/Tests/Prefab)
+add_subdirectory(${SOURCE_ROOT}/Tests/ActorPresets)  # compiles XED's ActorPresets.cpp
 
 if (BUILD_SANDBOX)
     add_subdirectory(${SOURCE_ROOT}/Sandbox)

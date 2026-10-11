@@ -20,6 +20,8 @@
 #include "EditorProject.hpp"
 #include "IconLibrary.hpp"
 #include "ProjectSettingsModal.hpp"
+#include "ActorPresets.hpp"
+#include "Modals/AddActorModal.hpp"
 #include "Modals/AddComponentModal.hpp"
 #include "Modals/GenerateAssetIDModal.hpp"
 #include "Modals/NewComponentClassModal.hpp"
@@ -55,6 +57,7 @@ namespace Xen {
         friend NewProjectModal;
         friend NewSceneModal;
         friend SaveAsPrefabModal;
+        friend AddActorModal;
 
         static constexpr size_t MAX_STR_LEN = 512;
 
@@ -131,7 +134,9 @@ namespace Xen {
         /// Spawns a copy of a prefab file into the open scene, at the
         /// transform it was saved with, and selects it.
         void Action_InstantiatePrefab(const fs::path& PrefabFile) const;
-        void Action_NewActor(Scene* S, const std::string& Name) const;
+        /// Creates an actor of the given kind in the open scene, named Name,
+        /// and selects it. An unset handle if no scene is open.
+        ActorHandle CreateActor(ActorPreset Preset, const std::string& Name) const;
         void Action_NewProject();
         void Action_OpenCppProject();
         void Action_OpenProject();
@@ -202,6 +207,7 @@ namespace Xen {
         NewProjectModal _NewProjectModal {*this};
         NewSceneModal _NewSceneModal {*this};
         SaveAsPrefabModal _SaveAsPrefabModal {*this};
+        AddActorModal _AddActorModal {*this};
 
         // Destroyed in reverse declaration order: _Icons first (its
         // Shutdown calls _Device->DestroyTexture, so it must go while

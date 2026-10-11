@@ -43,9 +43,13 @@ xen_add_game_executable(XED
         Source/ProjectFileTemplate.hpp
         Source/ProjectSettingsModal.cpp
         Source/ProjectSettingsModal.hpp
+        Source/ActorPresets.cpp
+        Source/ActorPresets.hpp
         # Modals
         Source/Modals/Modal.cpp
         Source/Modals/Modal.hpp
+        Source/Modals/AddActorModal.cpp
+        Source/Modals/AddActorModal.hpp
         Source/Modals/AddComponentModal.cpp
         Source/Modals/AddComponentModal.hpp
         Source/Modals/DeleteModal.cpp

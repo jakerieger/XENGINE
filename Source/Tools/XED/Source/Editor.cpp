@@ -5,7 +5,6 @@
 #include "Editor.hpp"
 #include "PropertyEditor.hpp"
 #include "ProjectFileTemplate.hpp"
-
 #include "UI.hpp"
 
 #include <Common/Io.hpp>
@@ -13,24 +12,8 @@
 #include <Xen/XenGameSettings.h>
 #include <Xen/SceneSerializer.hpp>
 #include <Xen/ComponentRegistry.hpp>
-
-#pragma region Components
 #include <Xen/Components/AmbientOcclusionComponent.hpp>
-#include <Xen/Components/AntiAliasingComponent.hpp>
-#include <Xen/Components/AudioSourceComponent.hpp>
-#include <Xen/Components/CameraComponent.hpp>
-#include <Xen/Components/CharacterControllerComponent.hpp>
-#include <Xen/Components/DirectionalLightComponent.hpp>
-#include <Xen/Components/EnvironmentComponent.hpp>
-#include <Xen/Components/FPPlayerController.hpp>
 #include <Xen/Components/MeshComponent.hpp>
-#include <Xen/Components/PointLightComponent.hpp>
-#include <Xen/Components/PostProcessComponent.hpp>
-#include <Xen/Components/PrefabSpawnerComponent.hpp>
-#include <Xen/Components/RigidBodyComponent.hpp>
-#include <Xen/Components/SpotLightComponent.hpp>
-#include <Xen/Components/SpriteComponent.hpp>
-#pragma endregion
 
 #include <algorithm>
 #include <chrono>
@@ -40,10 +23,8 @@
 #include <Lmcons.h>  // contains UNLEN (maximum length of Windows username)
 
 #pragma region Embedded Resources
-#include <Xen/MaterialBindings.hpp>
 #include "Resource/InterRegular.h"
 #include "Resource/InterBold.h"
-#include "XenPAK/Canonicalize.hpp"
 #pragma endregion
 
 namespace Xen {
@@ -64,8 +45,6 @@ namespace Xen {
             Float3 TransformPosition {};
             Float3 TransformRotation {};
             Float3 TransformScale {};
-            std::array<char, MAX_PATH> NewActorName {'\0'};
-
             fs::path CurrentSceneFile {};
 
             // Edit mode vs play mode. The Game's simulation (OnUpdate, component
@@ -654,58 +633,10 @@ namespace Xen {
         Scene NewScene(Name);
         NewScene.SetContext(_EmbeddedGame->GetContext());
 
-        const auto CameraHandle = NewScene.Spawn("MainCamera");
-        auto* CameraActor       = NewScene.Get(CameraHandle);
-        if (CameraActor) {
-            auto* Camera = CameraActor->AddComponent<CameraComponent>();
-            if (Camera) {
-                Camera->SetProjectionMode(ProjectionMode::Perspective);
-                Camera->SetFieldOfView(60.0f);
-            }
-
-            CameraActor->SetPosition(Float3(0.0f, 1.0f, 10.0f));
-        }
-
-        const auto LightHandle = NewScene.Spawn("Sun");
-        auto* LightActor       = NewScene.Get(LightHandle);
-        if (LightActor) {
-            auto* Light = LightActor->AddComponent<DirectionalLightComponent>();
-            if (Light) {
-                Light->SetIntensity(1.0f);
-                Light->SetShadowDistance(15.0f);
-            }
-
-            const DirectX::XMVECTOR LightRotation =
-              DirectX::XMQuaternionRotationRollPitchYaw(DirectX::XMConvertToRadians(-45.0f),
-                                                        DirectX::XMConvertToRadians(150.0f),
-                                                        0.0f);
-            Quat LightRotationOut;
-            XMStoreFloat4(&LightRotationOut, LightRotation);
-            LightActor->SetRotation(LightRotationOut);
-        }
-
-        const auto EnvHandle = NewScene.Spawn("Environment");
-        auto* EnvActor       = NewScene.Get(EnvHandle);
-        if (EnvActor) {
-            auto* Env = EnvActor->AddComponent<EnvironmentComponent>();
-            if (Env) {
-                Env->SetMapAsset(ASSET("ibl/maps/sky_spring.hdr"));
-                Env->SetShowBackground(true);
-            }
-        }
-
-        const auto PostFxHandle = NewScene.Spawn("PostProcess");
-        auto* PostFxActor       = NewScene.Get(PostFxHandle);
-        if (PostFxActor) {
-            auto* PostFx = PostFxActor->AddComponent<PostProcessComponent>();
-            if (PostFx) {
-                auto& Settings               = PostFx->GetSettings();
-                Settings.BloomThreshold      = 0.8f;
-                Settings.BloomIntensity      = 0.075f;
-                Settings.BloomEnabled        = true;
-                Settings.AutoExposureEnabled = true;
-            }
-        }
+        SpawnActorPreset(NewScene, ActorPreset::Camera, "MainCamera");
+        SpawnActorPreset(NewScene, ActorPreset::DirectionalLight, "Sun");
+        SpawnActorPreset(NewScene, ActorPreset::Environment, "Environment");
+        SpawnActorPreset(NewScene, ActorPreset::PostProcess, "PostProcess");
 
         SceneSerializer::SaveToFile(NewScene, SceneFile);
         if (exists(SceneFile)) { LoadSceneFile(SceneFile); }
@@ -976,8 +907,13 @@ namespace Xen {
         ImGui::PopStyleVar(2);
     }
 
-    void Editor::Action_NewActor(Scene* S, const std::string& Name) const {
-        S->Spawn(Name);
+    ActorHandle Editor::CreateActor(const ActorPreset Preset, const std::string& Name) const {
+        Scene* Active = ActiveScene();
+        if (!Active) return ActorHandle::Invalid();
+
+        const ActorHandle Created = SpawnActorPreset(*Active, Preset, Name);
+        State.SelectedActor       = Created;
+        return Created;
     }
 
     void Editor::Action_NewProject() {
@@ -1030,17 +966,6 @@ namespace Xen {
             if (_EmbeddedGame && _EmbeddedGame->GetActiveScene()) {
                 auto* S = _EmbeddedGame->GetActiveScene();
                 if (S) {
-                    ImGui::InputText("Name", State.NewActorName.data(), State.NewActorName.size());
-                    const std::string Name(State.NewActorName.data());
-                    ImGui::BeginDisabled(Name.empty());
-                    if (ImGui::Button("Add Actor", ImVec2(-FLT_MIN, 32.f))) {
-                        Action_NewActor(S, Name);
-                        State.NewActorName.fill('\0');
-                    }
-                    ImGui::EndDisabled();
-
-                    ImGui::Spacing();
-
                     State.SceneActors.clear();
                     S->ForEachActor([&](const Actor& A) { State.SceneActors.push_back({A.GetName(), A.GetHandle()}); });
 
@@ -1066,8 +991,17 @@ namespace Xen {
                                 ImGui::EndPopup();
                             }
                         }
+
+                        // Right-click on empty space (not over an actor).
+                        if (ImGui::BeginPopupContextWindow("##HierarchyMenu",
+                                                           ImGuiPopupFlags_MouseButtonRight |
+                                                             ImGuiPopupFlags_NoOpenOverItems)) {
+                            if (ImGui::MenuItem("Create Actor...")) { _AddActorModal.Open(); }
+                            ImGui::EndPopup();
+                        }
+
+                        ImGui::EndListBox();
                     }
-                    ImGui::EndListBox();
 
                     // The whole panel takes a prefab dragged in from the
                     // Content Browser.
@@ -1467,13 +1401,15 @@ namespace Xen {
 
         if (ImGui::BeginMenu("Add", SceneReadyToEdit)) {
             if (ImGui::BeginMenu("Actor")) {
-                if (ImGui::MenuItem("Empty", nullptr, false, true)) {}
+                for (const ActorPresetInfo& Info : GetActorPresets()) {
+                    if (ImGui::MenuItem(Info.Label, nullptr, false, true)) {
+                        CreateActor(Info.Preset, Info.DefaultName);
+                    }
+                }
 
-                if (ImGui::MenuItem("Sun", nullptr, false, true)) {}
+                ImGui::Separator();
 
-                if (ImGui::MenuItem("Camera", nullptr, false, true)) {}
-
-                if (ImGui::MenuItem("Environment", nullptr, false, true)) {}
+                if (ImGui::MenuItem("Actor...", nullptr, false, true)) { _AddActorModal.Open(); }
 
                 ImGui::EndMenu();
             }
@@ -1537,6 +1473,7 @@ namespace Xen {
         _NewProjectModal.Draw();
         _NewSceneModal.Draw();
         _SaveAsPrefabModal.Draw();
+        _AddActorModal.Draw();
     }
 
     void Editor::DrawToolbar() {

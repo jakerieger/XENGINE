@@ -316,13 +316,14 @@ namespace Xen {
 
         void Load(const fs::path& InputConfig) {
             if (!exists(InputConfig)) {
-                THROW_ENGINE_EXCEPTION(EngineException,
-                                       "input config doesn't exist (missing: '" + InputConfig.string() + "')");
+                LOG_WARN("Could not find input config file (%s)", InputConfig.string().c_str());
+                return;
             }
 
             const auto ReadResult = INI::ReadFromFile(InputConfig);
             if (!ReadResult.has_value()) {
-                THROW_ENGINE_EXCEPTION(EngineException, "failed to read input config: '" + InputConfig.string() + "'");
+                LOG_WARN("Failed to read input config file (%s)", InputConfig.string().c_str());
+                return;
             }
 
             INI::Config Cfg = *ReadResult;
