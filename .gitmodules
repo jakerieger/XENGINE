@@ -1,0 +1,3 @@
+[submodule "EngineContent"]
+	path = EngineContent
+	url = https://github.com/jakerieger/XENGINE.EngineContent

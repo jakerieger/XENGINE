@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "engineVersion": "0.1.0",
+  "name": "Sandbox",
+  "directories": {
+    "config": "Config",
+    "content": "Content",
+    "runtime": "Runtime"
+  },
+  "moduleDirectory": "../../build/Release/bin/Sandbox/Module"
+}

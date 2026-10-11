@@ -1,0 +1,149 @@
+//
+// Created by Jake Rieger on 9/17/2026.
+//
+
+#pragma once
+
+#include <Common/XenCommon.hpp>
+
+#include <Xen/Component.hpp>
+#include <Xen/ComponentRegistry.hpp>
+#include <Xen/TextureCache.hpp>
+
+#include <algorithm>
+#include <string>
+
+namespace Xen {
+    XEN_COMPONENT(PBRMaterialComponent)
+
+    /// @brief Metallic-roughness PBR material: the scalar factors a Cook-
+    /// Torrance BRDF needs, plus six optional texture maps (albedo/normal/
+    /// roughness/metallic/ambient-occlusion/emissive) at the standardized
+    /// slots MeshRenderer's pipeline binds - see MaterialBindings.hpp and
+    /// Source/Shaders/Include/MaterialBindings.hlsli. A texture's sampled
+    /// value always multiplies its matching scalar factor (glTF's own
+    /// convention, since mesh assets are glTF-native - see MeshCache.cpp),
+    /// so leaving a map unassigned and just using the scalar is fully
+    /// supported, not a degraded path: MeshRenderer binds a white (or
+    /// flat-normal) placeholder texture for any channel with no map, which
+    /// multiplies through as the identity. Roughness and metallic are
+    /// independent single-channel maps rather than glTF's packed G/B texture
+    /// - a material can supply either, both, or neither without needing to
+    /// author (or re-pack) a combined texture.
+    class PBRMaterialComponent final : public IComponent {
+    public:
+        XEN_COMPONENT_STATICS(PBRMaterialComponent)
+        PBRMaterialComponent() = default;
+
+        void Reflect(IReflector& R) override;
+
+        void BeginPlay() override;
+        void EndPlay() override;
+        bool SetAssetProperty(const char* Name, AssetID ID) override;
+
+        NODISCARD const Float3& GetAlbedo() const { return _Albedo; }
+        void SetAlbedo(const Float3& Albedo) { _Albedo = Albedo; }
+
+        // Defaults to 1 (fully metallic), not 0 - matching glTF's own
+        // metallicFactor default, and, more importantly, the "a map always
+        // MULTIPLIES this" convention every other channel already follows
+        // with its own default (Albedo white, AO 1): a scalar default of 0
+        // silently zeroed out any assigned MetallicMap regardless of its
+        // content (0 * anything == 0), which read as "the map does nothing,
+        // only SetMetallic works" - it wasn't the map, it was this default.
+        NODISCARD f32 GetMetallic() const { return _Metallic; }
+        void SetMetallic(const f32 Metallic) { _Metallic = std::clamp(Metallic, 0.0f, 1.0f); }
+
+        NODISCARD f32 GetRoughness() const { return _Roughness; }
+        // Never fully 0: a perfectly smooth GGX distribution divides by a
+        // near-zero denominator and the specular highlight degenerates to a
+        // single point that aliases badly.
+        void SetRoughness(const f32 Roughness) { _Roughness = std::clamp(Roughness, 0.045f, 1.0f); }
+
+        NODISCARD f32 GetAmbientOcclusion() const { return _AmbientOcclusion; }
+        void SetAmbientOcclusion(const f32 AO) { _AmbientOcclusion = std::clamp(AO, 0.0f, 1.0f); }
+
+        NODISCARD const Float3& GetEmissive() const { return _Emissive; }
+        void SetEmissive(const Float3& Emissive) { _Emissive = Emissive; }
+
+        NODISCARD AssetID GetAlbedoMapAsset() const { return _AlbedoMap.Asset; }
+        void SetAlbedoMapAsset(AssetID ID) { SetChannelAsset(_AlbedoMap, ID); }
+        NODISCARD TextureHandle GetAlbedoMap() const { return _AlbedoMap.Handle; }
+
+        NODISCARD AssetID GetNormalMapAsset() const { return _NormalMap.Asset; }
+        void SetNormalMapAsset(AssetID ID) { SetChannelAsset(_NormalMap, ID); }
+        NODISCARD TextureHandle GetNormalMap() const { return _NormalMap.Handle; }
+
+        NODISCARD AssetID GetRoughnessMapAsset() const { return _RoughnessMap.Asset; }
+        void SetRoughnessMapAsset(AssetID ID) { SetChannelAsset(_RoughnessMap, ID); }
+        NODISCARD TextureHandle GetRoughnessMap() const { return _RoughnessMap.Handle; }
+
+        NODISCARD AssetID GetMetallicMapAsset() const { return _MetallicMap.Asset; }
+        void SetMetallicMapAsset(AssetID ID) { SetChannelAsset(_MetallicMap, ID); }
+        NODISCARD TextureHandle GetMetallicMap() const { return _MetallicMap.Handle; }
+
+        NODISCARD AssetID GetAmbientOcclusionMapAsset() const { return _AmbientOcclusionMap.Asset; }
+        void SetAmbientOcclusionMapAsset(AssetID ID) { SetChannelAsset(_AmbientOcclusionMap, ID); }
+        NODISCARD TextureHandle GetAmbientOcclusionMap() const { return _AmbientOcclusionMap.Handle; }
+
+        NODISCARD AssetID GetEmissiveMapAsset() const { return _EmissiveMap.Asset; }
+        void SetEmissiveMapAsset(AssetID ID) { SetChannelAsset(_EmissiveMap, ID); }
+        NODISCARD TextureHandle GetEmissiveMap() const { return _EmissiveMap.Handle; }
+
+        /// @brief Which of the owning mesh's submeshes this material paints
+        /// - matched against MeshSubmesh::MaterialName (the glTF material
+        /// name from Blender, see MeshCache.hpp), not by index, so a
+        /// re-export that reorders primitives doesn't scramble assignments.
+        /// Leave unset ("") for a single-material mesh/actor, or as the
+        /// fallback an unmatched submesh uses - see MeshRenderer::Render.
+        /// An actor can hold several PBRMaterialComponents now (one per
+        /// submesh); Actor::GetComponents<T>() already supports that with
+        /// no component-system changes needed.
+        NODISCARD const std::string& GetSubmeshName() const { return _SubmeshName; }
+        void SetSubmeshName(const std::string& Name) { _SubmeshName = Name; }
+
+    private:
+        Float3 _Albedo {1.0f, 1.0f, 1.0f};
+        f32 _Metallic {1.0f};
+        f32 _Roughness {0.5f};
+        f32 _AmbientOcclusion {1.0f};
+        Float3 _Emissive {0.0f, 0.0f, 0.0f};
+
+        /// @brief One optional texture reference: the authored AssetID plus
+        /// its resolved GPU handle, invalid until BeginPlay. Every field
+        /// below is optional - MeshRenderer supplies a placeholder for
+        /// whichever ones are unset (see the class comment).
+        struct TextureChannel {
+            AssetID Asset {};
+            TextureHandle Handle {};
+            bool Acquired {false};
+            // Albedo/emissive are authored as perceptual (sRGB-encoded)
+            // color, like any other color image, and need the GPU to
+            // linearize them on sample before they hit the lighting math in
+            // PBR.hlsl. Normal/roughness/metallic/occlusion store raw
+            // vector/scalar data and must NOT be decoded, or they come out
+            // wrong. See TextureCache::Acquire.
+            bool Srgb {false};
+        };
+
+        void AcquireChannel(TextureChannel& Channel);
+        void ReleaseChannel(TextureChannel& Channel);
+        void SetChannelAsset(TextureChannel& Channel, AssetID ID);
+
+        TextureChannel _AlbedoMap {.Srgb = true};
+        TextureChannel _NormalMap;
+        TextureChannel _RoughnessMap;
+        TextureChannel _MetallicMap;
+        TextureChannel _AmbientOcclusionMap;
+        TextureChannel _EmissiveMap {.Srgb = true};
+
+        std::string _SubmeshName;
+
+        // Every channel is optional, so unlike SpriteComponent's single
+        // required texture, a channel's own Acquired flag can legitimately
+        // stay false through BeginPlay (an unset map). SetChannelAsset needs
+        // a reliable "has BeginPlay run" signal of its own to know whether
+        // a newly-assigned asset should be acquired immediately.
+        bool _Began {false};
+    };
+}  // namespace Xen

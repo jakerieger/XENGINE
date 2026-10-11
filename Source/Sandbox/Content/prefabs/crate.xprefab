@@ -1,0 +1,76 @@
+{
+  "Version": 1,
+  "Type": "Prefab",
+  "Name": "Crate",
+  "Actors": [
+    {
+      "ID": 1,
+      "Parent": 0,
+      "Properties": {
+        "Name": "Crate",
+        "Transform": {
+          "Position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Enabled": true
+      },
+      "Components": [
+        {
+          "Type": "MeshComponent",
+          "Properties": {
+            "MeshAsset": 3263604253546610921
+          }
+        },
+        {
+          "Type": "PBRMaterialComponent",
+          "Properties": {
+            "Albedo": [
+              0.75,
+              0.55,
+              0.3
+            ],
+            "Metallic": 0.0,
+            "Roughness": 0.6,
+            "AmbientOcclusion": 1.0,
+            "Emissive": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "AlbedoMap": 0,
+            "NormalMap": 0,
+            "RoughnessMap": 0,
+            "MetallicMap": 0,
+            "AmbientOcclusionMap": 0,
+            "EmissiveMap": 0,
+            "Submesh": ""
+          }
+        },
+        {
+          "Type": "RigidBodyComponent",
+          "Properties": {
+            "Motion": 1,
+            "Shape": 0,
+            "Mass": 8.0,
+            "Friction": 0.6,
+            "Restitution": 0.15
+          }
+        }
+      ]
+    }
+  ]
+}

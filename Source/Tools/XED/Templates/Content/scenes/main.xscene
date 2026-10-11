@@ -1,0 +1,171 @@
+{
+  "Version": 2,
+  "Name": "Main",
+  "Actors": [
+    {
+      "ID": 3,
+      "Parent": 0,
+      "Properties": {
+        "Name": "MainCamera",
+        "Transform": {
+          "Position": [
+            0.0,
+            1.0,
+            4.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Enabled": true
+      },
+      "Components": [
+        {
+          "Type": "CameraComponent",
+          "Properties": {
+            "ProjectionMode": 1,
+            "Zoom": 1.0,
+            "PixelsPerUnit": 100.0,
+            "FieldOfView": 60.0,
+            "NearPlane": 0.10000000149011612,
+            "FarPlane": 1000.0,
+            "Priority": 0
+          }
+        }
+      ]
+    },
+    {
+      "ID": 4,
+      "Parent": 0,
+      "Properties": {
+        "Name": "Light",
+        "Transform": {
+          "Position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Rotation": [
+            -0.0990457609295845,
+            0.89239901304245,
+            0.36964377760887146,
+            0.2391176074743271
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Enabled": true
+      },
+      "Components": [
+        {
+          "Type": "DirectionalLightComponent",
+          "Properties": {
+            "Color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "Intensity": 1.0,
+            "CastShadows": true,
+            "ShadowDistance": 15.0,
+            "ShadowResolution": 2048,
+            "ShadowBias": 4.0,
+            "ShadowNormalBias": 3.0,
+            "ShadowSoftness": 1.0,
+            "ShadowAmbientDarkening": 0.6000000238418579
+          }
+        }
+      ]
+    },
+    {
+      "ID": 5,
+      "Parent": 0,
+      "Properties": {
+        "Name": "Environment",
+        "Transform": {
+          "Position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Enabled": true
+      },
+      "Components": [
+        {
+          "Type": "EnvironmentComponent",
+          "Properties": {
+            "Map": 2955621908222585242,
+            "ShowBackground": true
+          }
+        }
+      ]
+    },
+    {
+      "ID": 6,
+      "Parent": 0,
+      "Properties": {
+        "Name": "PostProcess",
+        "Transform": {
+          "Position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Enabled": true
+      },
+      "Components": [
+        {
+          "Type": "PostProcessComponent",
+          "Properties": {
+            "Exposure": 1.0,
+            "AutoExposureEnabled": true,
+            "AutoExposureKey": 0.18000000715255737,
+            "AutoExposureMinLuminance": 0.029999999329447746,
+            "AutoExposureMaxLuminance": 16.0,
+            "AutoExposureAdaptUpSeconds": 0.30000001192092896,
+            "AutoExposureAdaptDownSeconds": 1.0,
+            "BloomEnabled": true,
+            "BloomThreshold": 0.800000011920929,
+            "BloomSoftKnee": 0.5,
+            "BloomIntensity": 0.07500000298023224
+          }
+        }
+      ]
+    }
+  ]
+}

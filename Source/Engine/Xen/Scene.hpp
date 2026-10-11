@@ -1,0 +1,215 @@
+//
+// Created by Jake Rieger on 9/8/2026.
+//
+
+#pragma once
+
+#include <Common/XenCommon.hpp>
+
+#include "Actor.hpp"
+#include "Components/CameraComponent.hpp"
+#include "EngineContext.hpp"
+
+#include <functional>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace Xen {
+    /// @brief Owns every actor in a level and drives their lifecycle.
+    ///
+    /// Actors live in a slot array. Destroying one frees its slot for reuse
+    /// and bumps that slot's generation, which is what lets stale ActorHandles
+    /// fail to resolve instead of silently pointing at whichever actor
+    /// inherited the slot.
+    class Scene {
+        friend class Editor;
+
+    public:
+        explicit Scene(std::string Name = "Scene");
+        Scene(std::string Name, const EngineContext& Context);
+
+        ~Scene();
+
+        Scene(const Scene&)            = delete;
+        Scene& operator=(const Scene&) = delete;
+
+        const std::string& GetName() const { return _Name; }
+        void SetName(std::string Name) { _Name = std::move(Name); }
+
+        const EngineContext& GetContext() const { return _Context; }
+        void SetContext(const EngineContext& Context) { _Context = Context; }
+
+        // --- Spawning ---------------------------------------------------
+
+        /// @brief Creates an actor and returns a handle to it.
+        ///
+        /// If the scene has already begun play, the actor's BeginPlay runs
+        /// right away. It will not Tick until the next frame, so an actor
+        /// spawned mid-tick never runs a partial first frame.
+        template<typename T = Actor, typename... Args>
+        ActorHandle Spawn(Args&&... ActorArgs) {
+            static_assert(std::is_base_of_v<Actor, T>, "T must derive from Actor");
+            auto Owned = std::make_unique<T>(std::forward<Args>(ActorArgs)...);
+            return AdoptActor(std::move(Owned));
+        }
+
+        /// @brief Spawns an actor carrying a specific persistent ID.
+        ///
+        /// For the deserializer only: saved references are stored as IDs, so
+        /// a loaded actor must keep the ID it had when saved. Passing 0
+        /// assigns a fresh one, exactly like Spawn.
+        ActorHandle SpawnWithID(u64 ActorID, std::string Name = "Actor");
+
+        /// @brief Spawns a copy of a prefab asset (a .xprefab: an actor and its
+        /// descendants) and returns its root, or an unset handle - with the
+        /// reason logged, nothing spawned - if the asset is missing or isn't a
+        /// valid prefab. Under Parent if one is given. The first overload puts
+        /// the root where the prefab was saved; the second at Position/
+        /// Rotation (relative to Parent), keeping the prefab's scale.
+        ///
+        /// The copy is independent of the file. If the scene has begun play
+        /// the new actors do too, right away; assets the prefab uses that
+        /// aren't already resident load on the spot, so spawn from a
+        /// prefab whose assets the scene already uses where a hitch matters.
+        ActorHandle Instantiate(AssetID Prefab, ActorHandle Parent = ActorHandle::Invalid());
+        ActorHandle Instantiate(AssetID Prefab,
+                                const Float3& Position,
+                                const Quat& Rotation = IdentityQuat,
+                                ActorHandle Parent   = ActorHandle::Invalid());
+
+        /// @brief Destroys every actor and resets the scene. Unlike EndPlay,
+        /// the scene stays usable and keeps its begun-play state - this is
+        /// what loading a scene over an existing one uses.
+        ///
+        /// Safe to call from inside a Tick/FixedTick dispatch (e.g. from a
+        /// component reacting to something mid-frame): the actual clear is
+        /// deferred until the enclosing Tick/FixedTick's actor loop has fully
+        /// returned, the same way Destroy() defers via _PendingDestroy. Doing
+        /// it immediately would destroy the actor (and component) whose
+        /// method is still on the call stack, and would empty _Slots out from
+        /// under the loop that is still indexing it.
+        void Clear();
+
+        /// @brief Resolves a handle. Returns nullptr if the actor was
+        /// destroyed, if the slot has since been reused, or if the handle was
+        /// never set.
+        Actor* Get(ActorHandle Handle) const;
+
+        /// @brief True if the handle resolves to a live actor.
+        bool IsValid(const ActorHandle Handle) const { return Get(Handle) != nullptr; }
+
+        /// @brief Marks an actor for destruction at the end of the current
+        /// tick. Its children are destroyed with it.
+        void Destroy(ActorHandle Handle);
+
+        /// @brief Deep-copies an actor - its own properties (Transform,
+        /// Enabled, ...) and every component, whatever type they are -
+        /// into a new, fully independent actor in this same scene, and
+        /// returns a handle to it. Recurses over Handle's children too, so
+        /// duplicating a parent duplicates its whole subtree rather than
+        /// silently leaving the clone childless; each cloned child is
+        /// attached under the cloned parent. The clone is attached to the
+        /// same parent Handle itself had (a new sibling), and its name gets
+        /// a " (Copy)" suffix so it isn't a silent duplicate in a UI that
+        /// lists actors by name.
+        ///
+        /// Returns an invalid handle if Handle doesn't resolve. Component-
+        /// type-agnostic: reuses the exact same reflection-based round trip
+        /// (JsonSaveReflector/JsonLoadReflector, ComponentRegistry::Create)
+        /// SceneSerializer's whole-scene save/load already does, so cloning
+        /// stays correct automatically as new component types are added -
+        /// no component needs its own Clone() override. Like a scene
+        /// save/load, a component's own IComponent::Enabled flag (distinct
+        /// from Actor::Enabled) isn't part of this, since it was never part
+        /// of what Reflect() visits in the first place.
+        ActorHandle Clone(ActorHandle Handle);
+
+        // --- Iteration --------------------------------------------------
+
+        /// @brief Visits every live actor. Safe to spawn or destroy during
+        /// iteration: spawns are visited next frame, destroys take effect
+        /// after the sweep.
+        void ForEachActor(const std::function<void(Actor&)>& Fn) const;
+
+        /// @brief Every live actor carrying a component of the given type.
+        template<typename T>
+        std::vector<Actor*> FindActorsWith() const {
+            std::vector<Actor*> Out;
+            for (const auto& Slot : _Slots) {
+                if (!Slot.Actor || Slot.Actor->IsPendingDestroy()) continue;
+                if (Slot.Actor->HasComponent<T>()) Out.push_back(Slot.Actor.get());
+            }
+            return Out;
+        }
+
+        /// @brief Resolves a persistent actor ID to its current handle.
+        /// Used when loading a scene to re-link saved actor references.
+        ActorHandle FindByActorID(u64 ActorID) const;
+
+        /// @brief First live actor with the given name, or an unset handle.
+        /// Linear - intended for setup and debugging, not per-frame lookups.
+        ActorHandle FindActorByName(const std::string& Name) const;
+
+        /// @brief Count of live actors, excluding any pending destruction.
+        size_t GetActorCount() const;
+
+        CameraComponent* GetMainCamera() const;
+
+        // --- Lifecycle --------------------------------------------------
+
+        /// @brief Runs BeginPlay on every actor. Calling twice is a no-op.
+        void BeginPlay();
+
+        /// @brief Advances one frame: ticks actors, then sweeps anything
+        /// marked for destruction.
+        void Tick(f32 DeltaTime);
+
+        void FixedTick(f32 FixedDelta);
+
+        /// @brief After a physics step: lets every physics component read its
+        /// body's new pose back into its actor.
+        void SyncPhysics();
+
+        /// @brief Shows every physics-driven actor at a blend of its last two
+        /// simulated poses (Alpha = progress into the next fixed step), for
+        /// smooth rendering between steps; RestorePhysicsPoses puts the true
+        /// simulated poses back before the next step. See
+        /// RigidBodyComponent::ApplyInterpolation.
+        void ApplyPhysicsInterpolation(f32 Alpha);
+        void RestorePhysicsPoses();
+
+        /// @brief Runs EndPlay on everything and clears the scene.
+        void EndPlay();
+
+        bool HasBegunPlay() const { return _BeganPlay; }
+
+    private:
+        friend class Actor;
+
+        struct ActorSlot {
+            std::unique_ptr<Xen::Actor> Actor;
+            u32 Generation {0};
+        };
+
+        ActorHandle AdoptActor(std::unique_ptr<Actor> Owned);
+        void SweepPendingDestroys();
+        void DestroyImmediate(u32 Index);
+        void MarkForDestruction(ActorHandle Handle);
+        void ClearImmediate();
+
+        std::string _Name;
+        EngineContext _Context {};
+        std::vector<ActorSlot> _Slots;
+        std::vector<u32> _FreeSlots;
+
+        // Monotonic, never reused - unlike slot indices. Starts at 1 so 0
+        // can mean "no actor" in saved references.
+        u64 _NextActorID {1};
+
+        bool _BeganPlay {false};
+        bool _Ticking {false};
+        bool _PendingClear {false};
+        std::vector<ActorHandle> _PendingDestroy;
+    };
+}  // namespace Xen

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "name": "Tokyo",
+  "colors": {
+    "windowBackground": "#1a1b26",
+    "panelBackground": "#16161e",
+    "border": "#111115",
+    "tabActive": "#16161e",
+    "tabInactive": "#232432",
+    "buttonPrimary": "#3b3e52",
+    "buttonSecondary": "#3b3e52",
+    "input": "#14141b",
+    "textPrimary": "#a3abcf",
+    "textSecondary": "#8084a2",
+    "textDisabled": "#373d4d"
+  },
+  "windowRounding": 4.0,
+  "frameRounding": 4.0,
+  "tabRounding": 4.0,
+  "windowBorderSize": 1.0,
+  "frameBorderSize": 1.0
+}

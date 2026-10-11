@@ -1,0 +1,7 @@
+CMake/ @jakerieger
+Scripts/ @jakerieger
+Source/Engine/ @jakerieger
+Source/Shaders/ @jakerieger
+Source/Sandbox/ @jakerieger
+Source/Tools/ @jakerieger
+**/CMakeLists.txt @jakerieger

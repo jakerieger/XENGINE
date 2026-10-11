@@ -1,0 +1,170 @@
+//
+// Created by Jake Rieger on 9/8/2026.
+//
+
+#pragma once
+
+#include <Common/XenCommon.hpp>
+
+#include "MipGenerator.hpp"
+#include "RenderDevice.hpp"
+
+#include <XenPAK/AssetID.hpp>
+
+#include <unordered_map>
+
+namespace Xen {
+    namespace PAK {
+        class AssetRegistry;
+    }
+
+    using TextureHandle = RHI::TextureHandle;
+
+    struct TextureInfo {
+        u32 Width {0};
+        u32 Height {0};
+        /// Resident VRAM bytes: RGBA8 content size, including the mip chain
+        /// if TextureCache::Config::GenerateMips is on. This is the uploaded
+        /// content size, not the backend's actual (padded/aligned) GPU
+        /// allocation - close enough for a debug-UI stat, not exact accounting.
+        u64 GpuBytes {0};
+    };
+
+    /// @brief An image decoded on the CPU, ready to be turned into a GPU texture
+    /// - the pure-CPU half of loading one (see TextureCache::DecodeAsset), which
+    /// is why it can be produced on AssetLoader's worker threads.
+    struct DecodedTexture {
+        TextureInfo Info {};
+        bool IsHdr {false};
+        bool Srgb {false};                     // LDR only; ignored for an HDR image (always RGBA16F)
+        std::vector<u8> Pixels;                // mip 0
+        std::vector<std::vector<u8>> MipTail;  // mips 1..N (HDR only)
+    };
+
+    class TextureCache {
+    public:
+        struct Config {
+            /// @brief Keep a CPU copy of every decoded image.
+            ///
+            /// Off by default. On, a 2048x2048 sheet costs 16 MB of RAM for
+            /// its lifetime on top of the GPU copy. Turn it on only if
+            /// something actually reads pixels back - per-pixel collision,
+            /// say - and expect the memory.
+            bool RetainPixels {false};
+
+            /// @brief Generate a mip chain on upload (see MipGenerator - a
+            /// GPU box-downsample pass per level, right after the texture's
+            /// mip 0 uploads).
+            ///
+            /// On by default: without it, any texture minified on screen -
+            /// which a 3D material usually is, at some distance or angle -
+            /// aliases, since a single mip has nothing to average a pixel's
+            /// footprint over. The one real cost is VRAM (roughly a third
+            /// more than mip 0 alone) and a one-time GPU pass per texture at
+            /// load. The one real caveat: mipping a sprite atlas bleeds
+            /// neighbouring tiles into its lower levels, which only matters
+            /// if that atlas is ever drawn minified (a zoomed-out camera, a
+            /// minimap) - turn it off for a cache built over one.
+            bool GenerateMips {true};
+
+            /// @brief Widest an HDR (.hdr environment map) image is kept on
+            /// the GPU; a wider one is box-downsampled by powers of two while
+            /// it's decoded (see RadianceHdr.hpp). RGBA16F is 8 bytes a texel,
+            /// so an 8K map is 256 MB of VRAM (plus a third again for its mip
+            /// pyramid) - and EnvironmentBaker caps what it bakes from it
+            /// anyway, so pixels past this width buy nothing but memory.
+            u32 MaxHdrWidth {4096};
+
+            Config() {}
+        };
+
+        /// @brief Also initializes the GPU mip generator (see MipGenerator)
+        /// used when Cfg.GenerateMips is on - not fatal if its shader is
+        /// missing, a texture that asked for mips just keeps one.
+        explicit TextureCache(PAK::AssetRegistry& Assets, RHI::IRenderDevice& Device, const Config& Cfg = {});
+        ~TextureCache();
+
+        TextureCache(const TextureCache&)            = delete;
+        TextureCache& operator=(const TextureCache&) = delete;
+
+        /// @brief Srgb picks the upload format: on, the texture is created
+        /// RGBA8_SRGB and the GPU linearizes it on every sample (correct for
+        /// a color map fed into lighting math - albedo/emissive); off (the
+        /// default), it's RGBA8_UNORM and sampling returns the stored bytes
+        /// unchanged (correct for a sprite, displayed as-authored with no
+        /// lighting pass, or a data map - normal/metallic-roughness/
+        /// occlusion - that was never sRGB-encoded to begin with).
+        ///
+        /// A Radiance .hdr image (an environment map) is detected from its
+        /// content and always uploaded as RGBA16F, ignoring Srgb entirely -
+        /// sRGB is an 8-bit gamma encoding, and a float texture is linear by
+        /// definition.
+        ///
+        /// Only consulted the first time an AssetID becomes resident - an
+        /// entry already cached (RefCount > 0) is reused as-is regardless of
+        /// what Srgb is passed on a later Acquire. No current content reuses
+        /// one image asset both ways, so this isn't handled specially.
+        TextureHandle Acquire(AssetID ID, bool Srgb = false);
+        void Release(AssetID ID);
+        void Preload(AssetID ID, bool Srgb = false);
+
+        /// @brief The CPU half of loading a texture: reads the asset out of the
+        /// registry and decodes it. Touches no cache state and no GPU object, so
+        /// it's safe to call from any thread (AssetLoader's workers) - given
+        /// the registry's sources are (see PakFileSource). Throws like Acquire
+        /// does for a missing or undecodable asset.
+        NODISCARD DecodedTexture DecodeAsset(AssetID ID, bool Srgb) const;
+
+        /// @brief The GPU half: creates and uploads the texture and inserts it
+        /// as a preloaded (RefCount 0) entry. Main thread only. A no-op if the
+        /// asset is already resident, exactly like Preload.
+        void AdoptPreloaded(AssetID ID, DecodedTexture&& Decoded);
+
+        NODISCARD bool IsResident(AssetID ID) const;
+        NODISCARD TextureInfo GetInfo(TextureHandle Handle) const;
+        NODISCARD size_t GetResidentCount() const { return _Entries.size(); }
+        /// @brief Sum of every resident entry's TextureInfo::GpuBytes - O(1),
+        /// maintained incrementally rather than summed on each call.
+        NODISCARD u64 GetResidentBytes() const { return _ResidentBytes; }
+
+        NODISCARD u32 GetRefCount(AssetID ID) const;
+        void Clear();
+
+    private:
+        struct Entry {
+            TextureHandle Handle {};
+            TextureInfo Info {};
+            u32 RefCount {0};
+        };
+
+    public:
+        NODISCARD const std::vector<u8>* GetPixels(TextureHandle Handle) const;
+
+    private:
+        /// @brief Decodes an LDR image to RGBA8, or - if the bytes are a
+        /// Radiance .hdr - to packed RGBA16F (OutIsHdr set), so the caller
+        /// picks the matching GPU format and bytes-per-pixel. An HDR image
+        /// also gets its full mip pyramid: the returned buffer is mip 0 and
+        /// OutMipTail holds mips 1..N in order, each a box-filtered halving of
+        /// the one before (empty for an LDR image).
+        std::vector<u8> DecodeImage(const u8* Bytes,
+                                    size_t Size,
+                                    TextureInfo& OutInfo,
+                                    bool& OutIsHdr,
+                                    std::vector<std::vector<u8>>& OutMipTail) const;
+        Entry CreateEntry(AssetID ID, u32 InitialRefCount, bool Srgb);
+        Entry UploadEntry(AssetID ID, DecodedTexture&& Decoded, u32 InitialRefCount);
+        void FreeTexture(TextureHandle Handle) const;
+
+        PAK::AssetRegistry* _Assets {nullptr};
+        RHI::IRenderDevice* _Device {nullptr};
+        Config _Config {};
+        MipGenerator _MipGen;
+
+        std::unordered_map<u32, std::vector<u8>> _PixelsByHandle;
+        std::unordered_map<PAK::AssetIDValue, Entry> _Entries;
+        std::unordered_map<u32, TextureInfo> _InfoByHandle;
+        u32 _NextHandleID {1};  // 0 reserved for "invalid"
+        u64 _ResidentBytes {0};
+    };
+}  // namespace Xen
