@@ -66,21 +66,7 @@ namespace Xen {
             Float3 TransformScale {};
             std::array<char, MAX_PATH> NewActorName {'\0'};
 
-            // Modal flags
-            bool ShowNewProjectModal {false};
-            bool ShowNewSceneModal {false};
-            bool ShowNewComponentClassModal {false};
-
-            // "Save as Prefab": the actor being saved, and the name typed for the file.
-            bool ShowSavePrefabModal {false};
-            ActorHandle PrefabSourceActor {};
-            std::array<char, MAX_PATH> PrefabName {'\0'};
-            std::string PrefabError;
-
             fs::path CurrentSceneFile {};
-
-            // Type name picked in the Add Component dialog.
-            std::string AddComponentChoice;
 
             // Edit mode vs play mode. The Game's simulation (OnUpdate, component
             // Tick) only runs while Playing; entering play snapshots the scene
@@ -98,23 +84,6 @@ namespace Xen {
             Json RestoreSnapshot;
             u64 RestoreSelectedActorID {0};
         };
-
-        // Every registered component type - the engine's plus the loaded game
-        // module's - by name, sorted for display.
-        std::vector<std::string> GetAddableComponentNames() {
-            auto Names = ComponentRegistry::Get().GetRegisteredNames();
-            std::ranges::sort(Names);
-            return Names;
-        }
-
-        void AddComponentByName(Actor* A, const std::string& TypeName) {
-            if (!A) return;
-            if (auto Created = ComponentRegistry::Get().Create(TypeName)) {
-                A->AdoptComponent(std::move(Created));
-            } else {
-                LOG_ERR("Can't add component '%s' - not registered", TypeName.c_str());
-            }
-        }
 
         constexpr f32 ToolbarHeight = 40.0f;
 
@@ -190,7 +159,7 @@ namespace Xen {
             LoadProject(_EditorSettings.StartupProject);
         }
         // else {
-        //     Modal_NewProject();
+        //     _NewProjectModal.Open();
         // }
     }
 
@@ -885,7 +854,7 @@ namespace Xen {
         Colors[ImGuiCol_WindowBg]              = _CurrentTheme.Colors.WindowBackground.To<ImVec4>();
     }
 
-    void Editor::View_Inspector() const {
+    void Editor::View_Inspector() {
         if (ImGui::Begin("Inspector")) {
             if (_EmbeddedGame && _EmbeddedGame->GetActiveScene()) {
                 const auto* S = _EmbeddedGame->GetActiveScene();
@@ -955,16 +924,12 @@ namespace Xen {
 
                         {
                             ScopedFont _(&_UI, "InterBold");
-                            if (ImGui::Button("Add Component", ImVec2(-FLT_MIN, 32.f))) {
-                                ImGui::OpenPopup("Add Component");
-                            }
+                            if (ImGui::Button("Add Component", ImVec2(-FLT_MIN, 32.f))) { _AddComponentModal.Open(); }
                         }
                     }
                 }
             }
         }
-
-        Modal_AddComponent();
 
         ImGui::End();
     }
@@ -1015,8 +980,8 @@ namespace Xen {
         S->Spawn(Name);
     }
 
-    void Editor::Action_NewProject() const {
-        State.ShowNewProjectModal = true;
+    void Editor::Action_NewProject() {
+        _NewProjectModal.Open();
     }
 
     void Editor::Action_OpenCppProject() {
@@ -1060,7 +1025,7 @@ namespace Xen {
         }
     }
 
-    void Editor::View_Hierarchy() const {
+    void Editor::View_Hierarchy() {
         if (ImGui::Begin("Hierarchy")) {
             if (_EmbeddedGame && _EmbeddedGame->GetActiveScene()) {
                 auto* S = _EmbeddedGame->GetActiveScene();
@@ -1093,14 +1058,7 @@ namespace Xen {
 
                             if (ImGui::BeginPopupContextItem(("##ActorContext" + std::to_string(i)).c_str())) {
                                 if (ImGui::MenuItem("Save as Prefab...")) {
-                                    State.PrefabSourceActor = Entry.Handle;
-                                    State.PrefabError.clear();
-                                    State.PrefabName.fill('\0');
-                                    std::snprintf(State.PrefabName.data(),
-                                                  State.PrefabName.size(),
-                                                  "%s",
-                                                  Entry.Name.c_str());
-                                    State.ShowSavePrefabModal = true;
+                                    _SaveAsPrefabModal.Open(Entry.Handle, Entry.Name);
                                 }
                                 ImGui::Separator();
                                 if (ImGui::MenuItem("Duplicate")) { Action_DuplicateActor(S); }
@@ -1222,11 +1180,11 @@ namespace Xen {
     }
 
     void Editor::Action_NewComponentClass() {
-        State.ShowNewComponentClassModal = true;
+        _NewComponentClassModal.Open();
     }
 
-    void Editor::Action_NewScene() const {
-        State.ShowNewSceneModal = true;
+    void Editor::Action_NewScene() {
+        _NewSceneModal.Open();
     }
 
     void Editor::Action_Quit() {
@@ -1318,11 +1276,7 @@ namespace Xen {
         const auto* CurrentScene = _EmbeddedGame->GetActiveScene();
         if (!CurrentScene) { return; }
 
-        SceneSerializer::SaveToFile(*CurrentScene, State.CurrentSceneFile);
-        ::MessageBoxA(_Window->GetHandle(),
-                      std::format("Saved {}", canonical(State.CurrentSceneFile).filename().string()).c_str(),
-                      "XED",
-                      MB_OK | MB_ICONINFORMATION);
+        LOG_INFO("Saved '%s'", canonical(State.CurrentSceneFile).filename().string().c_str());
     }
 
     void Editor::Action_SaveSceneAs() {}
@@ -1413,269 +1367,25 @@ namespace Xen {
         }
     }
 
-    void Editor::Modal_SaveAsPrefab() {
-        UI::CenterNextWindow();
-        if (!ImGui::BeginPopupModal("Save as Prefab", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
-
-        Scene* Active       = _EmbeddedGame ? _EmbeddedGame->GetActiveScene() : nullptr;
-        const Actor* Source = Active ? Active->Get(State.PrefabSourceActor) : nullptr;
-        if (!Source) {
-            // Gone since the menu was opened (deleted, scene switched).
-            ImGui::TextDisabled("The actor no longer exists.");
-            if (ImGui::Button("Close", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
-            ImGui::EndPopup();
-            return;
-        }
-
-        const fs::path PrefabsDir = _CurrentProject.ContentDirectory / "prefabs";
-        const std::string Name    = State.PrefabName.data();
-
-        ImGui::Text("Save '%s' and its children as a prefab", Source->GetName().c_str());
-        ImGui::Spacing();
-
-        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
-        ImGui::SetNextItemWidth(260.0f);
-        const bool Submitted =
-          ImGui::InputText("##prefabname",
-                           State.PrefabName.data(),
-                           State.PrefabName.size(),
-                           ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
-        ImGui::SameLine();
-        ImGui::TextDisabled(".xprefab");
-
-        // The file name rules the content browser's rename uses.
-        std::string Problem;
-        if (Name.empty()) Problem = "Give the prefab a name.";
-        else if (Name.find_first_of("<>:\"/\\|?*") != std::string::npos)
-            Problem = "That name has characters a file can't.";
-        else if (Name.back() == ' ' || Name.back() == '.') Problem = "A name can't end with a space or a dot.";
-
-        const fs::path Target = PrefabsDir / (Name + ".xprefab");
-        const bool Exists     = Problem.empty() && fs::exists(Target);
-
-        ImGui::TextDisabled("Saved to Content/prefabs/");
-        if (!Problem.empty()) ImGui::TextColored(ImVec4(0.92f, 0.22f, 0.32f, 1.0f), "%s", Problem.c_str());
-        if (Exists)
-            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "A prefab with this name exists and will be replaced.");
-        if (!State.PrefabError.empty())
-            ImGui::TextColored(ImVec4(0.92f, 0.22f, 0.32f, 1.0f), "%s", State.PrefabError.c_str());
-        ImGui::Spacing();
-
-        ImGui::BeginDisabled(!Problem.empty());
-        const bool Confirm =
-          ImGui::Button(Exists ? "Replace" : "Save", ImVec2(120, 0)) || (Submitted && Problem.empty());
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        const bool Cancel = ImGui::Button("Cancel", ImVec2(120, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
-
-        if (Confirm) {
-            try {
-                SceneSerializer::SavePrefabToFile(*Active, State.PrefabSourceActor, Target);
-                LOG_INFO("Saved prefab '%s'", Target.string().c_str());
-
-                // Both the asset index (inspector slots, drop targets) and the browser's folder listing
-                _AssetIndex.Rescan(_CurrentProject.ContentDirectory);
-                _ContentBrowser.NotifyContentChanged();
-                ImGui::CloseCurrentPopup();
-            } catch (const std::exception& Error) { State.PrefabError = std::string("Couldn't save: ") + Error.what(); }
-        } else if (Cancel) {
-            ImGui::CloseCurrentPopup();
-        }
-
-        ImGui::EndPopup();
+    Scene* Editor::ActiveScene() const {
+        return _EmbeddedGame ? _EmbeddedGame->GetActiveScene() : nullptr;
     }
 
-    void Editor::Modal_AddComponent() const {
-        UI::CenterNextWindow();
-
-        if (ImGui::BeginPopupModal("Add Component", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text("Select which component to add");
-            ImGui::Separator();
-
-            if (ImGui::BeginListBox("##Components", ImVec2(260.f, 220.f))) {
-                for (const auto& Name : GetAddableComponentNames()) {
-                    if (ImGui::Selectable(Name.c_str(), State.AddComponentChoice == Name)) {
-                        State.AddComponentChoice = Name;
-                    }
-                }
-                ImGui::EndListBox();
-            }
-
-            ImGui::BeginDisabled(State.AddComponentChoice.empty());
-            if (ImGui::Button("Add", ImVec2(120, 0))) {
-                if (_EmbeddedGame && _EmbeddedGame->GetActiveScene()) {
-                    AddComponentByName(_EmbeddedGame->GetActiveScene()->Get(State.SelectedActor),
-                                       State.AddComponentChoice);
-                }
-                State.AddComponentChoice.clear();
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::EndDisabled();
-            ImGui::SameLine();
-
-            if (ImGui::Button("Cancel", ImVec2(120, 0))) {
-                State.AddComponentChoice.clear();
-                ImGui::CloseCurrentPopup();
-            }
-
-            ImGui::EndPopup();
-        }
+    std::vector<std::string> Editor::GetAddableComponentNames() {
+        auto Names = ComponentRegistry::Get().GetRegisteredNames();
+        std::ranges::sort(Names);
+        return Names;
     }
 
-    void Editor::Modal_NewComponentClass() {
-        UI::CenterNextWindow();
+    void Editor::AddComponentToSelected(const std::string& TypeName) const {
+        Scene* Active = ActiveScene();
+        Actor* Target = Active ? Active->Get(State.SelectedActor) : nullptr;
+        if (!Target) return;
 
-        static std::array<char, MAX_PATH> ClassName {};
-
-        if (ImGui::BeginPopupModal("New Component Class", nullptr)) {
-            const std::string ClassNameStr = ClassName.data();
-            ImGui::InputText("Name", ClassName.data(), ClassName.size());
-
-            if (ImGui::Button("Cancel", ImVec2(120, 0))) {
-                ClassName.fill(0);
-                ImGui::CloseCurrentPopup();
-            }
-
-            ImGui::SameLine();
-
-            ImGui::BeginDisabled(ClassNameStr.empty());
-            if (ImGui::Button("Create", ImVec2(120, 0))) {
-                CreateComponentClass(ClassNameStr);
-                ClassName.fill(0);
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::EndDisabled();
-
-            ImGui::EndPopup();
-        }
-    }
-
-    void Editor::Modal_NewProject() {
-        UI::CenterNextWindow();
-
-        static std::array<char, MAX_PATH> ProjectName {};
-        static std::array<char, MAX_PATH> ProjectDir {};
-
-        if (ImGui::BeginPopupModal("New Project", nullptr)) {
-            const std::string ProjectNameStr = ProjectName.data();
-            const std::string ProjectDirStr  = ProjectDir.data();
-
-            ImGui::InputText("Name", ProjectName.data(), ProjectName.size());
-
-            ImGui::BeginDisabled(true);
-            ImGui::InputText("##Location", ProjectDir.data(), ProjectDir.size());
-            ImGui::EndDisabled();
-            ImGui::SameLine();
-            ImGui::BeginDisabled(ProjectNameStr.empty());
-            if (ImGui::Button("...")) {
-                const auto ProjectLocationResult =
-                  FileDialogs::OpenFolderDialog(_Window->GetHandle(), L"Select project directory");
-                if (ProjectLocationResult.has_value()) {
-                    const auto Path = *ProjectLocationResult / ProjectNameStr;
-                    strcpy_s(ProjectDir.data(), ProjectDir.size(), Path.string().c_str());
-                }
-            }
-            ImGui::EndDisabled();
-
-            if (ImGui::Button("Cancel", ImVec2(120, 0))) {
-                ProjectName.fill(0);
-                ProjectDir.fill(0);
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::SameLine();
-            ImGui::BeginDisabled(ProjectNameStr.empty() || ProjectDirStr.empty());
-            if (ImGui::Button("Create", ImVec2(120, 0))) {
-                const auto Result   = CreateProject(ProjectNameStr, ProjectDirStr);
-                bool ProjectCreated = false;
-
-                if (Result == CreateProjectResult::Success) {
-                    ProjectCreated = true;
-                } else if (Result == CreateProjectResult::AlreadyExists) {
-                    const auto MsgResult = ::MessageBoxA(_Window->GetHandle(),
-                                                         "The selected project directory already exists. Do you want "
-                                                         "to overwrite it and create a new project anyways?",
-                                                         "XED - Create project",
-                                                         MB_YESNO | MB_ICONWARNING);
-                    if (MsgResult == IDYES) {
-                        if (!fs::remove_all(ProjectDirStr)) {
-                            ::MessageBoxA(_Window->GetHandle(),
-                                          "Failed to remove existing directory.",
-                                          "XED - Create project",
-                                          MB_OK | MB_ICONERROR);
-                        } else {
-                            const auto TryAgainResult = CreateProject(ProjectNameStr, ProjectDirStr);
-                            if (TryAgainResult != CreateProjectResult::Success) {
-                                ::MessageBoxA(_Window->GetHandle(),
-                                              "Failed to create new project.",
-                                              "XED - Create project",
-                                              MB_OK | MB_ICONERROR);
-                            } else {
-                                ProjectCreated = true;
-                            }
-                        }
-                    }
-                } else if (Result == CreateProjectResult::Failed) {
-                    ::MessageBoxA(_Window->GetHandle(),
-                                  "Failed to create new project.",
-                                  "XED - Create project",
-                                  MB_OK | MB_ICONERROR);
-                }
-
-                if (ProjectCreated) {
-                    const auto MsgFmt =
-                      std::format("Successfully created new project '{}'. Open it now?", ProjectNameStr);
-                    const auto MsgResult = ::MessageBoxA(_Window->GetHandle(),
-                                                         MsgFmt.c_str(),
-                                                         "XED - Create project",
-                                                         MB_YESNO | MB_ICONQUESTION);
-                    if (MsgResult == IDYES) {
-                        const auto PrxjPath =
-                          (fs::path(ProjectDirStr) / fs::path(ProjectNameStr)).replace_extension(".prxj");
-                        LoadProject(PrxjPath);
-                    }
-                }
-
-                ProjectName.fill(0);
-                ProjectDir.fill(0);
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::EndDisabled();
-            ImGui::SetItemDefaultFocus();
-
-            ImGui::EndPopup();
-        }
-    }
-
-    void Editor::Modal_NewScene() const {
-        UI::CenterNextWindow();
-
-        static std::array<char, MAX_PATH> SceneNameBuffer {};
-
-        if (ImGui::BeginPopupModal("New Scene", nullptr)) {
-            const std::string SceneName = SceneNameBuffer.data();
-            ImGui::InputText("Scene Name", SceneNameBuffer.data(), SceneNameBuffer.size());
-
-            ImGui::BeginDisabled(SceneName.empty());
-            if (ImGui::Button("Create", ImVec2(120, 0))) {
-                const auto ScenesDir = _CurrentProject.ContentDirectory / "scenes";
-                if (!exists(ScenesDir)) { fs::create_directory(ScenesDir); }
-
-                std::string SceneFileName = SceneName;
-                std::ranges::transform(SceneFileName, SceneFileName.begin(), ::tolower);
-                const auto SceneFilePath = (ScenesDir / SceneFileName).replace_extension(".xscene");
-
-                CreateScene(SceneName, SceneFilePath);
-
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::EndDisabled();
-
-            ImGui::SetItemDefaultFocus();
-            ImGui::SameLine();
-
-            if (ImGui::Button("Cancel", ImVec2(120, 0))) { ImGui::CloseCurrentPopup(); }
-
-            ImGui::EndPopup();
+        if (auto Created = ComponentRegistry::Get().Create(TypeName)) {
+            Target->AdoptComponent(std::move(Created));
+        } else {
+            LOG_ERR("Can't add component '%s' - not registered", TypeName.c_str());
         }
     }
 
@@ -1772,9 +1482,7 @@ namespace Xen {
               SceneReadyToEdit && _EmbeddedGame->GetActiveScene()->Get(State.SelectedActor) != nullptr;
             if (ImGui::BeginMenu("Component", AddComponentEnabled)) {
                 for (const auto& Item : GetAddableComponentNames()) {
-                    if (ImGui::MenuItem(Item.c_str(), nullptr, false, true)) {
-                        AddComponentByName(_EmbeddedGame->GetActiveScene()->Get(State.SelectedActor), Item);
-                    }
+                    if (ImGui::MenuItem(Item.c_str(), nullptr, false, true)) { AddComponentToSelected(Item); }
                 }
 
                 ImGui::EndMenu();
@@ -1802,9 +1510,8 @@ namespace Xen {
             ImGui::EndMenu();
         }
 
-        static bool ShowGenAssetIDModal = false;
         if (ImGui::BeginMenu("Tools")) {
-            if (ImGui::MenuItem("Generate Asset ID", nullptr, false, true)) { ShowGenAssetIDModal = true; }
+            if (ImGui::MenuItem("Generate Asset ID", nullptr, false, true)) { _GenerateAssetIDModal.Open(); }
             ImGui::EndMenu();
         }
 
@@ -1820,55 +1527,16 @@ namespace Xen {
         }
 
         ImGui::EndMainMenuBar();
+    }
 
-        if (State.ShowNewProjectModal) {
-            ImGui::OpenPopup("New Project");
-            State.ShowNewProjectModal = false;
-        }
-
-        if (State.ShowNewSceneModal) {
-            ImGui::OpenPopup("New Scene");
-            State.ShowNewSceneModal = false;
-        }
-
-        if (State.ShowNewComponentClassModal) {
-            ImGui::OpenPopup("New Component Class");
-            State.ShowNewComponentClassModal = false;
-        }
-
-        if (State.ShowSavePrefabModal) {
-            ImGui::OpenPopup("Save as Prefab");
-            State.ShowSavePrefabModal = false;
-        }
-
-        if (ShowGenAssetIDModal) {
-            ImGui::OpenPopup("Generate Asset ID");
-            ShowGenAssetIDModal = false;
-        }
-
+    void Editor::DrawModals() {
         _SettingsModal.Draw(this);
-        Modal_NewProject();
-        Modal_NewScene();
-        Modal_NewComponentClass();
-        Modal_SaveAsPrefab();
-
-        static char AssetPath[MAX_STR_LEN] {};
-        static char GeneratedID[MAX_STR_LEN] {};
-        UI::CenterNextWindow();
-        if (ImGui::BeginPopupModal("Generate Asset ID", nullptr)) {
-            ImGui::InputText("Asset Path", AssetPath, MAX_STR_LEN);
-            ImGui::InputText("Generated ID", GeneratedID, MAX_STR_LEN);
-
-            if (std::strlen(AssetPath) > 0) {
-                const AssetID ID = PAK::HashPath(PAK::Canonicalize(AssetPath));
-                const auto IDStr = std::to_string(ID.Value);
-                std::strcpy(GeneratedID, IDStr.c_str());
-            }
-
-            if (ImGui::Button("Close", ImVec2(120, 0))) { ImGui::CloseCurrentPopup(); }
-
-            ImGui::EndPopup();
-        }
+        _AddComponentModal.Draw();
+        _GenerateAssetIDModal.Draw();
+        _NewComponentClassModal.Draw();
+        _NewProjectModal.Draw();
+        _NewSceneModal.Draw();
+        _SaveAsPrefabModal.Draw();
     }
 
     void Editor::DrawToolbar() {
@@ -1951,6 +1619,7 @@ namespace Xen {
         ProcessShortcuts();
 
         DrawMainMenuBar();
+        DrawModals();
         DrawToolbar();
 
         const ImGuiViewport* Viewport = ImGui::GetMainViewport();

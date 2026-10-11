@@ -5,13 +5,16 @@
 // directory (folders first), with a breadcrumb bar, name filter and tile size
 // slider. Files are drag sources for the inspector's asset slots (see
 // UI::Controls::AssetSlot). Right-clicking an item offers Rename, Duplicate
-// and Delete (to the Recycle Bin); right-clicking empty space offers Import
-// Asset, the same action as the toolbar button.
+// and Delete (to the Recycle Bin); right-clicking empty space offers New
+// Folder and Import Asset (the same action as the toolbar button).
 
 #pragma once
 
 #include "AssetIndex.hpp"
 #include "IconLibrary.hpp"
+#include "Modals/DeleteModal.hpp"
+#include "Modals/NewFolderModal.hpp"
+#include "Modals/RenameModal.hpp"
 
 #include <functional>
 #include <string>
@@ -63,12 +66,6 @@ namespace Xen {
         /// Copies an item next to itself as "<name> copy" (numbered if taken).
         void DuplicateItem(const Item& It);
 
-        /// Modals for the operations that need the user's input or consent.
-        /// Opened by DrawItemMenu through _PendingOp, drawn once per frame
-        /// from Draw.
-        void DrawRenameModal();
-        void DrawDeleteModal();
-
         /// Makes the next Draw re-read the folder, and the asset index
         /// (anything that changes the files on disk).
         void MarkChanged();
@@ -79,14 +76,10 @@ namespace Xen {
         std::vector<Item> _Items;
         std::vector<std::string> _ListingSignature;
 
-        // The operation an item's menu asked for, awaiting its modal.
-        enum class PendingOp : u8 { None, Rename, Delete };
-        PendingOp _PendingOp {PendingOp::None};
-        bool _OpenPendingPopup {false};
-        fs::path _PendingTarget;
-        bool _PendingIsDirectory {false};
-        char _RenameBuffer[256] {};
-        std::string _RenameError;
+        // The dialogs the menus open; drawn from Draw.
+        RenameModal _RenameModal;
+        DeleteModal _DeleteModal;
+        NewFolderModal _NewFolderModal;
 
         char _Filter[128] {};
         float _TileSize {96.0f};

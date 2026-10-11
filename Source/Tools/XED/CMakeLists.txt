@@ -43,6 +43,27 @@ xen_add_game_executable(XED
         Source/ProjectFileTemplate.hpp
         Source/ProjectSettingsModal.cpp
         Source/ProjectSettingsModal.hpp
+        # Modals
+        Source/Modals/Modal.cpp
+        Source/Modals/Modal.hpp
+        Source/Modals/AddComponentModal.cpp
+        Source/Modals/AddComponentModal.hpp
+        Source/Modals/DeleteModal.cpp
+        Source/Modals/DeleteModal.hpp
+        Source/Modals/GenerateAssetIDModal.cpp
+        Source/Modals/GenerateAssetIDModal.hpp
+        Source/Modals/NewComponentClassModal.cpp
+        Source/Modals/NewComponentClassModal.hpp
+        Source/Modals/NewFolderModal.cpp
+        Source/Modals/NewFolderModal.hpp
+        Source/Modals/NewProjectModal.cpp
+        Source/Modals/NewProjectModal.hpp
+        Source/Modals/NewSceneModal.cpp
+        Source/Modals/NewSceneModal.hpp
+        Source/Modals/RenameModal.cpp
+        Source/Modals/RenameModal.hpp
+        Source/Modals/SaveAsPrefabModal.cpp
+        Source/Modals/SaveAsPrefabModal.hpp
 )
 
 # Everything else XED needs (Common, PAK, D3D12, Dear ImGui, nlohmann/json,

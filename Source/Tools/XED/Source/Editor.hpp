@@ -20,6 +20,12 @@
 #include "EditorProject.hpp"
 #include "IconLibrary.hpp"
 #include "ProjectSettingsModal.hpp"
+#include "Modals/AddComponentModal.hpp"
+#include "Modals/GenerateAssetIDModal.hpp"
+#include "Modals/NewComponentClassModal.hpp"
+#include "Modals/NewProjectModal.hpp"
+#include "Modals/NewSceneModal.hpp"
+#include "Modals/SaveAsPrefabModal.hpp"
 
 #include <Common/Platform.hpp>
 #include <functional>
@@ -44,6 +50,11 @@ namespace Xen {
         friend EditorSettingsModal;
         friend ProjectSettingsModal;
         friend ContentBrowser;
+        friend AddComponentModal;
+        friend NewComponentClassModal;
+        friend NewProjectModal;
+        friend NewSceneModal;
+        friend SaveAsPrefabModal;
 
         static constexpr size_t MAX_STR_LEN = 512;
 
@@ -88,6 +99,7 @@ namespace Xen {
         void TickFrame(f32 DeltaTime);
         void DrawDockspaceAndPanels(f32 DeltaTime);
         void DrawMainMenuBar();
+        void DrawModals();
         void DrawToolbar();
 
         // Width/Height rather than an ImVec2, so this header (like EditorUI.hpp/
@@ -100,8 +112,8 @@ namespace Xen {
 
         // Each view or panel in the editor UI
         void View_ContentBrowser();
-        void View_Hierarchy() const;
-        void View_Inspector() const;
+        void View_Hierarchy();
+        void View_Inspector();
         void View_Log() const;
         void View_Scene(f32 DeltaTime);
 
@@ -120,13 +132,13 @@ namespace Xen {
         /// transform it was saved with, and selects it.
         void Action_InstantiatePrefab(const fs::path& PrefabFile) const;
         void Action_NewActor(Scene* S, const std::string& Name) const;
-        void Action_NewProject() const;
+        void Action_NewProject();
         void Action_OpenCppProject();
         void Action_OpenProject();
         void Action_OpenScene() const;
         void Action_ShowSettings();
         void Action_NewComponentClass();
-        void Action_NewScene() const;
+        void Action_NewScene();
         void Action_Quit();
         void Action_SaveScene() const;
         void Action_Play();
@@ -142,11 +154,15 @@ namespace Xen {
         void SetGameHasInput(bool HasInput);
         NODISCARD bool GameHasInput() const;
 
-        void Modal_AddComponent() const;
-        void Modal_NewComponentClass();
-        void Modal_NewProject();
-        void Modal_NewScene() const;
-        void Modal_SaveAsPrefab();
+        /// The scene being edited, or null while none is open.
+        Scene* ActiveScene() const;
+
+        /// Every registered component type - the engine's plus the loaded
+        /// game module's - by name, sorted for display.
+        static std::vector<std::string> GetAddableComponentNames();
+
+        /// Adds a component of the named type to the selected actor.
+        void AddComponentToSelected(const std::string& TypeName) const;
 
         // Keyboard shortcuts: register once (typically in the constructor)
         // with RegisterShortcut(Keys, Action), then ProcessShortcuts() fires
@@ -177,7 +193,15 @@ namespace Xen {
         EditorTheme _CurrentTheme {};
         std::unique_ptr<Window> _Window;
 
+        // Dialogs. Each owns its own state and is drawn by DrawModals; the
+        // menus and panels open them with Open(...).
         EditorSettingsModal _SettingsModal;
+        AddComponentModal _AddComponentModal {*this};
+        GenerateAssetIDModal _GenerateAssetIDModal;
+        NewComponentClassModal _NewComponentClassModal {*this};
+        NewProjectModal _NewProjectModal {*this};
+        NewSceneModal _NewSceneModal {*this};
+        SaveAsPrefabModal _SaveAsPrefabModal {*this};
 
         // Destroyed in reverse declaration order: _Icons first (its
         // Shutdown calls _Device->DestroyTexture, so it must go while

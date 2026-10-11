@@ -7,26 +7,12 @@
 
 #include <Common/Log.hpp>
 
-#include <shellapi.h>
-
 #include <algorithm>
 #include <cctype>
 
 namespace Xen {
     namespace {
         constexpr double kPollIntervalSeconds = 1.0;
-
-        // A file name's characters Windows won't accept, and the trailing
-        // space/dot it silently strips.
-        std::string ValidateName(const std::string& Name) {
-            if (Name.empty()) return "The name can't be empty.";
-            if (Name.size() > 200) return "The name is too long.";
-            if (Name.find_first_of("<>:\"/\\|?*") != std::string::npos) {
-                return "A name can't contain any of  < > : \" / \\ | ? *";
-            }
-            if (Name.back() == ' ' || Name.back() == '.') return "A name can't end with a space or a dot.";
-            return {};
-        }
 
         // "<name> copy", "<name> copy 2", ... - the first that isn't taken.
         fs::path UniqueCopyPath(const fs::path& Source, const bool IsDirectory) {
@@ -38,20 +24,6 @@ namespace Xen {
                 const std::string Name = Stem + " copy" + (N > 1 ? " " + std::to_string(N) : std::string()) + Ext;
                 if (fs::path Candidate = Dir / Name; !fs::exists(Candidate)) return Candidate;
             }
-        }
-
-        // To the Recycle Bin rather than gone for good - these are the
-        // user's project files, and nothing here tracks references to them.
-        bool MoveToRecycleBin(const fs::path& Path) {
-            // Backslashes only: SHFileOperation fails on a path with forward ones.
-            std::wstring From = fs::absolute(Path).lexically_normal().make_preferred().wstring();
-            From.push_back(L'\0');  // SHFileOperation wants a double-null-terminated list
-
-            SHFILEOPSTRUCTW Op {};
-            Op.wFunc  = FO_DELETE;
-            Op.pFrom  = From.c_str();
-            Op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
-            return SHFileOperationW(&Op) == 0 && !Op.fAnyOperationsAborted;
         }
 
         std::string Lowercase(std::string S) {
@@ -193,16 +165,10 @@ namespace Xen {
         }
 
         if (ImGui::MenuItem("Rename")) {
-            _PendingOp          = PendingOp::Rename;
-            _PendingTarget      = It.Path;
-            _PendingIsDirectory = It.IsDirectory;
-            _RenameError.clear();
-
-            // Files are renamed without their extension, which decides what
-            // kind of asset they are.
-            const std::string Stem = It.IsDirectory ? It.Name : It.Path.stem().string();
-            std::snprintf(_RenameBuffer, sizeof(_RenameBuffer), "%s", Stem.c_str());
-            _OpenPendingPopup = true;
+            _RenameModal.Open(It.Path, It.IsDirectory, [this](const fs::path& NewPath) {
+                _Selected = NewPath;
+                MarkChanged();
+            });
         }
 
         if (ImGui::MenuItem("Duplicate")) DuplicateItem(It);
@@ -210,102 +176,11 @@ namespace Xen {
         ImGui::Separator();
 
         if (ImGui::MenuItem("Delete")) {
-            _PendingOp          = PendingOp::Delete;
-            _PendingTarget      = It.Path;
-            _PendingIsDirectory = It.IsDirectory;
-            _OpenPendingPopup   = true;
-        }
-    }
-
-    void ContentBrowser::DrawRenameModal() {
-        UI::CenterNextWindow();
-        if (!ImGui::BeginPopupModal("Rename", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
-
-        const std::string Extension = _PendingIsDirectory ? std::string() : _PendingTarget.extension().string();
-
-        ImGui::Text("Rename '%s'", _PendingTarget.filename().string().c_str());
-        ImGui::Spacing();
-
-        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
-        ImGui::SetNextItemWidth(260.0f);
-        const bool Submitted = ImGui::InputText("##newname",
-                                                _RenameBuffer,
-                                                sizeof(_RenameBuffer),
-                                                ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
-        if (!Extension.empty()) {
-            ImGui::SameLine();
-            ImGui::TextDisabled("%s", Extension.c_str());
-        }
-
-        // Re-checked every frame so the message follows what's typed.
-        const std::string NewName    = std::string(_RenameBuffer) + Extension;
-        const fs::path Destination   = _PendingTarget.parent_path() / NewName;
-        std::string Problem          = ValidateName(_RenameBuffer);
-        const bool OnlyCaseChanged   = Lowercase(NewName) == Lowercase(_PendingTarget.filename().string());
-        if (Problem.empty() && NewName != _PendingTarget.filename().string() && !OnlyCaseChanged &&
-            fs::exists(Destination)) {
-            Problem = "'" + NewName + "' already exists here.";
-        }
-
-        ImGui::TextDisabled("References to it in scenes and components will show as Missing.");
-        if (!Problem.empty()) ImGui::TextColored(ImVec4(0.92f, 0.22f, 0.32f, 1.0f), "%s", Problem.c_str());
-        if (!_RenameError.empty()) ImGui::TextColored(ImVec4(0.92f, 0.22f, 0.32f, 1.0f), "%s", _RenameError.c_str());
-        ImGui::Spacing();
-
-        const bool Unchanged = NewName == _PendingTarget.filename().string();
-        ImGui::BeginDisabled(!Problem.empty() || Unchanged);
-        const bool Confirm = ImGui::Button("Rename", ImVec2(120, 0)) || (Submitted && Problem.empty() && !Unchanged);
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        const bool Cancel = ImGui::Button("Cancel", ImVec2(120, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
-
-        if (Confirm) {
-            std::error_code Error;
-            fs::rename(_PendingTarget, Destination, Error);
-            if (Error) {
-                _RenameError = "Couldn't rename: " + Error.message();
-            } else {
-                _Selected  = Destination;
-                _PendingOp = PendingOp::None;
+            _DeleteModal.Open(It.Path, It.IsDirectory, [this, Target = It.Path] {
+                if (_Selected == Target) _Selected.clear();
                 MarkChanged();
-                ImGui::CloseCurrentPopup();
-            }
-        } else if (Cancel) {
-            _PendingOp = PendingOp::None;
-            ImGui::CloseCurrentPopup();
+            });
         }
-
-        ImGui::EndPopup();
-    }
-
-    void ContentBrowser::DrawDeleteModal() {
-        UI::CenterNextWindow();
-        if (!ImGui::BeginPopupModal("Delete", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
-
-        ImGui::Text("Delete '%s'?", _PendingTarget.filename().string().c_str());
-        if (_PendingIsDirectory) ImGui::TextUnformatted("Everything inside the folder goes with it.");
-        ImGui::TextDisabled("It's moved to the Recycle Bin. References to it in scenes and\ncomponents will show as Missing.");
-        ImGui::Spacing();
-
-        const bool Confirm = ImGui::Button("Delete", ImVec2(120, 0));
-        ImGui::SameLine();
-        const bool Cancel = ImGui::Button("Cancel", ImVec2(120, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
-
-        if (Confirm) {
-            if (MoveToRecycleBin(_PendingTarget)) {
-                if (_Selected == _PendingTarget) _Selected.clear();
-                MarkChanged();
-            } else {
-                LOG_ERR("Delete: couldn't move '%s' to the Recycle Bin", _PendingTarget.string().c_str());
-            }
-            _PendingOp = PendingOp::None;
-            ImGui::CloseCurrentPopup();
-        } else if (Cancel) {
-            _PendingOp = PendingOp::None;
-            ImGui::CloseCurrentPopup();
-        }
-
-        ImGui::EndPopup();
     }
 
     void ContentBrowser::DrawToolbar() {
@@ -424,6 +299,13 @@ namespace Xen {
             // Right-click on empty space (not over a tile).
             if (ImGui::BeginPopupContextWindow("##gridmenu",
                                                ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
+                if (ImGui::MenuItem("New Folder")) {
+                    _NewFolderModal.Open(_CurrentDir, [this](const fs::path& NewFolder) {
+                        _Selected = NewFolder;
+                        MarkChanged();
+                    });
+                }
+                ImGui::Separator();
                 if (ImGui::MenuItem("Import Asset")) ImportAsset();
                 ImGui::EndPopup();
             }
@@ -442,14 +324,11 @@ namespace Xen {
         }
         ImGui::EndChild();
 
-        // OpenPopup and BeginPopupModal have to agree on the id stack, which
-        // is why the item menu only records the request and it's opened here.
-        if (_OpenPendingPopup) {
-            ImGui::OpenPopup(_PendingOp == PendingOp::Rename ? "Rename" : "Delete");
-            _OpenPendingPopup = false;
-        }
-        DrawRenameModal();
-        DrawDeleteModal();
+        // Drawn here, at the window's level, so each modal's popup id matches
+        // wherever its Open() was called from.
+        _RenameModal.Draw();
+        _DeleteModal.Draw();
+        _NewFolderModal.Draw();
 
         ImGui::End();
     }
